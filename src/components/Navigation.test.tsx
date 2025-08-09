@@ -4,10 +4,11 @@ import { MemoryRouter } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import '@testing-library/jest-dom';
 import Navigation from './Navigation';
+import useMediaQuery from '@mui/material/useMediaQuery';
 
 // Mock useMediaQuery
-const mockUseMediaQuery = jest.fn();
-jest.mock('@mui/material/useMediaQuery', () => mockUseMediaQuery);
+jest.mock('@mui/material/useMediaQuery');
+const mockUseMediaQuery = useMediaQuery as jest.MockedFunction<typeof useMediaQuery>;
 
 const theme = createTheme();
 

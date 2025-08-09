@@ -8,7 +8,21 @@
       "Bash(npx tsc:*)",
       "Bash(npm test:*)",
       "Bash(git init:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(npm start)",
+      "Bash(set PORT=3001)",
+      "Bash(npx:*)",
+      "Bash($env:PORT=3001)",
+      "Bash(git remote add:*)",
+      "Bash(git push:*)",
+      "Bash(npm audit:*)",
+      "Bash(npm update:*)",
+      "Bash(npm view:*)",
+      "Bash(rmdir:*)",
+      "Bash(del package-lock.json)",
+      "Bash(git restore:*)",
+      "Bash(timeout:*)"
     ],
     "deny": []
   }

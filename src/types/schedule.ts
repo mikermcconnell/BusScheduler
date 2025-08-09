@@ -118,3 +118,98 @@ export interface ScheduleProcessingOptions {
   /** Whether to auto-generate missing time points */
   autoGenerateTimePoints: boolean;
 }
+
+/**
+ * Time band definition for schedule generation
+ */
+export interface TimeBand {
+  /** Start time in HH:MM format */
+  startTime: string;
+  /** End time in HH:MM format */
+  endTime: string;
+  /** Frequency in minutes between trips */
+  frequency: number;
+  /** Optional description for the time band */
+  description?: string;
+}
+
+/**
+ * Travel time matrix for efficient lookups
+ */
+export interface TravelTimeMatrix {
+  [fromTimePointId: string]: {
+    [toTimePointId: string]: number;
+  };
+}
+
+/**
+ * Complete travel time matrices for all day types
+ */
+export interface TravelTimeMatrices {
+  weekday: TravelTimeMatrix;
+  saturday: TravelTimeMatrix;
+  sunday: TravelTimeMatrix;
+}
+
+/**
+ * Trip calculation result with validation
+ */
+export interface TripCalculationResult {
+  /** Unique trip identifier */
+  tripId: string;
+  /** Schedule entries for all time points */
+  scheduleEntries: ScheduleEntry[];
+  /** Total travel time for the trip in minutes */
+  totalTravelTime: number;
+  /** Whether the calculation was successful */
+  isValid: boolean;
+  /** Any errors encountered during calculation */
+  errors: string[];
+}
+
+/**
+ * Complete calculation results for all day types
+ */
+export interface CalculationResults {
+  weekday: TripCalculationResult[];
+  saturday: TripCalculationResult[];
+  sunday: TripCalculationResult[];
+  metadata: {
+    totalTimePoints: number;
+    totalTrips: number;
+    calculationTime: number;
+  };
+}
+
+/**
+ * Schedule statistics for analysis and reporting
+ */
+export interface ScheduleStatistics {
+  /** Total number of time points */
+  totalTimePoints: number;
+  /** Trip counts by day type */
+  totalTrips: {
+    weekday: number;
+    saturday: number;
+    sunday: number;
+    total: number;
+  };
+  /** Average frequency by day type in minutes */
+  averageFrequency: {
+    weekday: number;
+    saturday: number;
+    sunday: number;
+  };
+  /** Operating hours by day type */
+  operatingHours: {
+    weekday: { start: string; end: string };
+    saturday: { start: string; end: string };
+    sunday: { start: string; end: string };
+  };
+  /** Total travel time by day type in minutes */
+  totalTravelTime: {
+    weekday: number;
+    saturday: number;
+    sunday: number;
+  };
+}
