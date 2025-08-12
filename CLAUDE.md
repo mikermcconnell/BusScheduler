@@ -32,6 +32,9 @@ npx tsc --noEmit   # TypeScript compilation check
 4. **Multi-Day Support** - Separate processing for weekday/Saturday/Sunday schedules
 5. **Professional Export** - CSV and Excel export with metadata and formatting
 6. **Security Hardened** - XSS prevention, file validation, memory protection
+7. **Draft Management** - Save and manage draft schedules with local storage
+8. **Timepoint Analysis** - Interactive travel time analysis with outlier detection
+9. **Service Band Visualization** - Data-driven service bands with interactive charts
 
 ### Project Structure
 ```
@@ -40,30 +43,40 @@ src/
 │   ├── FileUpload.tsx   # Material-UI file upload with drag/drop
 │   ├── SummaryDisplay.tsx # Professional data display with tabs
 │   ├── Layout.tsx       # Main app layout wrapper
-│   └── Navigation.tsx   # Navigation bar component
+│   ├── Navigation.tsx   # Navigation bar component
+│   ├── DraftScheduleList.tsx # Draft schedule listing and management
+│   ├── TripDurationChart.tsx # Travel time visualization charts
+│   ├── TripDurationTable.tsx # Travel time data tables
+│   └── ScheduleEditDialog.tsx # Schedule editing modal dialogs
 ├── hooks/               # Custom React hooks
 │   └── useFileUpload.ts # File processing with security validation
 ├── pages/              # Page-level components (React Router)
 │   ├── Dashboard.tsx
 │   ├── UploadSchedule.tsx # Main upload and processing page
+│   ├── TimePoints.tsx   # Interactive timepoint analysis with charts
+│   ├── GenerateSummarySchedule.tsx # Summary schedule generation
+│   ├── DraftSchedules.tsx # Draft schedule management
 │   ├── ViewSchedules.tsx
 │   ├── ManageRoutes.tsx
+│   ├── GenerateSchedules.tsx # Schedule generation workflow
+│   ├── SummarySchedule.tsx # Professional schedule display
+│   ├── EditCSVSchedule.tsx # CSV schedule editing
 │   └── NotFound.tsx
 ├── services/           # Business logic services
-│   └── scheduleService.ts # Service layer orchestrating processing
+│   ├── scheduleService.ts # Service layer orchestrating processing
+│   └── scheduleStorage.ts # Local storage management for drafts
 ├── types/              # TypeScript type definitions
 │   ├── schedule.ts     # Core schedule types
 │   ├── excel.ts        # Excel-specific types
 │   └── index.ts        # Re-exports
 ├── utils/              # Utility functions
 │   ├── calculator.ts   # Core travel time calculations
-│   ├── excelParser.ts  # Excel file parsing with security
+│   ├── csvParser.ts    # CSV file parsing and validation
 │   ├── formatDetector.ts # Smart format detection algorithms
-│   ├── validator.ts    # Data validation engine
-│   ├── dataExtractor.ts # High-level extraction orchestration
-│   ├── summaryGenerator.ts # Data formatting for export/display
-│   ├── excelExporter.ts # Professional Excel export
-│   └── inputSanitizer.ts # XSS prevention and input sanitization
+│   ├── inputSanitizer.ts # XSS prevention and input sanitization
+│   ├── dateHelpers.ts  # Date and time manipulation utilities
+│   ├── tripDurationAnalyzer.ts # Travel time analysis and outlier detection
+│   └── summaryExcelExporter.ts # Professional Excel export functionality
 └── integration/        # Integration tests and examples
     └── exampleWorkflow.ts
 ```
@@ -180,6 +193,37 @@ The application includes comprehensive security mitigations:
 - React Scripts build system
 - Material-UI component optimization
 - CSS processing and minification
+
+## Navigation Flow and Page Structure
+
+### Key Pages and Routes
+- **Dashboard** (`/`) - Main landing page with overview
+- **Upload Schedule** (`/upload`) - Primary file upload and processing
+- **TimePoints Page** (`/timepoints`) - Interactive travel time analysis
+  - Access via: Dashboard > Draft Schedules > Timepoint Page
+  - Features: Collapsible detailed travel times table (default collapsed)
+  - Travel time visualization with service bands
+  - Outlier detection and management
+  - Generate Summary Schedule navigation button
+- **Generate Summary Schedule** (`/generate-summary`) - Summary schedule creation
+- **Draft Schedules** (`/drafts`) - Draft schedule management and storage
+- **View Schedules** (`/schedules`) - Saved schedule viewing
+- **Manage Routes** (`/routes`) - Route configuration
+
+### TimePoints Page Features
+- **Interactive Charts**: Travel time visualization by time period
+- **Service Bands**: Data-driven service bands based on travel time percentiles
+- **Outlier Management**: Detect and handle travel time outliers (10%+ deviation)
+- **Collapsible Tables**: Detailed travel times hidden by default, expandable on demand
+- **Navigation Integration**: Seamless flow from Draft Schedules to TimePoints to Summary Generation
+
+### Draft Schedule Workflow
+1. Upload CSV data via Upload Schedule page
+2. Process and validate data with automatic format detection
+3. Save as draft in Draft Schedules section
+4. Navigate to TimePoints page for analysis
+5. Review travel time data, manage outliers, configure service bands
+6. Generate summary schedule from processed data
 
 ## Common Tasks
 
