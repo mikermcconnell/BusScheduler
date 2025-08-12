@@ -18,7 +18,12 @@ import {
 import { useFileUpload } from '../hooks/useFileUpload';
 
 interface FileUploadProps {
-  onFileUploaded?: (extractedData: any, fileName: string, validation: any, report: string) => void;
+  onFileUploaded?: (
+    data: { extractedData?: any; csvData?: any; fileType: 'excel' | 'csv' }, 
+    fileName: string, 
+    validation: any, 
+    report: string
+  ) => void;
   onError?: (error: string) => void;
 }
 
@@ -28,13 +33,18 @@ export const FileUpload: React.FC<FileUploadProps> = ({
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragActive, setDragActive] = useState(false);
-  const { isLoading, error, extractedData, validation, fileName, qualityReport, uploadFile, clearFile } = useFileUpload();
+  const { isLoading, error, extractedData, csvData, validation, fileName, qualityReport, fileType, uploadFile, clearFile } = useFileUpload();
 
   const handleFileSelect = async (file: File) => {
     const result = await uploadFile(file);
     
-    if (result.success && result.extractedData && result.validation && result.qualityReport) {
-      onFileUploaded?.(result.extractedData, result.fileName, result.validation, result.qualityReport);
+    if (result.success && result.validation && result.qualityReport && result.fileType) {
+      const data = {
+        extractedData: result.extractedData,
+        csvData: result.csvData,
+        fileType: result.fileType
+      };
+      onFileUploaded?.(data, result.fileName, result.validation, result.qualityReport);
     } else if (result.error) {
       onError?.(result.error);
     }
@@ -104,7 +114,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
         <input
           ref={fileInputRef}
           type="file"
-          accept=".xlsx,.xls"
+          accept=".xlsx,.xls,.csv"
           onChange={handleFileInputChange}
           style={{ display: 'none' }}
         />
@@ -122,10 +132,10 @@ export const FileUpload: React.FC<FileUploadProps> = ({
           <>
             <CloudUpload sx={{ fontSize: 48, color: '#ccc', mb: 2 }} />
             <Typography variant="h6" gutterBottom>
-              Upload Excel Schedule File
+              Upload Schedule File
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-              Drag and drop your Excel file here, or click to browse
+              Drag and drop your schedule file here, or click to browse
             </Typography>
             <Button
               variant="contained"
@@ -136,7 +146,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
               Choose File
             </Button>
             <Typography variant="caption" display="block" sx={{ mt: 2, color: 'text.secondary' }}>
-              Supported formats: .xlsx, .xls (max 10MB)
+              Supported formats: .xlsx, .xls, .csv (max 10MB)
             </Typography>
           </>
         )}

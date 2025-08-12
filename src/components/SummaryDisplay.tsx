@@ -3,12 +3,11 @@
  * Interactive component for displaying processed schedule summaries
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
   Box,
   Button,
   Card,
-  CardContent,
   Typography,
   Table,
   TableBody,
@@ -24,7 +23,8 @@ import {
   Grid,
   Divider,
   IconButton,
-  Collapse
+  Collapse,
+  CardContent
 } from '@mui/material';
 import {
   Download as DownloadIcon,
@@ -42,6 +42,10 @@ import {
   validateSummaryData,
   groupTripsByTimeBands
 } from '../utils/summaryGenerator';
+import { ParsedCsvData } from '../utils/csvParser';
+import { TripDurationAnalyzer } from '../utils/tripDurationAnalyzer';
+import { TripDurationTable } from './TripDurationTable';
+import { TripDurationChart } from './TripDurationChart';
 
 interface SummaryDisplayProps {
   /** Summary schedule data */
@@ -54,6 +58,8 @@ interface SummaryDisplayProps {
   onExport?: (data: string, filename: string) => void;
   /** Show advanced statistics */
   showAdvancedStats?: boolean;
+  /** Raw CSV data for trip duration analysis (optional) */
+  csvData?: ParsedCsvData;
 }
 
 interface DayTypeTabProps {
@@ -380,10 +386,14 @@ const SummaryDisplay: React.FC<SummaryDisplayProps> = ({
   calculationResults,
   formatOptions = {},
   onExport,
-  showAdvancedStats = false
+  showAdvancedStats = false,
+  csvData
 }) => {
   const [activeTab, setActiveTab] = useState<'weekday' | 'saturday' | 'sunday'>('weekday');
   const [showTimeBands, setShowTimeBands] = useState(false);
+  const [showTripDurationAnalysis, setShowTripDurationAnalysis] = useState(false);
+  const [tripDurationAnalysis, setTripDurationAnalysis] = useState<any>(null);
+  const [isGeneratingAnalysis, setIsGeneratingAnalysis] = useState(false);
 
   // Generate display data with memoization for performance
   const displayData = useMemo(() => {
@@ -416,6 +426,29 @@ const SummaryDisplay: React.FC<SummaryDisplayProps> = ({
   const handleTabChange = (dayType: 'weekday' | 'saturday' | 'sunday') => {
     setActiveTab(dayType);
   };
+
+  // Generate trip duration analysis on demand
+  const handleGenerateTripDurationAnalysis = useCallback(async () => {
+    if (!csvData || isGeneratingAnalysis) return;
+
+    setIsGeneratingAnalysis(true);
+    try {
+      const parsedData = TripDurationAnalyzer.fromParsedCsvData(
+        csvData,
+        summarySchedule.routeId,
+        summarySchedule.routeName,
+        summarySchedule.direction
+      );
+      const analysis = TripDurationAnalyzer.analyzeTripDuration(parsedData);
+      setTripDurationAnalysis(analysis);
+      setShowTripDurationAnalysis(true);
+    } catch (error) {
+      console.error('Failed to generate trip duration analysis:', error);
+      // You could add error state here if needed
+    } finally {
+      setIsGeneratingAnalysis(false);
+    }
+  }, [csvData, summarySchedule.routeId, summarySchedule.routeName, summarySchedule.direction, isGeneratingAnalysis]);
 
   // Handle export all
   const handleExportAll = () => {
@@ -607,6 +640,51 @@ const SummaryDisplay: React.FC<SummaryDisplayProps> = ({
           />
         </Box>
       </Card>
+
+      {/* Trip Duration Analysis Section */}
+      {csvData && (
+        <Card variant="outlined" sx={{ mt: 3 }}>
+          <CardContent>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <TimelineIcon color="primary" />
+                <Typography variant="h6">
+                  Trip Duration Analysis
+                </Typography>
+              </Box>
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={handleGenerateTripDurationAnalysis}
+                disabled={isGeneratingAnalysis}
+                startIcon={isGeneratingAnalysis ? undefined : <TimelineIcon />}
+                sx={{ textTransform: 'none' }}
+              >
+                {isGeneratingAnalysis ? 'Analyzing...' : 'Analyze Trip Duration by Time of Day'}
+              </Button>
+            </Box>
+            
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Generate a detailed analysis showing how total trip duration varies throughout the day using travel time percentiles from your CSV data.
+            </Typography>
+
+            {showTripDurationAnalysis && tripDurationAnalysis && (
+              <Collapse in={showTripDurationAnalysis}>
+                <Box sx={{ mt: 3 }}>
+                  <Grid container spacing={3}>
+                    <Grid item xs={12}>
+                      <TripDurationChart analysis={tripDurationAnalysis} />
+                    </Grid>
+                    <Grid item xs={12}>
+                      <TripDurationTable analysis={tripDurationAnalysis} />
+                    </Grid>
+                  </Grid>
+                </Box>
+              </Collapse>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Footer Info */}
       <Typography 

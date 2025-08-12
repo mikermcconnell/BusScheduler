@@ -213,3 +213,51 @@ export interface ScheduleStatistics {
     sunday: number;
   };
 }
+
+/**
+ * Trip duration analysis by time period
+ */
+export interface TripDurationByTimeOfDay {
+  /** Time period (e.g., "07:00 - 07:29") */
+  timePeriod: string;
+  /** Start time of the period (e.g., "07:00") */
+  startTime: string;
+  /** Trip duration by percentile in minutes */
+  duration: {
+    /** 25th percentile duration */
+    p25: number;
+    /** 50th percentile (median) duration */
+    p50: number;
+    /** 80th percentile duration */
+    p80: number;
+    /** 90th percentile duration */
+    p90: number;
+  };
+}
+
+/**
+ * Complete trip duration analysis result
+ */
+export interface TripDurationAnalysis {
+  /** Route identifier */
+  routeId: string;
+  /** Route name */
+  routeName: string;
+  /** Direction (e.g., "Inbound", "Outbound") */
+  direction: string;
+  /** Duration analysis by time period */
+  durationByTimeOfDay: TripDurationByTimeOfDay[];
+  /** Summary statistics */
+  summary: {
+    /** Minimum trip duration across all periods */
+    minDuration: number;
+    /** Maximum trip duration across all periods */
+    maxDuration: number;
+    /** Average trip duration across all periods */
+    avgDuration: number;
+    /** Peak travel time period */
+    peakPeriod: string;
+    /** Fastest travel time period */
+    fastestPeriod: string;
+  };
+}

@@ -82,6 +82,47 @@ src/
 - `FormatDetectionResult`: Detected format information
 - `DataExtractionResult`: Extracted and validated data
 
+## File Format Specifications
+
+### Input Format: Raw Data CSV
+**File**: `example_schedule/Raw_Data.csv`
+**Structure**: Travel time data organized by route segments and time periods
+
+**Format Details**:
+- **Title Rows**: Route segment descriptions (e.g., "Downtown Barrie Terminal to Johnson at Napier")
+- **Half-Hour Rows**: Time period headers (e.g., "07:00 - 07:29", "07:30 - 07:59")
+- **Data Rows**: Travel time statistics by percentile:
+  - `101 CCW Observed Runtime-25%`: 25th percentile travel times
+  - `101 CCW Observed Runtime-50%`: Median travel times  
+  - `101 CCW Observed Runtime-80%`: 80th percentile travel times
+  - `101 CCW Observed Runtime-90%`: 90th percentile travel times
+  - `101 CCW Scheduled Runtime-10/50/90%`: Scheduled runtime targets
+- **Route Segments**: Multiple segments per route (Downtown → Johnson → RVH → Georgian College → Georgian Mall → Bayfield Mall → Downtown)
+- **Time Periods**: 30-minute blocks covering service hours (07:00-22:29)
+
+### Output Format: Summary Schedule
+**File**: `example_schedule/2_08.2025.xlsx` - Sheet "Summary"
+**Structure**: Professional transit schedule with trip times and operational data
+
+**Format Details**:
+- **Header Structure**:
+  - Row 1: Day type indicator ("Weekday")
+  - Row 2: Route identifiers ("Route 2A", "Route 2B")
+  - Row 3: Direction indicators ("DEPART", "ARRIVE") 
+  - Row 4: Time point names (stop locations)
+  - Row 5: Stop IDs and metadata columns
+- **Trip Data** (Rows 6+):
+  - Block numbers and service periods
+  - Actual departure/arrival times for each time point
+  - Travel time calculations between stops
+  - Cycle times and operational metrics
+  - Connection information and notes
+- **Time Points**: Sequential stops with calculated travel times
+- **Operational Data**: Recovery time, cycle time, frequency, headway management
+- **Service Periods**: Early Morning, Morning, Midday with different operating parameters
+
+**Key Transformation**: Raw travel time statistics → Scheduled trip times with operational planning data
+
 ## Security Features ⚠️ CRITICAL
 The application includes comprehensive security mitigations:
 

@@ -169,7 +169,7 @@ export const generateTripSchedule = (
 
     sortedTimePoints.forEach(timePoint => {
       const travelTimeFromStart = sequentialTimes[timePoint.id] || 0;
-      const arrivalMinutes = startMinutes + travelTimeFromStart;
+      const arrivalMinutes = Math.round(startMinutes + travelTimeFromStart);
       const departureMinutes = arrivalMinutes; // Assuming no dwell time for now
 
       scheduleEntries.push({

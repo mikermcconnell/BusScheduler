@@ -84,11 +84,11 @@ export class InputSanitizer {
 
     // Remove dangerous patterns first
     if (!options.allowHtml) {
-      text = this.removeDangerousPatterns(text);
+      text = InputSanitizer.removeDangerousPatterns(text);
     }
 
     // HTML entity encoding
-    text = this.htmlEntityEncode(text);
+    text = InputSanitizer.htmlEntityEncode(text);
 
     // Apply character filtering if specified
     if (options.allowedCharacters) {
@@ -110,7 +110,7 @@ export class InputSanitizer {
 
     // Apply strict filtering if requested
     if (options.strict) {
-      text = this.applyStrictFiltering(text);
+      text = InputSanitizer.applyStrictFiltering(text);
     }
 
     return text;
@@ -120,7 +120,7 @@ export class InputSanitizer {
    * Sanitizes time point names specifically
    */
   static sanitizeTimePointName(name: unknown): string {
-    return this.sanitizeText(name, {
+    return InputSanitizer.sanitizeText(name, {
       maxLength: INPUT_LIMITS.timePointName,
       allowHtml: false,
       strict: true,
@@ -132,7 +132,7 @@ export class InputSanitizer {
    * Sanitizes file names for safe display
    */
   static sanitizeFileName(fileName: unknown): string {
-    return this.sanitizeText(fileName, {
+    return InputSanitizer.sanitizeText(fileName, {
       maxLength: INPUT_LIMITS.fileName,
       allowHtml: false,
       strict: true,
@@ -144,7 +144,7 @@ export class InputSanitizer {
    * Sanitizes error messages to prevent information disclosure
    */
   static sanitizeErrorMessage(message: unknown): string {
-    let sanitized = this.sanitizeText(message, {
+    let sanitized = InputSanitizer.sanitizeText(message, {
       maxLength: INPUT_LIMITS.errorMessage,
       allowHtml: false,
       strict: false

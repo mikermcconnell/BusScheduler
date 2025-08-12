@@ -118,7 +118,32 @@ export class ExcelFormatDetector {
   }
 
   private detectTimePoints(result: DetectedFormat): void {
-    if (result.hasHeader && result.headerRow >= 0) {
+    // For travel time CSV data, look for time period headers (Half-Hour row)
+    let timePeriodsRow = -1;
+    
+    for (let i = 0; i < Math.min(10, this.data.length); i++) {
+      const row = this.data[i];
+      if (row && row[0] && String(row[0]).toLowerCase().includes('half-hour')) {
+        timePeriodsRow = i;
+        break;
+      }
+    }
+    
+    if (timePeriodsRow >= 0) {
+      // This is travel time data - time periods are the columns
+      const timePeriodsRowData = this.data[timePeriodsRow];
+      for (let col = 1; col < timePeriodsRowData.length; col++) {
+        const cell = timePeriodsRowData[col];
+        if (cell !== null && cell !== undefined && cell !== '') {
+          const timePeriod = String(cell).trim();
+          if (this.looksLikeTimePeriod(timePeriod)) {
+            result.timePointColumns.push(col);
+            result.timePointNames.push(timePeriod);
+          }
+        }
+      }
+    } else if (result.hasHeader && result.headerRow >= 0) {
+      // Traditional schedule data with time points as headers
       const headerRow = this.data[result.headerRow];
       
       for (let col = 0; col < headerRow.length; col++) {
@@ -132,6 +157,7 @@ export class ExcelFormatDetector {
         }
       }
     } else {
+      // Fallback to looking for time values in columns
       for (let col = 0; col < (this.data[0]?.length || 0); col++) {
         let hasTimeValues = false;
         let totalValues = 0;
@@ -177,6 +203,11 @@ export class ExcelFormatDetector {
     return timePointKeywords.some(keyword => lowerName.includes(keyword)) ||
            /\d{1,4}\s*(st|nd|rd|th|street|ave|avenue|rd|road|way|lane|dr|drive|blvd|boulevard)/i.test(name) ||
            /^[A-Za-z\s&-]{3,}$/i.test(name);
+  }
+
+  private looksLikeTimePeriod(value: string): boolean {
+    // Match patterns like "07:00 - 07:29", "08:30 - 08:59"
+    return /^\d{2}:\d{2}\s*-\s*\d{2}:\d{2}$/.test(value.trim());
   }
 
   private detectTimeFormat(result: DetectedFormat): void {

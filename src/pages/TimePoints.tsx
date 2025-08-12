@@ -1,0 +1,1725 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import {
+  Typography,
+  Card,
+  CardContent,
+  Box,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Paper,
+  Chip,
+  Alert,
+  Button,
+  CircularProgress,
+  TextField,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Snackbar,
+  Breadcrumbs,
+  Link,
+  Collapse,
+  IconButton,
+} from '@mui/material';
+import {
+  Timeline as TimelineIcon,
+  ArrowBack as BackIcon,
+  CheckCircle as CheckIcon,
+  BarChart as ChartIcon,
+  Save as SaveIcon,
+  Edit as EditIcon,
+  Drafts as DraftIcon,
+  NavigateNext as NavigateNextIcon,
+  Home as HomeIcon,
+  Upload as UploadIcon,
+  Delete as DeleteIcon,
+  Add as AddIcon,
+  Warning as WarningIcon,
+  Visibility as VisibilityIcon,
+  ThumbUp as KeepIcon,
+  Clear as RemoveIcon,
+  Schedule as ScheduleIcon,
+  ExpandMore as ExpandMoreIcon,
+} from '@mui/icons-material';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Cell,
+} from 'recharts';
+import { ParsedCsvData } from '../utils/csvParser';
+import { scheduleStorage } from '../services/scheduleStorage';
+
+interface TimePointData {
+  fromTimePoint: string;
+  toTimePoint: string;
+  timePeriod: string;
+  percentile50: number;
+  percentile80: number;
+  isOutlier?: boolean;
+  outlierType?: 'high' | 'low';
+  outlierDeviation?: number;
+}
+
+interface ChartData {
+  timePeriod: string;
+  totalTravelTime: number;
+  color: string;
+  timebandName: string;
+  hasOutliers: boolean;
+  outlierCount: number;
+  isDeleted: boolean;
+}
+
+interface TimeBand {
+  id: string;
+  name: string;
+  startTime: string;
+  endTime: string;
+  travelTimeMultiplier: number;
+  color: string;
+  description?: string;
+}
+
+interface TimeBandEditData {
+  name: string;
+  startTime: string;
+  endTime: string;
+  travelTimeMultiplier: number;
+  description: string;
+}
+
+const TimePoints: React.FC = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [timePointData, setTimePointData] = useState<TimePointData[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [scheduleId, setScheduleId] = useState<string | null>(null);
+  
+  // Draft management state
+  const [fileName, setFileName] = useState<string>('');
+  const [originalFileName, setOriginalFileName] = useState<string>('');
+  const [editNameDialogOpen, setEditNameDialogOpen] = useState(false);
+  const [tempFileName, setTempFileName] = useState<string>('');
+  const [saving, setSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [currentDraftId, setCurrentDraftId] = useState<string | null>(null);
+  
+  // Timeband management state
+  const [timeBands, setTimeBands] = useState<TimeBand[]>([]);
+  const [selectedTimeband, setSelectedTimeband] = useState<TimeBand | null>(null);
+  const [timebandEditDialogOpen, setTimebandEditDialogOpen] = useState(false);
+  const [timebandEditData, setTimebandEditData] = useState<TimeBandEditData>({
+    name: '',
+    startTime: '',
+    endTime: '',
+    travelTimeMultiplier: 1.0,
+    description: ''
+  });
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  
+  // Outlier management state
+  const [outliers, setOutliers] = useState<TimePointData[]>([]);
+  const [removedOutliers, setRemovedOutliers] = useState<Set<string>>(new Set());
+  const [outlierDialogOpen, setOutlierDialogOpen] = useState(false);
+  
+  // Service period deletion state
+  const [deletedPeriods, setDeletedPeriods] = useState<Set<string>>(new Set());
+  
+  // Detailed table collapse state
+  const [detailedTableExpanded, setDetailedTableExpanded] = useState(false);
+  
+  // Service period management state
+  const [selectedPeriod, setSelectedPeriod] = useState<ChartData | null>(null);
+  const [periodDialogOpen, setPeriodDialogOpen] = useState(false);
+
+  // Get data from location state (passed during navigation)
+  const { csvData, dayType, savedScheduleId } = location.state || {};
+
+  // Analyze travel time data and create data-driven service bands
+  const createDataDrivenTimebands = (timePointData: TimePointData[], excludeDeleted: boolean = true): TimeBand[] => {
+    if (timePointData.length === 0) return [];
+
+    // Group data by time period and calculate total travel times, excluding deleted periods if specified
+    const timePeriodsMap = new Map<string, number>();
+    timePointData.forEach(row => {
+      if (excludeDeleted && deletedPeriods.has(row.timePeriod)) return; // Skip deleted periods
+      const currentSum = timePeriodsMap.get(row.timePeriod) || 0;
+      timePeriodsMap.set(row.timePeriod, currentSum + row.percentile50);
+    });
+
+    // Convert to array and sort by travel time
+    const sortedPeriods = Array.from(timePeriodsMap.entries())
+      .map(([timePeriod, totalTravelTime]) => ({
+        timePeriod,
+        totalTravelTime: Math.round(totalTravelTime)
+      }))
+      .sort((a, b) => a.totalTravelTime - b.totalTravelTime);
+
+    if (sortedPeriods.length === 0) return [];
+
+    // Calculate percentile-based bands from travel time distribution
+    const travelTimes = sortedPeriods.map(p => p.totalTravelTime);
+    const bands: TimeBand[] = [];
+    const colors = ['#2e7d32', '#388e3c', '#f9a825', '#f57c00', '#d32f2f']; // Green to Red gradient with better yellow
+    const bandNames = ['Fastest Service', 'Fast Service', 'Standard Service', 'Slow Service', 'Slowest Service'];
+
+    if (travelTimes.length === 0) return bands;
+
+    // Calculate percentile thresholds based on travel time distribution
+    const getPercentile = (arr: number[], percentile: number): number => {
+      const sorted = [...arr].sort((a, b) => a - b);
+      const index = Math.ceil((percentile / 100) * sorted.length) - 1;
+      return sorted[Math.max(0, index)];
+    };
+
+    // Define percentile ranges for each band
+    const percentileRanges = [
+      { min: 0, max: 20 },     // Very Fast Service: 0-20th percentile
+      { min: 20, max: 40 },    // Fast Service: 20-40th percentile  
+      { min: 40, max: 60 },    // Standard Service: 40-60th percentile
+      { min: 60, max: 80 },    // Slow Service: 60-80th percentile
+      { min: 80, max: 100 }    // Very Slow Service: 80-100th percentile
+    ];
+
+    for (let i = 0; i < 5; i++) {
+      const range = percentileRanges[i];
+      const minThreshold = getPercentile(travelTimes, range.min);
+      const maxThreshold = getPercentile(travelTimes, range.max);
+      
+      // Find periods that fall within this percentile range
+      const bandPeriods = sortedPeriods.filter(p => 
+        p.totalTravelTime >= minThreshold && 
+        (i === 4 ? p.totalTravelTime <= maxThreshold : p.totalTravelTime < maxThreshold)
+      );
+      
+      if (bandPeriods.length === 0) continue;
+
+      // Find time range for this band
+      const allTimes = bandPeriods.map(p => p.timePeriod);
+      const startTimes = allTimes.map(t => t.split(' - ')[0]);
+      const endTimes = allTimes.map(t => t.split(' - ')[1]);
+      
+      // Find earliest start and latest end
+      const earliestStart = startTimes.sort()[0];
+      const latestEnd = endTimes.sort()[endTimes.length - 1];
+
+      // Calculate average travel time
+      const avgTravelTime = bandPeriods.reduce((sum, p) => sum + p.totalTravelTime, 0) / bandPeriods.length;
+
+      bands.push({
+        id: `band_${i + 1}`,
+        name: bandNames[i],
+        startTime: earliestStart,
+        endTime: latestEnd,
+        travelTimeMultiplier: 1.0, // Keep for interface compatibility but not used
+        color: colors[i],
+        description: `${bandPeriods.length} periods • Avg: ${Math.round(avgTravelTime)} min • Range: ${Math.min(...bandPeriods.map(p => p.totalTravelTime))}-${Math.max(...bandPeriods.map(p => p.totalTravelTime))} min • ${range.min}-${range.max}th percentile`
+      });
+    }
+
+    return bands;
+  };
+
+  // Detect outliers in travel time data
+  const detectOutliers = (data: TimePointData[]): TimePointData[] => {
+    if (data.length < 3) return data; // Need at least 3 items to have 2nd highest/lowest
+
+    // Sort by travel time to identify 2nd highest and 2nd lowest
+    const sortedByTime = [...data].sort((a, b) => a.percentile50 - b.percentile50);
+    const outlierThreshold = 0.1; // 10% threshold
+    
+    // Get 2nd lowest and 2nd highest values
+    const secondLowest = sortedByTime[1]; // Index 1 is 2nd lowest
+    const secondHighest = sortedByTime[sortedByTime.length - 2]; // Index -2 is 2nd highest
+    
+    return data.map(item => {
+      const itemTime = item.percentile50;
+      let deviation = 0;
+      let outlierType: 'high' | 'low' | undefined;
+      let isOutlier = false;
+      
+      // Check if this item is a high outlier (10% or more above 2nd highest)
+      if (itemTime > secondHighest.percentile50) {
+        deviation = ((itemTime - secondHighest.percentile50) / secondHighest.percentile50) * 100;
+        if (deviation >= outlierThreshold * 100) { // Convert 10% threshold to percentage
+          isOutlier = true;
+          outlierType = 'high';
+        }
+      }
+      // Check if this item is a low outlier (10% or more below 2nd lowest)
+      else if (itemTime < secondLowest.percentile50) {
+        deviation = ((secondLowest.percentile50 - itemTime) / secondLowest.percentile50) * 100;
+        if (deviation >= outlierThreshold * 100) { // Convert 10% threshold to percentage
+          isOutlier = true;
+          outlierType = 'low';
+        }
+      }
+      
+      return {
+        ...item,
+        isOutlier,
+        outlierType,
+        outlierDeviation: isOutlier ? deviation : undefined
+      };
+    });
+  };
+
+  useEffect(() => {
+    const loadTimePointData = async () => {
+      setLoading(true);
+      setError(null);
+
+      try {
+        let data: ParsedCsvData | null = null;
+        
+        // If we have csvData from navigation state, use it
+        if (csvData) {
+          data = csvData;
+          setScheduleId(savedScheduleId);
+        } 
+        // Otherwise try to load from storage if we have a scheduleId
+        else if (savedScheduleId) {
+          const schedule = scheduleStorage.getScheduleById(savedScheduleId);
+          if (schedule && schedule.data && 'timePoints' in schedule.data) {
+            data = schedule.data as ParsedCsvData;
+            setScheduleId(savedScheduleId);
+          }
+        }
+
+        // Set initial file name
+        if (savedScheduleId) {
+          const schedule = scheduleStorage.getScheduleById(savedScheduleId);
+          const name = schedule?.summarySchedule?.routeName || schedule?.fileName || 'Untitled Schedule';
+          setFileName(name);
+          setOriginalFileName(name);
+        } else {
+          const name = 'Draft Schedule';
+          setFileName(name);
+          setOriginalFileName(name);
+        }
+
+        if (!data) {
+          setError('No timepoint data available. Please upload a CSV file first.');
+          return;
+        }
+
+        // Convert CSV data to table format
+        const tableData: TimePointData[] = [];
+        
+        // Process each segment
+        data.segments.forEach(segment => {
+          const row: TimePointData = {
+            fromTimePoint: segment.fromLocation,
+            toTimePoint: segment.toLocation,
+            timePeriod: segment.timeSlot,
+            percentile50: segment.percentile50 || 0,
+            percentile80: segment.percentile80 || 0,
+          };
+          
+          tableData.push(row);
+        });
+
+        // Detect outliers in the data
+        const dataWithOutliers = detectOutliers(tableData);
+        setTimePointData(dataWithOutliers);
+        
+        // Identify and store outliers for user review
+        const foundOutliers = dataWithOutliers.filter(item => item.isOutlier);
+        setOutliers(foundOutliers);
+        
+        // Create data-driven timebands based on travel time analysis (excluding deleted periods)
+        const dataDrivenBands = createDataDrivenTimebands(dataWithOutliers, true);
+        setTimeBands(dataDrivenBands);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load timepoint data');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadTimePointData();
+  }, [csvData, dayType, savedScheduleId]);
+
+  // Recalculate timebands when deletedPeriods changes
+  useEffect(() => {
+    if (timePointData.length > 0) {
+      const recalculatedBands = createDataDrivenTimebands(timePointData, true);
+      setTimeBands(recalculatedBands);
+    }
+  }, [deletedPeriods, timePointData]);
+
+  const handleGoBack = () => {
+    navigate('/upload');
+  };
+
+  const handleGenerateSummary = () => {
+    navigate('/generate-summary');
+  };
+
+  const handleToggleDetailedTable = () => {
+    setDetailedTableExpanded(!detailedTableExpanded);
+  };
+
+  const handleEditFileName = () => {
+    setTempFileName(fileName);
+    setEditNameDialogOpen(true);
+  };
+
+  const handleFileNameSave = () => {
+    if (tempFileName.trim()) {
+      setFileName(tempFileName.trim());
+      setEditNameDialogOpen(false);
+    }
+  };
+
+  const handleFileNameCancel = () => {
+    setTempFileName('');
+    setEditNameDialogOpen(false);
+  };
+
+  const handleSaveDraft = async () => {
+    if (!csvData) {
+      setSaveError('No data available to save');
+      return;
+    }
+
+    setSaving(true);
+    setSaveError(null);
+
+    try {
+      const result = await scheduleStorage.saveDraftSchedule(
+        fileName,
+        'csv',
+        csvData,
+        {
+          validation: undefined,
+          summarySchedule: undefined,
+          processingStep: 'processed',
+          autoSaved: false,
+          existingId: currentDraftId || undefined
+        }
+      );
+
+      if (result.success && result.draftId) {
+        setCurrentDraftId(result.draftId);
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 3000);
+      } else {
+        setSaveError(result.error || 'Failed to save draft');
+      }
+    } catch (error) {
+      setSaveError('Failed to save draft');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleTimebandClick = (timeband: TimeBand) => {
+    setSelectedTimeband(timeband);
+    setTimebandEditData({
+      name: timeband.name,
+      startTime: timeband.startTime,
+      endTime: timeband.endTime,
+      travelTimeMultiplier: 1.0, // Keep for interface compatibility
+      description: timeband.description || ''
+    });
+    setTimebandEditDialogOpen(true);
+  };
+
+  const handleTimebandSave = () => {
+    if (!selectedTimeband) return;
+    
+    const updatedTimebands = timeBands.map(tb => 
+      tb.id === selectedTimeband.id
+        ? {
+            ...tb,
+            name: timebandEditData.name,
+            startTime: timebandEditData.startTime,
+            endTime: timebandEditData.endTime,
+            description: timebandEditData.description
+          }
+        : tb
+    );
+    
+    setTimeBands(updatedTimebands);
+    setTimebandEditDialogOpen(false);
+    setSelectedTimeband(null);
+  };
+
+  const handleTimebandCancel = () => {
+    setTimebandEditDialogOpen(false);
+    setSelectedTimeband(null);
+  };
+
+  const handleDeleteTimeband = () => {
+    if (!selectedTimeband) return;
+    
+    const updatedTimebands = timeBands.filter(tb => tb.id !== selectedTimeband.id);
+    setTimeBands(updatedTimebands);
+    setTimebandEditDialogOpen(false);
+    setDeleteConfirmOpen(false);
+    setSelectedTimeband(null);
+  };
+
+  const handleDeleteConfirm = () => {
+    setDeleteConfirmOpen(true);
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteConfirmOpen(false);
+  };
+
+  // Outlier management functions
+  const handleRemoveOutlier = (outlier: TimePointData) => {
+    const outlierKey = `${outlier.timePeriod}_${outlier.fromTimePoint}_${outlier.toTimePoint}`;
+    setRemovedOutliers(prev => {
+      const newSet = new Set(prev);
+      newSet.add(outlierKey);
+      return newSet;
+    });
+    
+    // Update the data to exclude this outlier
+    setTimePointData(prev => prev.filter(item => 
+      !(item.timePeriod === outlier.timePeriod && 
+        item.fromTimePoint === outlier.fromTimePoint && 
+        item.toTimePoint === outlier.toTimePoint)
+    ));
+    
+    // Update outliers list
+    setOutliers(prev => prev.filter(item => 
+      !(item.timePeriod === outlier.timePeriod && 
+        item.fromTimePoint === outlier.fromTimePoint && 
+        item.toTimePoint === outlier.toTimePoint)
+    ));
+  };
+
+  const handleKeepOutlier = (outlier: TimePointData) => {
+    // Mark outlier as accepted (remove from outliers list but keep in data)
+    setOutliers(prev => prev.filter(item => 
+      !(item.timePeriod === outlier.timePeriod && 
+        item.fromTimePoint === outlier.fromTimePoint && 
+        item.toTimePoint === outlier.toTimePoint)
+    ));
+    
+    // Update the data to mark this outlier as no longer flagged
+    setTimePointData(prev => prev.map(item => 
+      (item.timePeriod === outlier.timePeriod && 
+       item.fromTimePoint === outlier.fromTimePoint && 
+       item.toTimePoint === outlier.toTimePoint)
+        ? { ...item, isOutlier: false }
+        : item
+    ));
+  };
+
+  const handleViewOutliers = () => {
+    setOutlierDialogOpen(true);
+  };
+
+  // Service period deletion functions
+  const handleDeletePeriod = (timePeriod: string) => {
+    setDeletedPeriods(prev => {
+      const newSet = new Set(prev);
+      newSet.add(timePeriod);
+      return newSet;
+    });
+  };
+
+  const handleResetDeletions = () => {
+    setDeletedPeriods(new Set());
+  };
+
+  // Service period management functions
+  const handleChangePeriodTimeband = (timePeriod: string, newTimebandIndex: number) => {
+    // This would update the timeband assignment for a specific period
+    // For now, we'll show a notification that this is a future feature
+    console.log(`Change ${timePeriod} to timeband ${newTimebandIndex}`);
+  };
+
+  const handleRestorePeriod = (timePeriod: string) => {
+    setDeletedPeriods(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(timePeriod);
+      return newSet;
+    });
+    setPeriodDialogOpen(false);
+  };
+
+  const handleDeletePeriodFromDialog = (timePeriod: string) => {
+    handleDeletePeriod(timePeriod);
+    setPeriodDialogOpen(false);
+  };
+
+  const handleClosePeriodDialog = () => {
+    setPeriodDialogOpen(false);
+    setSelectedPeriod(null);
+  };
+
+  const formatTime = (minutes: number): string => {
+    if (minutes < 60) {
+      return `${minutes}min`;
+    }
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return mins > 0 ? `${hours}h ${mins}min` : `${hours}h`;
+  };
+
+  // Calculate chart data - sum of travel times by time period with timeband colors
+  const chartData = useMemo((): ChartData[] => {
+    if (timePointData.length === 0) return [];
+
+    const timePeriodsMap = new Map<string, number>();
+    const timePeriodsOutliersMap = new Map<string, { count: number; hasOutliers: boolean }>();
+    
+    timePointData.forEach(row => {
+      const currentSum = timePeriodsMap.get(row.timePeriod) || 0;
+      // Use 50th percentile as the primary travel time for summing
+      timePeriodsMap.set(row.timePeriod, currentSum + row.percentile50);
+
+      // Track outliers by time period
+      const outlierInfo = timePeriodsOutliersMap.get(row.timePeriod) || { count: 0, hasOutliers: false };
+      if (row.isOutlier) {
+        outlierInfo.count += 1;
+        outlierInfo.hasOutliers = true;
+      }
+      timePeriodsOutliersMap.set(row.timePeriod, outlierInfo);
+    });
+
+    // Separate deleted and active periods for band calculations
+    const activePeriods = Array.from(timePeriodsMap.entries())
+      .filter(([timePeriod]) => !deletedPeriods.has(timePeriod))
+      .map(([timePeriod, totalTravelTime]) => ({
+        timePeriod,
+        totalTravelTime: Math.round(totalTravelTime)
+      }))
+      .sort((a, b) => a.totalTravelTime - b.totalTravelTime);
+
+    // All periods including deleted ones
+    const allPeriods = Array.from(timePeriodsMap.entries())
+      .map(([timePeriod, totalTravelTime]) => ({
+        timePeriod,
+        totalTravelTime: Math.round(totalTravelTime),
+        isDeleted: deletedPeriods.has(timePeriod)
+      }));
+
+    // Assign bands based on travel time percentiles (only active periods)
+    const travelTimes = activePeriods.map(p => p.totalTravelTime);
+    const bandColors = ['#2e7d32', '#388e3c', '#f9a825', '#f57c00', '#d32f2f'];
+    const bandNames = ['Fastest Service', 'Fast Service', 'Standard Service', 'Slow Service', 'Slowest Service'];
+
+    // Calculate percentile thresholds
+    const getPercentile = (arr: number[], percentile: number): number => {
+      if (arr.length === 0) return 0;
+      const sorted = [...arr].sort((a, b) => a - b);
+      const index = Math.ceil((percentile / 100) * sorted.length) - 1;
+      return sorted[Math.max(0, index)];
+    };
+
+    const percentileThresholds = [
+      getPercentile(travelTimes, 20),  // 20th percentile
+      getPercentile(travelTimes, 40),  // 40th percentile
+      getPercentile(travelTimes, 60),  // 60th percentile
+      getPercentile(travelTimes, 80),  // 80th percentile
+    ];
+
+    return allPeriods.map((period) => {
+      const outlierInfo = timePeriodsOutliersMap.get(period.timePeriod) || { count: 0, hasOutliers: false };
+      
+      let color: string;
+      let timebandName: string;
+      
+      if (period.isDeleted) {
+        // Deleted periods get white fill
+        color = 'white';
+        timebandName = 'Deleted';
+      } else {
+        // Determine band based on percentile thresholds
+        let bandIndex = 4; // Default to slowest band
+        const travelTime = period.totalTravelTime;
+        
+        for (let i = 0; i < percentileThresholds.length; i++) {
+          if (travelTime < percentileThresholds[i]) {
+            bandIndex = i;
+            break;
+          }
+        }
+        
+        color = bandColors[bandIndex];
+        timebandName = bandNames[bandIndex];
+        
+        // Modify color for periods with outliers - darken the color
+        if (outlierInfo.hasOutliers) {
+          if (color.startsWith('#')) {
+            const darkened = parseInt(color.substring(1), 16);
+            const r = Math.max(0, ((darkened >> 16) & 0xFF) - 40);
+            const g = Math.max(0, ((darkened >> 8) & 0xFF) - 40);
+            const b = Math.max(0, (darkened & 0xFF) - 40);
+            color = `rgb(${r}, ${g}, ${b})`;
+          }
+        }
+      }
+      
+      return {
+        timePeriod: period.timePeriod,
+        totalTravelTime: period.totalTravelTime,
+        color: color,
+        timebandName: timebandName,
+        hasOutliers: outlierInfo.hasOutliers,
+        outlierCount: outlierInfo.count,
+        isDeleted: period.isDeleted
+      };
+    }).sort((a, b) => a.timePeriod.localeCompare(b.timePeriod));
+  }, [timePointData, deletedPeriods]);
+
+  // Custom tooltip for the chart
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      const data = payload[0].payload as ChartData;
+      const matchingTimeband = timeBands.find(tb => tb.name === data.timebandName);
+
+      return (
+        <Box
+          sx={{
+            backgroundColor: 'white',
+            border: '1px solid #ccc',
+            borderRadius: 1,
+            p: 1,
+            boxShadow: 1,
+          }}
+        >
+          <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'black' }}>
+            {label}
+          </Typography>
+          <Typography variant="body2" sx={{ color: 'black' }}>
+            Total Travel Time: {formatTime(payload[0].value)}
+          </Typography>
+          {matchingTimeband && (
+            <>
+              <Typography variant="body2" sx={{ color: 'black', fontWeight: 'bold' }}>
+                Timeband: {matchingTimeband.name}
+              </Typography>
+            </>
+          )}
+          {data.isDeleted && (
+            <>
+              <Typography variant="body2" sx={{ color: 'error.main', fontWeight: 'bold', mt: 1 }}>
+                🗑️ Deleted Period
+              </Typography>
+              <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.75rem' }}>
+                Click Reset Deletions to restore this period
+              </Typography>
+            </>
+          )}
+          {!data.isDeleted && data.hasOutliers && (
+            <>
+              <Typography variant="body2" sx={{ color: 'warning.main', fontWeight: 'bold', mt: 1 }}>
+                ⚠️ Contains {data.outlierCount} outlier{data.outlierCount !== 1 ? 's' : ''}
+              </Typography>
+              <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.75rem' }}>
+                Darker color indicates periods with outlier data
+              </Typography>
+            </>
+          )}
+        </Box>
+      );
+    }
+    return null;
+  };
+
+  // Custom bar click handler
+  const handleBarClick = (data: any, index: number) => {
+    const chartDataItem = chartData[index];
+    if (chartDataItem) {
+      setSelectedPeriod(chartDataItem);
+      setPeriodDialogOpen(true);
+    }
+  };
+
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  if (error) {
+    return (
+      <Box>
+        <Alert severity="error" sx={{ mb: 3 }}>
+          {error}
+        </Alert>
+        <Button
+          variant="outlined"
+          startIcon={<BackIcon />}
+          onClick={handleGoBack}
+        >
+          Back to Upload
+        </Button>
+      </Box>
+    );
+  }
+
+  return (
+    <Box>
+      {/* Breadcrumb Navigation */}
+      <Box sx={{ mb: 2 }}>
+        <Breadcrumbs separator={<NavigateNextIcon fontSize="small" />}>
+          <Link
+            component="button"
+            variant="body2"
+            onClick={() => navigate('/')}
+            sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'primary.main' }}
+          >
+            <HomeIcon sx={{ mr: 0.5, fontSize: 16 }} />
+            Dashboard
+          </Link>
+          <Link
+            component="button"
+            variant="body2"
+            onClick={() => navigate('/drafts')}
+            sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'primary.main' }}
+          >
+            <DraftIcon sx={{ mr: 0.5, fontSize: 16 }} />
+            Draft Schedules
+          </Link>
+          <Typography color="text.primary" variant="body2" sx={{ display: 'flex', alignItems: 'center' }}>
+            <TimelineIcon sx={{ mr: 0.5, fontSize: 16 }} />
+            Timepoint Page
+          </Typography>
+        </Breadcrumbs>
+      </Box>
+
+      <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+        <Button
+          variant="outlined"
+          startIcon={<BackIcon />}
+          onClick={handleGoBack}
+          sx={{ mr: 2 }}
+        >
+          Back to Upload
+        </Button>
+        <Box sx={{ flex: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
+            <Typography variant="h5" component="h1">
+              Timepoint Page
+            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <TextField
+                variant="outlined"
+                size="small"
+                value={fileName}
+                disabled
+                sx={{ minWidth: 200 }}
+              />
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<EditIcon />}
+                onClick={handleEditFileName}
+              >
+                Edit Name
+              </Button>
+              <Button
+                variant="contained"
+                startIcon={<SaveIcon />}
+                onClick={handleSaveDraft}
+                disabled={saving}
+                sx={{ ml: 1 }}
+              >
+                {saving ? 'Saving...' : 'Save to Drafts'}
+              </Button>
+              <Button
+                variant="contained"
+                color="secondary"
+                startIcon={<ScheduleIcon />}
+                onClick={handleGenerateSummary}
+                sx={{ ml: 1 }}
+              >
+                Generate Summary Schedule
+              </Button>
+            </Box>
+          </Box>
+          <Typography variant="subtitle1" color="text.secondary">
+            {dayType && (
+              <Chip 
+                label={dayType.charAt(0).toUpperCase() + dayType.slice(1)} 
+                color="primary" 
+                size="small"
+                sx={{ mr: 1 }}
+              />
+            )}
+            Review travel times between consecutive timepoints
+          </Typography>
+        </Box>
+      </Box>
+
+      <Card>
+        <CardContent>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+            {scheduleId && (
+              <Chip 
+                icon={<CheckIcon />}
+                label="Saved"
+                color="success" 
+                size="small"
+              />
+            )}
+          </Box>
+
+          {/* Bar Chart Section */}
+          {chartData.length > 0 && (
+            <Box sx={{ mb: 4 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                  <ChartIcon color="secondary" sx={{ mr: 1 }} />
+                  <Typography variant="h6" sx={{ color: 'black' }}>
+                    Total Travel Times by Time Period
+                  </Typography>
+                </Box>
+                {deletedPeriods.size > 0 && (
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={handleResetDeletions}
+                    sx={{ ml: 2 }}
+                  >
+                    Reset Deletions ({deletedPeriods.size})
+                  </Button>
+                )}
+              </Box>
+              <Box sx={{ mb: 2, p: 2, backgroundColor: 'info.50', borderRadius: 1 }}>
+                <Typography variant="body2" color="text.secondary">
+                  <strong>Interactive Chart:</strong> Click on any bar to manage that service period. 
+                  You can delete periods from analysis or change their timeband assignment. 
+                  Deleted periods appear as white bars with dashed borders and are excluded from timeband calculations.
+                </Typography>
+              </Box>
+              <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
+                <ResponsiveContainer width="100%" height={500}>
+                  <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis 
+                      dataKey="timePeriod" 
+                      angle={-45}
+                      textAnchor="end"
+                      height={80}
+                      tick={{ fontSize: 12, fill: 'black' }}
+                    />
+                    <YAxis 
+                      tick={{ fontSize: 12, fill: 'black' }}
+                      label={{ 
+                        value: 'Total Travel Time (minutes)', 
+                        angle: -90, 
+                        position: 'insideLeft',
+                        style: { textAnchor: 'middle', fill: 'black' }
+                      }}
+                    />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Bar 
+                      dataKey="totalTravelTime" 
+                      onClick={handleBarClick}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      {chartData.map((entry, index) => (
+                        <Cell 
+                          key={`cell-${index}`} 
+                          fill={entry.color}
+                          stroke={entry.isDeleted ? '#666' : 'none'}
+                          strokeWidth={entry.isDeleted ? 2 : 0}
+                          strokeDasharray={entry.isDeleted ? '5,5' : 'none'}
+                        />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </Paper>
+            </Box>
+          )}
+
+          {/* Outlier Detection Section */}
+          {outliers.length > 0 && (
+            <Box sx={{ mb: 4 }}>
+              <Alert 
+                severity="warning" 
+                sx={{ mb: 2 }}
+                action={
+                  <Button
+                    color="inherit"
+                    size="small"
+                    onClick={handleViewOutliers}
+                    startIcon={<VisibilityIcon />}
+                  >
+                    View All ({outliers.length})
+                  </Button>
+                }
+              >
+                <strong>{outliers.length} potential outlier{outliers.length !== 1 ? 's' : ''} detected!</strong> 
+                These trips deviate 10% or more from neighboring travel times. Review them to keep or remove.
+              </Alert>
+
+              {/* Outlier Summary Statistics */}
+              <Paper sx={{ p: 2, backgroundColor: 'warning.50', border: '1px solid', borderColor: 'warning.main' }}>
+                <Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <WarningIcon color="warning" />
+                  Outlier Summary Statistics
+                </Typography>
+                <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                  <Box>
+                    <Typography variant="body2" color="text.secondary">
+                      High Outliers (Unusually Slow)
+                    </Typography>
+                    <Typography variant="h6" color="error.main">
+                      {outliers.filter(o => o.outlierType === 'high').length}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="body2" color="text.secondary">
+                      Low Outliers (Unusually Fast)
+                    </Typography>
+                    <Typography variant="h6" color="warning.main">
+                      {outliers.filter(o => o.outlierType === 'low').length}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="body2" color="text.secondary">
+                      Average Deviation
+                    </Typography>
+                    <Typography variant="h6" color="text.primary">
+                      {outliers.length > 0 
+                        ? `${(outliers.reduce((sum, o) => sum + (o.outlierDeviation || 0), 0) / outliers.length).toFixed(1)}%`
+                        : '0%'
+                      }
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="body2" color="text.secondary">
+                      Max Deviation
+                    </Typography>
+                    <Typography variant="h6" color="error.main">
+                      {outliers.length > 0 
+                        ? `${Math.max(...outliers.map(o => o.outlierDeviation || 0)).toFixed(1)}%`
+                        : '0%'
+                      }
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="body2" color="text.secondary">
+                      Data Quality Impact
+                    </Typography>
+                    <Typography variant="h6" color="text.primary">
+                      {((outliers.length / timePointData.length) * 100).toFixed(1)}% of data
+                    </Typography>
+                  </Box>
+                </Box>
+                <Typography variant="body2" sx={{ mt: 2, fontStyle: 'italic', color: 'text.secondary' }}>
+                  <strong>Detection Method:</strong> Outliers are trips that deviate 10% or more from the 2nd highest or 2nd lowest travel times in your dataset. 
+                  Consider removing outliers with extreme deviations (&gt;20%) that may represent data collection errors or unusual operating conditions.
+                </Typography>
+              </Paper>
+            </Box>
+          )}
+
+          {/* Timepoint Travel Times by Service Band Table */}
+          {timeBands.length > 0 && (
+            <Box sx={{ mb: 4 }}>
+              <Typography variant="h6" sx={{ mb: 2, color: 'black' }}>
+                Timepoint Travel Times by Service Band
+              </Typography>
+              <TableContainer component={Paper} variant="outlined">
+                <Table sx={{ minWidth: 650 }}>
+                  <TableHead>
+                    <TableRow sx={{ backgroundColor: 'grey.50' }}>
+                      <TableCell sx={{ color: 'black', fontWeight: 'bold' }}>Route Segment</TableCell>
+                      {timeBands.map((band) => (
+                        <TableCell 
+                          key={band.id} 
+                          align="center" 
+                          sx={{ 
+                            color: 'white', 
+                            backgroundColor: band.color,
+                            fontWeight: 'bold',
+                            minWidth: 120
+                          }}
+                        >
+                          {band.name}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {(() => {
+                      // Get unique route segments (from-to pairs)
+                      const routeSegments = Array.from(new Set(
+                        timePointData.map(row => `${row.fromTimePoint}|${row.toTimePoint}`)
+                      )).map(segment => {
+                        const [from, to] = segment.split('|');
+                        return { from, to };
+                      });
+
+                      return routeSegments.map((segment, segmentIndex) => {
+                        return (
+                          <TableRow 
+                            key={segmentIndex}
+                            hover
+                            sx={{ '&:nth-of-type(odd)': { backgroundColor: 'action.hover' } }}
+                          >
+                            <TableCell component="th" scope="row">
+                              <Typography variant="body2" fontWeight="medium" sx={{ color: 'black' }}>
+                                {segment.from} → {segment.to}
+                              </Typography>
+                            </TableCell>
+                            {timeBands.map((band) => {
+                              // Calculate average travel time for this segment in this band
+                              const bandPeriods = new Set();
+                              
+                              // Get all periods that belong to this band (excluding deleted periods)
+                              chartData
+                                .filter(item => !item.isDeleted && item.timebandName === band.name)
+                                .forEach(item => bandPeriods.add(item.timePeriod));
+
+                              // Get travel times for this segment in these periods
+                              const segmentTimes = timePointData
+                                .filter(row => 
+                                  row.fromTimePoint === segment.from && 
+                                  row.toTimePoint === segment.to &&
+                                  bandPeriods.has(row.timePeriod)
+                                )
+                                .map(row => row.percentile50);
+
+                              const avgTime = segmentTimes.length > 0 
+                                ? Math.round(segmentTimes.reduce((sum, time) => sum + time, 0) / segmentTimes.length)
+                                : null;
+
+                              return (
+                                <TableCell 
+                                  key={band.id} 
+                                  align="center"
+                                  sx={{ 
+                                    backgroundColor: segmentTimes.length > 0 ? `${band.color}20` : 'grey.100',
+                                    border: `1px solid ${band.color}40`
+                                  }}
+                                >
+                                  {avgTime !== null ? (
+                                    <Typography 
+                                      variant="body2" 
+                                      fontWeight="bold" 
+                                      sx={{ color: band.color }}
+                                    >
+                                      {formatTime(avgTime)}
+                                    </Typography>
+                                  ) : (
+                                    <Typography variant="body2" sx={{ color: 'text.disabled' }}>
+                                      N/A
+                                    </Typography>
+                                  )}
+                                  {segmentTimes.length > 0 && (
+                                    <Typography 
+                                      variant="caption" 
+                                      display="block" 
+                                      sx={{ color: 'text.secondary' }}
+                                    >
+                                      ({segmentTimes.length} periods)
+                                    </Typography>
+                                  )}
+                                </TableCell>
+                              );
+                            })}
+                          </TableRow>
+                        );
+                      });
+                    })()}
+                    {/* Totals Row */}
+                    <TableRow sx={{ backgroundColor: 'grey.100', borderTop: '2px solid #ccc' }}>
+                      <TableCell component="th" scope="row">
+                        <Typography variant="body2" fontWeight="bold" sx={{ color: 'black' }}>
+                          Total Travel Time
+                        </Typography>
+                      </TableCell>
+                      {timeBands.map((band) => {
+                        // Calculate total travel time for this band across all segments
+                        const routeSegments = Array.from(new Set(
+                          timePointData.map(row => `${row.fromTimePoint}|${row.toTimePoint}`)
+                        )).map(segment => {
+                          const [from, to] = segment.split('|');
+                          return { from, to };
+                        });
+
+                        let totalBandTime = 0;
+                        let segmentsWithData = 0;
+
+                        routeSegments.forEach(segment => {
+                          const bandPeriods = new Set();
+                          
+                          // Get all periods that belong to this band (excluding deleted periods)
+                          chartData
+                            .filter(item => !item.isDeleted && item.timebandName === band.name)
+                            .forEach(item => bandPeriods.add(item.timePeriod));
+
+                          // Get travel times for this segment in these periods
+                          const segmentTimes = timePointData
+                            .filter(row => 
+                              row.fromTimePoint === segment.from && 
+                              row.toTimePoint === segment.to &&
+                              bandPeriods.has(row.timePeriod)
+                            )
+                            .map(row => row.percentile50);
+
+                          if (segmentTimes.length > 0) {
+                            const avgTime = segmentTimes.reduce((sum, time) => sum + time, 0) / segmentTimes.length;
+                            totalBandTime += avgTime;
+                            segmentsWithData++;
+                          }
+                        });
+
+                        return (
+                          <TableCell 
+                            key={band.id} 
+                            align="center"
+                            sx={{ 
+                              backgroundColor: 'grey.200',
+                              border: `2px solid ${band.color}`,
+                              fontWeight: 'bold'
+                            }}
+                          >
+                            {segmentsWithData > 0 ? (
+                              <Typography 
+                                variant="body1" 
+                                fontWeight="bold" 
+                                sx={{ color: band.color }}
+                              >
+                                {formatTime(Math.round(totalBandTime))}
+                              </Typography>
+                            ) : (
+                              <Typography variant="body2" sx={{ color: 'text.disabled', fontWeight: 'bold' }}>
+                                N/A
+                              </Typography>
+                            )}
+                          </TableCell>
+                        );
+                      })}
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </TableContainer>
+              <Box sx={{ mt: 2, p: 2, backgroundColor: 'info.50', borderRadius: 1 }}>
+                <Typography variant="body2" color="text.secondary">
+                  <strong>Travel Time Matrix:</strong> This table shows the average travel time for each route segment 
+                  within each service band. Travel times are calculated by averaging all trips for that segment during 
+                  the time periods assigned to each service band. "N/A" indicates no data available for that combination.
+                </Typography>
+              </Box>
+            </Box>
+          )}
+
+          {/* Detailed Travel Times Table */}
+          <Box sx={{ mb: 4 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+              <Typography variant="h6" sx={{ color: 'black', flex: 1 }}>
+                Detailed Travel Times by Time Period
+              </Typography>
+              <IconButton
+                onClick={handleToggleDetailedTable}
+                sx={{
+                  transform: detailedTableExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                  transition: 'transform 0.2s',
+                }}
+              >
+                <ExpandMoreIcon />
+              </IconButton>
+            </Box>
+            
+            <Collapse in={detailedTableExpanded}>
+              {timePointData.length === 0 ? (
+                <Alert severity="info">
+                  No timepoint data available for the selected day type.
+                </Alert>
+              ) : (
+                <TableContainer component={Paper} variant="outlined">
+                  <Table sx={{ minWidth: 650 }}>
+                    <TableHead>
+                      <TableRow sx={{ backgroundColor: 'grey.50' }}>
+                        <TableCell sx={{ color: 'black' }}><strong>From TimePoint</strong></TableCell>
+                        <TableCell sx={{ color: 'black' }}><strong>To TimePoint</strong></TableCell>
+                        <TableCell sx={{ color: 'black' }}><strong>Time Period</strong></TableCell>
+                        <TableCell align="right" sx={{ color: 'black' }}><strong>50th Percentile</strong></TableCell>
+                        <TableCell align="right" sx={{ color: 'black' }}><strong>80th Percentile</strong></TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {timePointData.map((row, index) => {
+                        const isOutlierRow = row.isOutlier && !removedOutliers.has(`${row.timePeriod}_${row.fromTimePoint}_${row.toTimePoint}`);
+                        
+                        return (
+                          <TableRow 
+                            key={index}
+                            hover
+                            sx={{ 
+                              '&:nth-of-type(odd)': { backgroundColor: 'action.hover' },
+                              ...(isOutlierRow && {
+                                backgroundColor: row.outlierType === 'high' ? 'error.50' : 'warning.50',
+                                border: '2px solid',
+                                borderColor: row.outlierType === 'high' ? 'error.main' : 'warning.main'
+                              })
+                            }}
+                          >
+                          <TableCell component="th" scope="row">
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              {isOutlierRow && (
+                                <WarningIcon 
+                                  color={row.outlierType === 'high' ? 'error' : 'warning'} 
+                                  fontSize="small"
+                                />
+                              )}
+                              <Typography variant="body2" fontWeight="medium" sx={{ color: 'black' }}>
+                                {row.fromTimePoint}
+                              </Typography>
+                            </Box>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2" fontWeight="medium" sx={{ color: 'black' }}>
+                              {row.toTimePoint}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Chip 
+                              label={row.timePeriod} 
+                              size="small" 
+                              variant="outlined"
+                              color="secondary"
+                              sx={{ color: 'black', borderColor: 'black' }}
+                            />
+                          </TableCell>
+                          <TableCell align="right">
+                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 1 }}>
+                              <Typography variant="body2" sx={{ color: 'black' }}>
+                                {formatTime(row.percentile50)}
+                              </Typography>
+                              {isOutlierRow && (
+                                <Chip 
+                                  label={`${row.outlierDeviation?.toFixed(1)}% ${row.outlierType}`}
+                                  size="small"
+                                  color={row.outlierType === 'high' ? 'error' : 'warning'}
+                                  variant="outlined"
+                                />
+                              )}
+                            </Box>
+                          </TableCell>
+                          <TableCell align="right">
+                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 1 }}>
+                              <Typography variant="body2" sx={{ color: 'black' }}>
+                                {formatTime(row.percentile80)}
+                              </Typography>
+                              {isOutlierRow && (
+                                <Box sx={{ display: 'flex', gap: 0.5 }}>
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    color="success"
+                                    onClick={() => handleKeepOutlier(row)}
+                                    startIcon={<KeepIcon />}
+                                    sx={{ minWidth: 'auto', px: 1 }}
+                                  >
+                                    Keep
+                                  </Button>
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    color="error"
+                                    onClick={() => handleRemoveOutlier(row)}
+                                    startIcon={<RemoveIcon />}
+                                    sx={{ minWidth: 'auto', px: 1 }}
+                                  >
+                                    Remove
+                                  </Button>
+                                </Box>
+                              )}
+                            </Box>
+                          </TableCell>
+                        </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+            </Collapse>
+          </Box>
+
+          <Box sx={{ mt: 3, p: 2, backgroundColor: 'info.50', borderRadius: 1 }}>
+            <Typography variant="body2" color="text.secondary">
+              <strong>Legend:</strong> 50th percentile represents typical travel time, 
+              80th percentile represents travel time including delays. 
+              Time bands show when this data was collected.
+            </Typography>
+          </Box>
+        </CardContent>
+      </Card>
+
+      {/* Edit File Name Dialog */}
+      <Dialog open={editNameDialogOpen} onClose={handleFileNameCancel}>
+        <DialogTitle>Edit File Name</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="File Name"
+            fullWidth
+            variant="outlined"
+            value={tempFileName}
+            onChange={(e) => setTempFileName(e.target.value)}
+            sx={{ mt: 2 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleFileNameCancel}>Cancel</Button>
+          <Button onClick={handleFileNameSave} variant="contained">
+            Save
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Success Snackbar */}
+      <Snackbar
+        open={saveSuccess}
+        autoHideDuration={3000}
+        onClose={() => setSaveSuccess(false)}
+      >
+        <Alert severity="success" sx={{ width: '100%' }}>
+          Draft saved successfully! You can find it in the Draft Schedules page.
+        </Alert>
+      </Snackbar>
+
+      {/* Error Snackbar */}
+      <Snackbar
+        open={!!saveError}
+        autoHideDuration={6000}
+        onClose={() => setSaveError(null)}
+      >
+        <Alert severity="error" sx={{ width: '100%' }}>
+          {saveError}
+        </Alert>
+      </Snackbar>
+
+      {/* Timeband Edit Dialog */}
+      <Dialog 
+        open={timebandEditDialogOpen} 
+        onClose={handleTimebandCancel}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          Edit Timeband: {selectedTimeband?.name}
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
+            <TextField
+              label="Name"
+              fullWidth
+              value={timebandEditData.name}
+              onChange={(e) => setTimebandEditData(prev => ({ ...prev, name: e.target.value }))}
+            />
+            <Box sx={{ display: 'flex', gap: 2 }}>
+              <TextField
+                label="Start Time"
+                type="time"
+                value={timebandEditData.startTime}
+                onChange={(e) => setTimebandEditData(prev => ({ ...prev, startTime: e.target.value }))}
+                InputLabelProps={{ shrink: true }}
+                inputProps={{ step: 300 }}
+                sx={{ flex: 1 }}
+              />
+              <TextField
+                label="End Time"
+                type="time"
+                value={timebandEditData.endTime}
+                onChange={(e) => setTimebandEditData(prev => ({ ...prev, endTime: e.target.value }))}
+                InputLabelProps={{ shrink: true }}
+                inputProps={{ step: 300 }}
+                sx={{ flex: 1 }}
+              />
+            </Box>
+            <TextField
+              label="Description"
+              fullWidth
+              multiline
+              rows={2}
+              value={timebandEditData.description}
+              onChange={(e) => setTimebandEditData(prev => ({ ...prev, description: e.target.value }))}
+              helperText="Optional description of this timeband"
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button 
+            onClick={handleDeleteConfirm} 
+            color="error"
+            startIcon={<DeleteIcon />}
+            disabled={timeBands.length <= 1}
+          >
+            Delete
+          </Button>
+          <Box sx={{ flex: 1 }} />
+          <Button onClick={handleTimebandCancel}>Cancel</Button>
+          <Button onClick={handleTimebandSave} variant="contained">
+            Save Changes
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteConfirmOpen} onClose={handleDeleteCancel}>
+        <DialogTitle>Delete Timeband</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to delete the timeband "{selectedTimeband?.name}"?
+            This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleDeleteCancel}>Cancel</Button>
+          <Button onClick={handleDeleteTimeband} color="error" variant="contained">
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Outlier Management Dialog */}
+      <Dialog 
+        open={outlierDialogOpen} 
+        onClose={() => setOutlierDialogOpen(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <WarningIcon color="warning" />
+            Outlier Management ({outliers.length} outliers found)
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+            These trips have travel times that deviate 10% or more from the 2nd highest or 2nd lowest travel times in your dataset.
+            Review each outlier and decide whether to keep or remove it from your analysis.
+          </Typography>
+          
+          {outliers.length === 0 ? (
+            <Alert severity="success">
+              All outliers have been reviewed! No outliers remaining.
+            </Alert>
+          ) : (
+            <TableContainer component={Paper} variant="outlined">
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell><strong>Route Segment</strong></TableCell>
+                    <TableCell><strong>Time Period</strong></TableCell>
+                    <TableCell align="right"><strong>Travel Time</strong></TableCell>
+                    <TableCell align="center"><strong>Deviation</strong></TableCell>
+                    <TableCell align="center"><strong>Actions</strong></TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {outliers.map((outlier, index) => (
+                    <TableRow 
+                      key={index}
+                      sx={{ 
+                        backgroundColor: outlier.outlierType === 'high' ? 'error.50' : 'warning.50'
+                      }}
+                    >
+                      <TableCell>
+                        <Typography variant="body2">
+                          {outlier.fromTimePoint} → {outlier.toTimePoint}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Chip 
+                          label={outlier.timePeriod} 
+                          size="small" 
+                          variant="outlined"
+                        />
+                      </TableCell>
+                      <TableCell align="right">
+                        <Typography variant="body2" fontWeight="bold">
+                          {formatTime(outlier.percentile50)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="center">
+                        <Chip 
+                          label={`${outlier.outlierDeviation?.toFixed(1)}% ${outlier.outlierType}`}
+                          size="small"
+                          color={outlier.outlierType === 'high' ? 'error' : 'warning'}
+                        />
+                      </TableCell>
+                      <TableCell align="center">
+                        <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            color="success"
+                            onClick={() => handleKeepOutlier(outlier)}
+                            startIcon={<KeepIcon />}
+                          >
+                            Keep
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            color="error"
+                            onClick={() => handleRemoveOutlier(outlier)}
+                            startIcon={<RemoveIcon />}
+                          >
+                            Remove
+                          </Button>
+                        </Box>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOutlierDialogOpen(false)}>
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Service Period Management Dialog */}
+      <Dialog 
+        open={periodDialogOpen} 
+        onClose={handleClosePeriodDialog}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <ChartIcon color="primary" />
+            Manage Service Period: {selectedPeriod?.timePeriod}
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          {selectedPeriod && (
+            <Box sx={{ mt: 2 }}>
+              {/* Period Information */}
+              <Box sx={{ mb: 3, p: 2, backgroundColor: 'grey.50', borderRadius: 1 }}>
+                <Typography variant="h6" gutterBottom>
+                  Period Information
+                </Typography>
+                <Typography variant="body2" color="text.secondary" gutterBottom>
+                  <strong>Time Period:</strong> {selectedPeriod.timePeriod}
+                </Typography>
+                <Typography variant="body2" color="text.secondary" gutterBottom>
+                  <strong>Total Travel Time:</strong> {formatTime(selectedPeriod.totalTravelTime)}
+                </Typography>
+                <Typography variant="body2" color="text.secondary" gutterBottom>
+                  <strong>Current Status:</strong> {selectedPeriod.isDeleted ? 
+                    <Chip label="Deleted" color="error" size="small" /> : 
+                    <Chip label={selectedPeriod.timebandName} sx={{ backgroundColor: selectedPeriod.color, color: 'white' }} size="small" />
+                  }
+                </Typography>
+                {selectedPeriod.hasOutliers && (
+                  <Typography variant="body2" color="warning.main" gutterBottom>
+                    <strong>⚠️ Contains {selectedPeriod.outlierCount} outlier{selectedPeriod.outlierCount !== 1 ? 's' : ''}</strong>
+                  </Typography>
+                )}
+              </Box>
+
+              {/* Action Buttons */}
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {selectedPeriod.isDeleted ? (
+                  <Button
+                    variant="contained"
+                    color="success"
+                    onClick={() => handleRestorePeriod(selectedPeriod.timePeriod)}
+                    startIcon={<AddIcon />}
+                    fullWidth
+                  >
+                    Restore Period to Analysis
+                  </Button>
+                ) : (
+                  <>
+                    <Typography variant="subtitle1" gutterBottom>
+                      <strong>Choose Action:</strong>
+                    </Typography>
+                    
+                    {/* Timeband Assignment Section */}
+                    <Box sx={{ p: 2, border: '1px solid', borderColor: 'grey.300', borderRadius: 1 }}>
+                      <Typography variant="body2" gutterBottom sx={{ fontWeight: 'medium' }}>
+                        Change Timeband Assignment
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
+                        Select a new timeband for this service period:
+                      </Typography>
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
+                        {['Fastest Service', 'Fast Service', 'Standard Service', 'Slow Service', 'Slowest Service'].map((bandName, index) => {
+                          const bandColor = ['#2e7d32', '#388e3c', '#f9a825', '#f57c00', '#d32f2f'][index];
+                          const isCurrentBand = selectedPeriod.timebandName === bandName;
+                          
+                          return (
+                            <Button
+                              key={bandName}
+                              variant={isCurrentBand ? "contained" : "outlined"}
+                              size="small"
+                              onClick={() => handleChangePeriodTimeband(selectedPeriod.timePeriod, index)}
+                              sx={{
+                                backgroundColor: isCurrentBand ? bandColor : 'transparent',
+                                borderColor: bandColor,
+                                color: isCurrentBand ? 'white' : bandColor,
+                                '&:hover': {
+                                  backgroundColor: bandColor,
+                                  color: 'white'
+                                }
+                              }}
+                            >
+                              {bandName}
+                            </Button>
+                          );
+                        })}
+                      </Box>
+                      <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1, fontStyle: 'italic' }}>
+                        Note: This feature is planned for future implementation
+                      </Typography>
+                    </Box>
+
+                    {/* Delete Option */}
+                    <Button
+                      variant="outlined"
+                      color="error"
+                      onClick={() => handleDeletePeriodFromDialog(selectedPeriod.timePeriod)}
+                      startIcon={<DeleteIcon />}
+                      fullWidth
+                    >
+                      Remove Period from Analysis
+                    </Button>
+                  </>
+                )}
+              </Box>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleClosePeriodDialog}>
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
+  );
+};
+
+export default TimePoints;

@@ -26,6 +26,8 @@ const Navigation: React.FC = () => {
   const navigationItems = [
     { path: '/', label: 'Dashboard', key: 'dashboard' },
     { path: '/upload', label: 'Upload Schedule', key: 'upload' },
+    { path: '/drafts', label: 'Draft Schedules', key: 'drafts' },
+    { path: '/generate', label: 'Generate Schedules', key: 'generate' },
     { path: '/schedules', label: 'View Schedules', key: 'schedules' },
     { path: '/routes', label: 'Manage Routes', key: 'routes' },
   ];
