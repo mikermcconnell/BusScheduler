@@ -298,13 +298,47 @@ const TimePoints: React.FC = () => {
             setScheduleId(savedScheduleId);
           }
         }
+        // If no data from navigation or specific ID, try to load the most recent draft
+        else {
+          const drafts = scheduleStorage.getAllDraftSchedules();
+          if (drafts.length > 0) {
+            // Sort by lastModified and get the most recent
+            const mostRecent = drafts.sort((a: any, b: any) => 
+              new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+            )[0];
+            
+            if (mostRecent.uploadedData && 'segments' in mostRecent.uploadedData) {
+              data = mostRecent.uploadedData as ParsedCsvData;
+              setScheduleId(mostRecent.id);
+            }
+          }
+        }
 
-        // Set initial file name
-        if (savedScheduleId) {
-          const schedule = scheduleStorage.getScheduleById(savedScheduleId);
-          const name = schedule?.summarySchedule?.routeName || schedule?.fileName || 'Untitled Schedule';
+        // Set initial file name based on the loaded data
+        let currentScheduleId = savedScheduleId;
+        if (!currentScheduleId && data) {
+          // If we loaded from most recent draft, use that schedule's ID
+          const drafts = scheduleStorage.getAllDraftSchedules();
+          if (drafts.length > 0) {
+            const mostRecent = drafts.sort((a: any, b: any) => 
+              new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+            )[0];
+            currentScheduleId = mostRecent.id;
+          }
+        }
+
+        if (currentScheduleId) {
+          // Try both regular schedules and draft schedules
+          const schedule = scheduleStorage.getScheduleById(currentScheduleId);
+          const draftSchedule = scheduleStorage.getDraftScheduleById(currentScheduleId);
+          
+          const name = schedule?.summarySchedule?.routeName || 
+                      schedule?.fileName || 
+                      draftSchedule?.fileName || 
+                      'Untitled Schedule';
           setFileName(name);
           setOriginalFileName(name);
+          setScheduleId(currentScheduleId);
         } else {
           const name = 'Draft Schedule';
           setFileName(name);
