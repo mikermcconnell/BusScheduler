@@ -4,7 +4,6 @@ import { Container, Box } from '@mui/material';
 import Navigation from './Navigation';
 import Dashboard from '../pages/Dashboard';
 import UploadSchedule from '../pages/UploadSchedule';
-import GenerateSchedules from '../pages/GenerateSchedules';
 import GenerateSummarySchedule from '../pages/GenerateSummarySchedule';
 import SummarySchedule from '../pages/SummarySchedule';
 import EditCSVSchedule from '../pages/EditCSVSchedule';
@@ -12,6 +11,9 @@ import ViewSchedules from '../pages/ViewSchedules';
 import ManageRoutes from '../pages/ManageRoutes';
 import DraftSchedules from '../pages/DraftSchedules';
 import TimePoints from '../pages/TimePoints';
+import BlockConfiguration from '../pages/BlockConfiguration';
+import BlockSummarySchedule from '../pages/BlockSummarySchedule';
+import TodShifts from '../pages/TodShifts';
 import NotFound from '../pages/NotFound';
 
 const Layout: React.FC = () => {
@@ -38,7 +40,6 @@ const Layout: React.FC = () => {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/upload" element={<UploadSchedule />} />
-            <Route path="/generate" element={<GenerateSchedules />} />
             <Route path="/generate-summary" element={<GenerateSummarySchedule />} />
             <Route path="/generate/edit/:scheduleId" element={<EditCSVSchedule />} />
             <Route path="/summary-schedule/:scheduleId" element={<SummarySchedule />} />
@@ -46,6 +47,9 @@ const Layout: React.FC = () => {
             <Route path="/schedules" element={<ViewSchedules />} />
             <Route path="/routes" element={<ManageRoutes />} />
             <Route path="/drafts/*" element={<DraftSchedules />} />
+            <Route path="/block-configuration" element={<BlockConfiguration />} />
+            <Route path="/block-summary-schedule" element={<BlockSummarySchedule />} />
+            <Route path="/tod-shifts" element={<TodShifts />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </Container>

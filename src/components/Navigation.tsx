@@ -27,7 +27,8 @@ const Navigation: React.FC = () => {
     { path: '/', label: 'Dashboard', key: 'dashboard' },
     { path: '/upload', label: 'Upload Schedule', key: 'upload' },
     { path: '/drafts', label: 'Draft Schedules', key: 'drafts' },
-    { path: '/generate', label: 'Generate Schedules', key: 'generate' },
+    { path: '/block-configuration', label: 'Block Configuration', key: 'block-configuration' },
+    { path: '/tod-shifts', label: 'Tod Shifts', key: 'tod-shifts' },
     { path: '/schedules', label: 'View Schedules', key: 'schedules' },
     { path: '/routes', label: 'Manage Routes', key: 'routes' },
   ];

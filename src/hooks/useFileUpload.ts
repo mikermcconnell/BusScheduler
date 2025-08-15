@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { ScheduleDataExtractor, ExtractionResult } from '../utils/dataExtractor';
+import { ScheduleDataExtractor } from '../utils/dataExtractor';
 import { ParsedExcelData } from '../utils/excelParser';
 import { ValidationResult } from '../utils/validator';
 import { sanitizeFileName as sanitizeFileNameUtil, sanitizeErrorMessage } from '../utils/inputSanitizer';
@@ -51,7 +51,7 @@ const MIN_FILE_SIZE = 10; // Reduced minimum for CSV files
 const ALLOWED_EXTENSIONS = ['.xlsx', '.xls', '.csv'] as const;
 const MAX_FILENAME_LENGTH = 255;
 const SUSPICIOUS_FILENAME_PATTERNS = [
-  /\.\.([\/\\]|%2f|%5c)/i, // Directory traversal
+  /\.\.([/\\]|%2f|%5c)/i, // Directory traversal
   /[<>:"|?*]/g, // Invalid filename characters
   /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i, // Windows reserved names
   /\.(exe|bat|cmd|scr|vbs|js|jar|com|pif)$/i // Executable extensions

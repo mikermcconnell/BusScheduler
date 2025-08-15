@@ -35,6 +35,8 @@ npx tsc --noEmit   # TypeScript compilation check
 7. **Draft Management** - Save and manage draft schedules with local storage
 8. **Timepoint Analysis** - Interactive travel time analysis with outlier detection
 9. **Service Band Visualization** - Data-driven service bands with interactive charts
+10. **Bus Block Configuration** - Advanced Duolingo-style interface for bus schedule management
+11. **Tod Shifts Management** - Bus operator shift scheduling with union rule compliance (Pending Feature)
 
 ### Project Structure
 ```
@@ -56,15 +58,34 @@ src/
 │   ├── TimePoints.tsx   # Interactive timepoint analysis with charts
 │   ├── GenerateSummarySchedule.tsx # Summary schedule generation
 │   ├── DraftSchedules.tsx # Draft schedule management
+│   ├── TodShifts.tsx    # Tod Shifts management placeholder page
 │   ├── ViewSchedules.tsx
 │   ├── ManageRoutes.tsx
 │   ├── GenerateSchedules.tsx # Schedule generation workflow
 │   ├── SummarySchedule.tsx # Professional schedule display
 │   ├── EditCSVSchedule.tsx # CSV schedule editing
+│   ├── BlockConfiguration.tsx # Bus block configuration with Duolingo-style UI
 │   └── NotFound.tsx
 ├── services/           # Business logic services
 │   ├── scheduleService.ts # Service layer orchestrating processing
 │   └── scheduleStorage.ts # Local storage management for drafts
+├── TodShifts/          # Tod Shifts management module (Pending Feature)
+│   ├── types/
+│   │   └── shift.types.ts # Shift and union rule type definitions
+│   ├── store/
+│   │   └── shiftManagementSlice.ts # Redux state management
+│   ├── utils/
+│   │   ├── unionRulesValidator.ts # Union compliance validation
+│   │   └── scheduleParser.ts # Master schedule file parsing
+│   ├── ManualShiftCreator.tsx # Manual shift creation form
+│   ├── ShiftManagementPage.tsx # Main shift management interface
+│   ├── MasterScheduleImport.tsx # Master schedule import component
+│   ├── UnionRulesConfiguration.tsx # Union rules configuration
+│   ├── ShiftGanttChart.tsx # Visual shift timeline
+│   ├── ShiftSummaryTable.tsx # Shift data table
+│   └── ShiftExport.tsx # Export functionality
+├── store/              # Global Redux store
+│   └── store.ts        # Store configuration with Tod Shifts
 ├── types/              # TypeScript type definitions
 │   ├── schedule.ts     # Core schedule types
 │   ├── excel.ts        # Excel-specific types
@@ -94,6 +115,13 @@ src/
 - `ExcelData`: Raw Excel file data structure
 - `FormatDetectionResult`: Detected format information
 - `DataExtractionResult`: Extracted and validated data
+
+### Tod Shifts Types (src/TodShifts/types/shift.types.ts)
+- `Shift`: Bus operator shift with times, zones, and compliance status
+- `MasterScheduleRequirement`: Required bus coverage by time slot and zone
+- `UnionRule`: Configurable union compliance rules (shift length, breaks, rest periods)
+- `UnionViolation`: Rule violation details with severity levels
+- `ShiftCoverage`: Coverage analysis comparing actual vs required staffing
 
 ## File Format Specifications
 
@@ -206,6 +234,12 @@ The application includes comprehensive security mitigations:
   - Outlier detection and management
   - Generate Summary Schedule navigation button
 - **Generate Summary Schedule** (`/generate-summary`) - Summary schedule creation
+- **Block Configuration** (`/block-configuration`) - Advanced bus block scheduling with Duolingo-style interface
+- **Tod Shifts** (`/tod-shifts`) - Bus operator shift management (Pending Feature)
+  - Features: Master schedule import, union rules configuration
+  - Manual shift creation with compliance validation
+  - Visual shift timeline and coverage analysis
+  - Export capabilities for shift data
 - **Draft Schedules** (`/drafts`) - Draft schedule management and storage
 - **View Schedules** (`/schedules`) - Saved schedule viewing
 - **Manage Routes** (`/routes`) - Route configuration
@@ -224,6 +258,128 @@ The application includes comprehensive security mitigations:
 4. Navigate to TimePoints page for analysis
 5. Review travel time data, manage outliers, configure service bands
 6. Generate summary schedule from processed data
+
+### Tod Shifts Features (Pending Implementation)
+The Tod Shifts management system provides comprehensive bus operator scheduling:
+
+**Core Functionality:**
+- **Master Schedule Import**: Upload CSV files defining required bus coverage by time slots and zones
+- **Union Rules Configuration**: Define and manage compliance rules for shift length, breaks, and rest periods
+- **Manual Shift Creation**: Create individual shifts with real-time union rule validation
+- **Visual Timeline**: Gantt chart visualization of all shifts across different time periods
+- **Coverage Analysis**: Compare actual shift coverage against master schedule requirements
+- **Compliance Monitoring**: Track union rule violations with warnings and error reporting
+- **Multi-Format Export**: Export shift data to CSV, Excel, and formatted reports
+
+**Data Structure:**
+- **Zones**: North, South, Floater coverage areas
+- **Schedule Types**: Weekday, Saturday, Sunday shift patterns  
+- **Shift Components**: Start/end times, breaks, meal periods, split shift support
+- **Validation**: Real-time compliance checking against configurable union rules
+- **State Management**: Redux-based state management with async operations
+
+**Current Status**: All backend models, Redux store, and component structure implemented. UI integration pending.
+
+## Bus Block Configuration System
+
+### Overview
+The Bus Block Configuration system provides an advanced, Duolingo-style interface for managing bus schedule generation with sophisticated automation features. Located at `/block-configuration`, it offers comprehensive control over bus blocks, cycle times, and frequency management.
+
+### Key Features
+
+#### 🎨 **Duolingo-Style UI Design**
+- **Rounded pill-shaped cards** with colorful gradients (green, orange, purple, blue, red)
+- **3D shadow effects** with interactive hover animations
+- **Modern typography** with bold, engaging fonts
+- **Smooth transitions** and scale animations throughout
+- **Playful color rotation** for visual engagement
+- **Responsive design** that adapts to all screen sizes
+
+#### ⚙️ **Advanced Configuration Options**
+- **Number of Buses**: Dynamic input (1-10) that creates/removes bus blocks automatically
+- **Cycle Time**: User-configurable cycle time in minutes (no restrictions)
+- **Service Frequency**: Auto-calculated display (Cycle Time ÷ Number of Buses)
+- **Automated Block Start Times**: Toggle-controlled automation system
+
+#### 🤖 **Intelligent Automation System**
+- **Toggle Control**: Default ON, easily switchable
+- **Block 1**: Always user-configurable (manual input)
+- **Blocks 2+**: Automatically calculated based on frequency intervals
+  - Block 2 = Block 1 start time + frequency
+  - Block 3 = Block 2 start time + frequency
+  - And so on...
+- **Visual Indicators**: Shows "(Auto)" for automated blocks
+- **Disabled State**: Automated blocks are grayed out and non-editable
+
+#### 📊 **Smart Schedule Generation**
+- **Block-Based Cycling**: Generates trips using proper cycle time logic
+- **Service Band Integration**: Applies appropriate service bands based on time periods
+- **Performance Protection**: Built-in safety limits prevent infinite loops
+  - Max 50 trips per block
+  - Max 500 total trips
+  - Max 1000 loop iterations
+- **Error Handling**: Comprehensive validation and user feedback
+
+### Technical Implementation
+
+#### **Core Types & Interfaces**
+```typescript
+interface BlockConfiguration {
+  blockNumber: number;
+  startTime: string;
+  endTime: string;
+}
+
+interface Schedule {
+  cycleTimeMinutes: number;
+  automateBlockStartTimes: boolean;
+  blockConfigurations: BlockConfiguration[];
+  // ... other properties
+}
+```
+
+#### **Key Functions**
+- `calculateAutomatedStartTime()`: Computes automated block start times
+- `generateTrips()`: Creates comprehensive trip schedules with safety limits
+- `timeToMinutes()` / `minutesToTime()`: Enhanced time utilities with bounds checking
+
+#### **Performance & Safety**
+- **Input Validation**: Comprehensive checks for all user inputs
+- **Circuit Breakers**: Prevents infinite loops and browser freezing
+- **Memory Protection**: Limits on trip generation and processing
+- **Error Recovery**: Graceful degradation with clear error messages
+
+### User Experience Flow
+
+1. **Configuration Setup**
+   - Set number of buses (creates dynamic block cards)
+   - Configure cycle time (unrestricted user input)
+   - View auto-calculated frequency display
+   - Toggle automation (default ON)
+
+2. **Block Management**
+   - Edit Block 1 start/end times (always manual)
+   - Automated blocks show calculated start times
+   - Visual feedback for automated vs manual blocks
+   - Real-time frequency updates
+
+3. **Schedule Generation**
+   - Click "Generate Schedule with Block-Based Cycling"
+   - System generates trips with proper spacing
+   - Switch to Schedule tab to view results
+   - Export capabilities available
+
+### Navigation Integration
+- **Access**: Dashboard → Draft Schedules → Timepoint Page → Block Configuration
+- **Breadcrumb Navigation**: Clear path showing current location
+- **Back Navigation**: Easy return to previous screens
+- **Context Preservation**: Maintains schedule data across navigation
+
+### Migration & Compatibility
+- **Backward Compatibility**: Existing schedules automatically upgraded
+- **Default Values**: New properties default to optimal settings
+- **localStorage Integration**: Preserves user preferences
+- **Type Safety**: Full TypeScript coverage with proper migrations
 
 ## Common Tasks
 
@@ -258,6 +414,9 @@ The application includes comprehensive security mitigations:
 2. **File upload failures**: Check security validation logs
 3. **Memory issues**: Review circuit breaker status and file size
 4. **Export problems**: Verify data format and browser compatibility
+5. **Block Configuration issues**: Check automation toggle state and cycle time values
+6. **Schedule generation problems**: Review console logs for safety limit warnings
+7. **Page unresponsive errors**: Indicate infinite loops - check trip generation safety limits
 
 ### Debug Information
 - Console logs include security validation details
@@ -273,6 +432,6 @@ The application includes comprehensive security mitigations:
 - Export functionality matching Excel format standards
 - Error handling and validation comprehensive
 
-**Last Updated**: August 11, 2025  
+**Last Updated**: August 15, 2025  
 **Security Level**: Production Ready with comprehensive protections  
-**MVP Status**: Complete and ready for deployment
+**MVP Status**: Complete and ready for deployment with advanced Bus Block Configuration system

@@ -46,7 +46,13 @@ const GenerateSchedules: React.FC = () => {
   ];
 
   const handleNext = () => {
-    setActiveStep((prevActiveStep) => prevActiveStep + 1);
+    const nextStep = activeStep + 1;
+    if (nextStep >= 3) {
+      // After generating schedule, navigate to Block Configuration page
+      navigate('/block-configuration');
+    } else {
+      setActiveStep(nextStep);
+    }
   };
 
   const handleBack = () => {

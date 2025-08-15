@@ -241,7 +241,7 @@ const SummaryScheduleGenerator: React.FC<SummaryScheduleGeneratorProps> = ({
     >
       <DialogTitle>
         <Typography variant="h6">
-          Generate Summary Schedule
+          Continue to Trip Details
         </Typography>
       </DialogTitle>
       

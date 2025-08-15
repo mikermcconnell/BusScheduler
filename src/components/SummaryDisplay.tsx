@@ -22,19 +22,16 @@ import {
   Alert,
   Grid,
   Divider,
-  IconButton,
   Collapse,
   CardContent
 } from '@mui/material';
 import {
   Download as DownloadIcon,
-  ExpandMore as ExpandMoreIcon,
   Timeline as TimelineIcon
 } from '@mui/icons-material';
 import { SummarySchedule, ScheduleStatistics } from '../types';
 import { CalculationResults } from '../utils/calculator';
 import {
-  SummaryDisplayData,
   SummaryFormatOptions,
   FormattedScheduleData,
   generateSummaryDisplayData,
@@ -62,13 +59,6 @@ interface SummaryDisplayProps {
   csvData?: ParsedCsvData;
 }
 
-interface DayTypeTabProps {
-  dayType: 'weekday' | 'saturday' | 'sunday';
-  label: string;
-  scheduleData: FormattedScheduleData;
-  isActive: boolean;
-  onClick: () => void;
-}
 
 interface ScheduleTableProps {
   scheduleData: FormattedScheduleData;
@@ -82,36 +72,6 @@ interface StatisticsCardProps {
   showAdvanced: boolean;
 }
 
-/**
- * Day type tab component
- */
-const DayTypeTab: React.FC<DayTypeTabProps> = ({ dayType, label, scheduleData, isActive, onClick }) => {
-  return (
-    <Button
-      variant={isActive ? "contained" : "outlined"}
-      color={isActive ? "primary" : "inherit"}
-      onClick={onClick}
-      sx={{
-        mr: 1,
-        borderRadius: '8px 8px 0 0',
-        textTransform: 'none',
-        fontWeight: 'medium'
-      }}
-      aria-selected={isActive}
-      role="tab"
-    >
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-        {label}
-        <Chip 
-          label={`${scheduleData.tripCount} trips`} 
-          size="small"
-          color={isActive ? "secondary" : "default"}
-          sx={{ fontSize: '0.75rem' }}
-        />
-      </Box>
-    </Button>
-  );
-};
 
 /**
  * Schedule table component

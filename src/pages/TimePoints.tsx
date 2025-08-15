@@ -400,7 +400,7 @@ const TimePoints: React.FC = () => {
   };
 
   const handleGenerateSummary = () => {
-    navigate('/generate-summary');
+    navigate('/block-configuration');
   };
 
   const handleToggleDetailedTable = () => {
@@ -882,7 +882,7 @@ const TimePoints: React.FC = () => {
                 onClick={handleGenerateSummary}
                 sx={{ ml: 1 }}
               >
-                Generate Summary Schedule
+                Continue to Trip Details
               </Button>
             </Box>
           </Box>

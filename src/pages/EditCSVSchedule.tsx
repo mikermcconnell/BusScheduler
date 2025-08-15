@@ -92,13 +92,6 @@ const EditCSVSchedule: React.FC = () => {
     setHasChanges(true);
   };
 
-  const handleCancelEdit = (tripId: string) => {
-    setTrips(prev => prev.map(trip => 
-      trip.id === tripId 
-        ? { ...trip, isEditing: false }
-        : trip
-    ));
-  };
 
   const handleDeleteTrip = (tripId: string) => {
     setTrips(prev => prev.filter(trip => trip.id !== tripId));
@@ -121,7 +114,8 @@ const EditCSVSchedule: React.FC = () => {
     // In a real implementation, this would save the changes
     alert('Schedule changes saved successfully!');
     setHasChanges(false);
-    navigate(`/summary-schedule/${scheduleId}`);
+    // Stay on current page instead of navigating to summary-schedule
+    console.log('Schedule changes saved successfully for schedule:', scheduleId);
   };
 
   if (isLoading) {

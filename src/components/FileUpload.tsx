@@ -33,7 +33,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragActive, setDragActive] = useState(false);
-  const { isLoading, error, extractedData, csvData, validation, fileName, qualityReport, fileType, uploadFile, clearFile } = useFileUpload();
+  const { isLoading, error, extractedData, fileName, uploadFile, clearFile } = useFileUpload();
 
   const handleFileSelect = async (file: File) => {
     const result = await uploadFile(file);
@@ -88,11 +88,6 @@ export const FileUpload: React.FC<FileUploadProps> = ({
     }
   };
 
-  const getFileSize = (size: number): string => {
-    return size > 1024 * 1024 
-      ? `${(size / (1024 * 1024)).toFixed(1)} MB`
-      : `${(size / 1024).toFixed(1)} KB`;
-  };
 
   return (
     <Box>

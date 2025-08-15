@@ -36,6 +36,8 @@ export interface ScheduleEntry {
   arrivalTime: string;
   /** Departure time in HH:MM format */
   departureTime: string;
+  /** Recovery time in minutes (bus waits at this timepoint) */
+  recoveryTime?: number;
 }
 
 /**
@@ -260,4 +262,100 @@ export interface TripDurationAnalysis {
     /** Fastest travel time period */
     fastestPeriod: string;
   };
+}
+
+/**
+ * Bus block represents a sequence of trips operated by a single bus
+ */
+export interface BusBlock {
+  /** Unique block identifier */
+  blockId: string;
+  /** Block start time in HH:MM format */
+  startTime: string;
+  /** Service band used for travel time calculations */
+  serviceBand: string;
+  /** Array of trips in this block */
+  trips: BlockTrip[];
+  /** Day type this block operates on */
+  dayType: 'weekday' | 'saturday' | 'sunday';
+  /** Total block duration in minutes */
+  totalDuration: number;
+  /** Physical bus block number for scheduling */
+  busBlockNumber?: number;
+}
+
+/**
+ * Individual trip within a bus block
+ */
+export interface BlockTrip {
+  /** Unique trip identifier */
+  tripId: string;
+  /** Trip departure time in HH:MM format */
+  departureTime: string;
+  /** Direction of travel */
+  direction: 'inbound' | 'outbound';
+  /** Schedule entries for all timepoints */
+  scheduleEntries: ScheduleEntry[];
+  /** Trip duration in minutes */
+  tripDuration: number;
+  /** Auto-detected service band for this trip */
+  detectedServiceBand: ServiceBand | null;
+  /** Time period this trip falls into */
+  timePeriod: string | null;
+}
+
+/**
+ * Service band configuration for travel time calculations
+ */
+export interface ServiceBand {
+  /** Unique service band identifier */
+  id: string;
+  /** Service band name (e.g., "Fastest Service") */
+  name: string;
+  /** Start time of this service band in HH:MM format */
+  startTime: string;
+  /** End time of this service band in HH:MM format */
+  endTime: string;
+  /** Travel time multiplier for this band */
+  travelTimeMultiplier: number;
+  /** Color for visual representation */
+  color: string;
+  /** Optional description */
+  description?: string;
+}
+
+/**
+ * Bus block creation parameters
+ */
+export interface BusBlockCreationParams {
+  /** Start time for the first trip in HH:MM format */
+  blockStartTime: string;
+  /** Service band to use for travel time calculations */
+  serviceBandId: string;
+  /** Day type for this block */
+  dayType: 'weekday' | 'saturday' | 'sunday';
+  /** Number of trips to generate in this block */
+  tripCount: number;
+  /** Frequency between trips in minutes */
+  frequency: number;
+  /** Array of timepoints for the route */
+  timePoints: TimePoint[];
+  /** Travel time data for timepoint-to-timepoint calculations */
+  travelTimeData: TimePointData[];
+}
+
+/**
+ * Travel time data structure for bus block calculations
+ */
+export interface TimePointData {
+  /** Starting timepoint name */
+  fromTimePoint: string;
+  /** Destination timepoint name */
+  toTimePoint: string;
+  /** Time period this data represents */
+  timePeriod: string;
+  /** 50th percentile travel time in minutes */
+  percentile50: number;
+  /** 80th percentile travel time in minutes */
+  percentile80: number;
 }

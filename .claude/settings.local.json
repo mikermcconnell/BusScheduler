@@ -22,8 +22,35 @@
       "Bash(rmdir:*)",
       "Bash(del package-lock.json)",
       "Bash(git restore:*)",
-      "Bash(timeout:*)"
+      "Bash(timeout:*)",
+      "Bash(set PORT=3002)",
+      "Bash($env:PORT=3002)",
+      "Bash(node:*)",
+      "Bash(del read_excel.js)",
+      "Bash(rm:*)",
+      "Bash(del \"C:\\Users\\Mike McConnell\\Documents\\mike_apps\\Scheduler2\\src\\pages\\GenerateSchedules.tsx\")",
+      "Bash(del \"C:\\Users\\Mike McConnell\\Documents\\mike_apps\\Scheduler2\\src\\pages\\SummarySchedule.tsx\")",
+      "Bash(del \"C:\\Users\\Mike McConnell\\Documents\\mike_apps\\Scheduler2\\src\\pages\\EditCSVSchedule.tsx\")",
+      "Bash(del \"C:\\Users\\Mike McConnell\\Documents\\mike_apps\\Scheduler2\\src\\components\\SummaryScheduleGenerator.tsx\")",
+      "Bash(del \"C:\\Users\\Mike McConnell\\Documents\\mike_apps\\Scheduler2\\src\\components\\ScheduleEditDialog.tsx\")",
+      "Bash(pkill:*)",
+      "Bash(true)",
+      "Bash(taskkill:*)",
+      "Bash(git ls-tree:*)",
+      "Bash(tasklist:*)",
+      "Bash(cross-env:*)",
+      "Bash(python:*)",
+      "Bash(move:*)",
+      "Bash(del \"C:\\Users\\Mike McConnell\\Documents\\mike_apps\\Scheduler2\\BusScheduler.tsx\")",
+      "Bash(set PORT=3051)",
+      "Bash(npm uninstall:*)",
+      "Bash(npm ls:*)",
+      "Bash(del /s /q node_modules)",
+      "Bash(mv:*)",
+      "Bash(npm start:*)",
+      "Bash(del nul)"
     ],
-    "deny": []
+    "deny": [],
+    "defaultMode": "acceptEdits"
   }
 }

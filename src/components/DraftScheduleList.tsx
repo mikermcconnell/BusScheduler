@@ -30,7 +30,6 @@ import {
   Schedule as ScheduleIcon,
   Upload as UploadIcon,
   AutoMode as AutoSaveIcon,
-  Person as ManualSaveIcon,
   Upgrade as PromoteIcon
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
