@@ -23,9 +23,12 @@ import {
   ArrowBack as BackIcon,
   Fullscreen as FullscreenIcon,
   Home as HomeIcon,
-  NavigateNext as NavigateNextIcon,
-  Sort as SortIcon
+  NavigateNext as NavigateNextIcon
 } from '@mui/icons-material';
+import { calculateTripTime } from '../utils/dateHelpers';
+
+// Service Band Types based on travel time data from TimePoints analysis
+export type ServiceBand = 'Fastest Service' | 'Fast Service' | 'Standard Service' | 'Slow Service' | 'Slowest Service';
 
 interface TimePoint {
   id: string;
@@ -33,8 +36,8 @@ interface TimePoint {
   sequence: number;
 }
 
-interface ServiceBand {
-  name: 'Fastest' | 'Fast' | 'Standard' | 'Slow' | 'Slowest';
+interface ServiceBandInfo {
+  name: ServiceBand;
   totalMinutes: number;
   color: string;
 }
@@ -43,10 +46,11 @@ interface Trip {
   tripNumber: number;
   blockNumber: number;
   departureTime: string;
+  serviceBand: ServiceBand;
   arrivalTimes: { [timePointId: string]: string };
   departureTimes: { [timePointId: string]: string };
   recoveryTimes: { [timePointId: string]: number };
-  serviceBand: ServiceBand['name'];
+  serviceBandInfo?: ServiceBandInfo;
   recoveryMinutes: number;
 }
 
@@ -54,20 +58,139 @@ interface Schedule {
   id: string;
   name: string;
   timePoints: TimePoint[];
-  serviceBands: ServiceBand[];
+  serviceBands: ServiceBandInfo[];
   trips: Trip[];
   updatedAt: string;
+  blockConfigurations?: BlockConfiguration[];
+  cycleTimeMinutes?: number;
+  // TimePoints data for service band mapping
+  timePointData?: TimePointData[];
 }
+
+// TimePoint data structure from TimePoints analysis
+interface TimePointData {
+  fromTimePoint: string;
+  toTimePoint: string;
+  timePeriod: string;
+  percentile50: number;
+  percentile80: number;
+  isOutlier?: boolean;
+  outlierType?: 'high' | 'low';
+  outlierDeviation?: number;
+}
+
+interface BlockConfiguration {
+  blockNumber: number;
+  startTime: string;
+  endTime: string;
+}
+
+/**
+ * Determines service band based on trip departure time using TimePoints analysis data
+ */
+const getServiceBand = (
+  timeString: string, 
+  timePointData: TimePointData[] = [], 
+  deletedPeriods: Set<string> = new Set()
+): ServiceBand => {
+  if (timePointData.length === 0) {
+    // Fallback to time-based logic if no TimePoints data available
+    const [hours] = timeString.split(':').map(Number);
+    if (hours >= 6 && hours < 9) return 'Fastest Service';
+    if (hours >= 9 && hours < 12) return 'Fast Service';
+    if (hours >= 12 && hours < 15) return 'Standard Service';
+    if (hours >= 15 && hours < 18) return 'Slow Service';
+    return 'Slowest Service';
+  }
+
+  // Find the time period that contains this trip time
+  const [tripHours, tripMinutes] = timeString.split(':').map(Number);
+  const tripTotalMinutes = tripHours * 60 + tripMinutes;
+  
+  // Find matching time period from TimePoints data
+  let matchingPeriod: string | null = null;
+  
+  for (const data of timePointData) {
+    const timePeriod = data.timePeriod;
+    const [startTime, endTime] = timePeriod.split(' - ');
+    const [startHours, startMins] = startTime.split(':').map(Number);
+    const [endHours, endMins] = endTime.split(':').map(Number);
+    
+    const startMinutes = startHours * 60 + startMins;
+    const endMinutes = endHours * 60 + endMins;
+    
+    if (tripTotalMinutes >= startMinutes && tripTotalMinutes < endMinutes) {
+      matchingPeriod = timePeriod;
+      break;
+    }
+  }
+  
+  if (!matchingPeriod) {
+    return 'Standard Service'; // Default fallback
+  }
+  
+  // Calculate service bands based on travel time percentiles (same logic as TimePoints page)
+  const timePeriodsMap = new Map<string, number>();
+  timePointData.forEach(row => {
+    if (deletedPeriods.has(row.timePeriod)) return;
+    const currentSum = timePeriodsMap.get(row.timePeriod) || 0;
+    timePeriodsMap.set(row.timePeriod, currentSum + row.percentile50);
+  });
+
+  const sortedPeriods = Array.from(timePeriodsMap.entries())
+    .map(([timePeriod, totalTravelTime]) => ({
+      timePeriod,
+      totalTravelTime: Math.round(totalTravelTime)
+    }))
+    .sort((a, b) => a.totalTravelTime - b.totalTravelTime);
+
+  const travelTimes = sortedPeriods.map(p => p.totalTravelTime);
+  
+  // Get the travel time for the matching period
+  const periodTravelTime = timePeriodsMap.get(matchingPeriod) || 0;
+  
+  // Calculate percentile thresholds
+  const getPercentile = (arr: number[], percentile: number): number => {
+    if (arr.length === 0) return 0;
+    const sorted = [...arr].sort((a, b) => a - b);
+    const index = Math.ceil((percentile / 100) * sorted.length) - 1;
+    return sorted[Math.max(0, index)];
+  };
+
+  const percentileThresholds = [
+    getPercentile(travelTimes, 20),  // 20th percentile
+    getPercentile(travelTimes, 40),  // 40th percentile
+    getPercentile(travelTimes, 60),  // 60th percentile
+    getPercentile(travelTimes, 80),  // 80th percentile
+  ];
+
+  // Determine band based on percentile thresholds
+  if (periodTravelTime < percentileThresholds[0]) return 'Fastest Service';
+  if (periodTravelTime < percentileThresholds[1]) return 'Fast Service';
+  if (periodTravelTime < percentileThresholds[2]) return 'Standard Service';
+  if (periodTravelTime < percentileThresholds[3]) return 'Slow Service';
+  return 'Slowest Service';
+};
+
+/**
+ * Gets color for service band (matching TimePoints page colors)
+ */
+const getServiceBandColor = (serviceBand: ServiceBand): string => {
+  switch (serviceBand) {
+    case 'Fastest Service': return '#2e7d32';  // Green
+    case 'Fast Service': return '#388e3c';     // Light Green
+    case 'Standard Service': return '#f9a825'; // Amber
+    case 'Slow Service': return '#f57c00';     // Orange  
+    case 'Slowest Service': return '#d32f2f';  // Red
+    default: return '#9b9b9b';
+  }
+};
 
 const BlockSummarySchedule: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const theme = useTheme();
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [scrollStart, setScrollStart] = useState({ left: 0, top: 0 });
-  const [sortByBlock, setSortByBlock] = useState(false);
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 50 });
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
@@ -80,71 +203,144 @@ const BlockSummarySchedule: React.FC = () => {
     updatedAt: new Date().toISOString()
   };
 
-  // Force time-based sorting on mount and log sorting
+  // Process trips to add service bands based on TimePoints data
   useEffect(() => {
-    console.log('Component mounted, forcing time-based sort');
-    setSortByBlock(false);
-    console.log('First 3 trips before sort:', schedule.trips.slice(0, 3).map(t => ({ trip: t.tripNumber, block: t.blockNumber, time: t.departureTime })));
-  }, [schedule.trips]);
+    if (schedule.trips.length > 0) {
+      // Update trips with service bands if not already present
+      const updatedTrips = schedule.trips.map(trip => ({
+        ...trip,
+        serviceBand: trip.serviceBand || getServiceBand(trip.departureTime, schedule.timePointData, new Set())
+      }));
+      
+      // Only update if we actually added service bands
+      if (updatedTrips.some(trip => !schedule.trips.find(t => t.tripNumber === trip.tripNumber)?.serviceBand)) {
+        // In a real app, we'd update the state/context here
+        // For now, we'll handle it in the processing logic below
+      }
+    }
+  }, [schedule.trips, schedule.timePointData]);
 
-  // Simplified trip row component for maximum performance
-  const TripRow = memo(({ trip, idx, isNewBlock, theme }: any) => {
-    const serviceBand = schedule.serviceBands.find(sb => sb.name === trip.serviceBand);
+  // New simplified trip row component
+  const TripRow = memo(({ trip, idx }: { trip: Trip; idx: number }) => {
+    const serviceBandColor = getServiceBandColor(trip.serviceBand);
+    
+    // Calculate trip time from first to last timepoint departure
+    const firstTimepointId = schedule.timePoints[0]?.id;
+    const lastTimepointId = schedule.timePoints[schedule.timePoints.length - 1]?.id;
+    const firstDepartureTime = firstTimepointId ? (trip.departureTimes[firstTimepointId] || trip.arrivalTimes[firstTimepointId]) : '';
+    const lastDepartureTime = lastTimepointId ? (trip.departureTimes[lastTimepointId] || trip.arrivalTimes[lastTimepointId]) : '';
+    const tripTime = calculateTripTime(firstDepartureTime || '', lastDepartureTime || '');
     
     return (
       <TableRow
         key={trip.tripNumber}
         sx={{
-          height: '24px',
-          borderTop: isNewBlock ? `2px solid ${theme.palette.primary.main}` : 'none',
-          '&:nth-of-type(odd)': { backgroundColor: '#f9f9f9' }
+          height: '48px',
+          backgroundColor: idx % 2 === 0 ? '#fafbfc' : '#ffffff',
+          transition: 'all 0.2s ease-in-out',
+          '&:hover': {
+            backgroundColor: '#e3f2fd',
+            transform: 'translateY(-1px)',
+            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
+            '& .MuiTableCell-root': {
+              fontWeight: '500'
+            }
+          }
         }}
       >
-        <TableCell sx={{ p: '2px', fontSize: '10px', textAlign: 'center', width: '35px' }}>
-          {sortByBlock && isNewBlock ? `B${trip.blockNumber}` : (!sortByBlock ? `B${trip.blockNumber}` : '')}
+        {/* Block Number */}
+        <TableCell sx={{ 
+          p: '12px', 
+          fontSize: '14px', 
+          textAlign: 'center', 
+          fontWeight: '600',
+          color: '#475569',
+          borderRight: '1px solid #e2e8f0',
+          minWidth: '80px'
+        }}>
+          {trip.blockNumber}
         </TableCell>
-        <TableCell sx={{ p: '2px', fontSize: '10px', textAlign: 'center', width: '35px', fontWeight: 'bold' }}>
+        
+        {/* Trip Number */}
+        <TableCell sx={{ 
+          p: '12px', 
+          fontSize: '16px', 
+          textAlign: 'center', 
+          fontWeight: 'bold',
+          color: theme.palette.primary.dark,
+          borderRight: '1px solid #e2e8f0',
+          minWidth: '80px'
+        }}>
           {trip.tripNumber}
         </TableCell>
-        <TableCell sx={{ p: '1px', textAlign: 'center', width: '45px' }}>
-          {serviceBand ? (
-            <div
-              style={{
-                width: '8px',
-                height: '8px',
-                borderRadius: '50%',
-                backgroundColor: serviceBand.color,
-                margin: '0 auto'
-              }}
-              title={serviceBand.name}
-            />
-          ) : '-'}
+        
+        {/* Service Band */}
+        <TableCell sx={{ 
+          p: '8px', 
+          textAlign: 'center',
+          borderRight: '1px solid #e2e8f0',
+          minWidth: '140px'
+        }}>
+          <Chip 
+            label={trip.serviceBand}
+            size="small"
+            sx={{
+              backgroundColor: `${serviceBandColor}20`,
+              color: serviceBandColor,
+              border: `1px solid ${serviceBandColor}40`,
+              fontWeight: '600',
+              fontSize: '0.75rem'
+            }}
+          />
         </TableCell>
-        {schedule.timePoints.map(tp => (
-          <React.Fragment key={tp.id}>
-            <TableCell sx={{ p: '1px', fontSize: '9px', textAlign: 'center' }}>
-              {trip.arrivalTimes[tp.id] || '-'}
-            </TableCell>
-            <TableCell sx={{ p: '1px', fontSize: '8px', textAlign: 'center', color: 'primary.main' }}>
-              {trip.recoveryTimes[tp.id] > 0 ? `+${trip.recoveryTimes[tp.id]}` : ''}
-            </TableCell>
-            <TableCell sx={{ 
-              p: '1px', 
-              fontSize: '9px', 
+        
+        {/* Time Points */}
+        {schedule.timePoints.map((tp, tpIndex) => (
+          <TableCell 
+            key={tp.id}
+            sx={{ 
+              p: '12px', 
+              fontSize: '13px', 
               textAlign: 'center',
-              fontWeight: trip.recoveryTimes[tp.id] > 0 ? 'bold' : 'normal'
-            }}>
-              {trip.departureTimes[tp.id] || '-'}
-            </TableCell>
-          </React.Fragment>
+              fontFamily: 'monospace',
+              fontWeight: '500',
+              color: '#334155',
+              borderRight: '1px solid #f1f5f9',
+              minWidth: '80px'
+            }}
+          >
+            {trip.departureTimes[tp.id] || trip.arrivalTimes[tp.id] || '-'}
+          </TableCell>
         ))}
+        
+        {/* Trip Time */}
+        <TableCell sx={{ 
+          p: '12px', 
+          fontSize: '13px', 
+          textAlign: 'center',
+          fontFamily: 'monospace',
+          fontWeight: '600',
+          color: '#1976d2',
+          backgroundColor: '#f3f7ff',
+          minWidth: '80px'
+        }}>
+          {tripTime}
+        </TableCell>
       </TableRow>
     );
   });
 
+  // Process trips to ensure they have service bands
+  const processedTrips = useMemo(() => {
+    return schedule.trips.map(trip => ({
+      ...trip,
+      serviceBand: trip.serviceBand || getServiceBand(trip.departureTime, schedule.timePointData, new Set())
+    }));
+  }, [schedule.trips, schedule.timePointData]);
+
   const blockStats = useMemo(() => {
     const blocks = new Map<number, Trip[]>();
-    schedule.trips.forEach(trip => {
+    processedTrips.forEach((trip: Trip) => {
       if (!blocks.has(trip.blockNumber)) {
         blocks.set(trip.blockNumber, []);
       }
@@ -154,57 +350,23 @@ const BlockSummarySchedule: React.FC = () => {
     return Array.from(blocks.entries()).map(([blockNum, trips]) => {
       const firstTrip = trips[0];
       const lastTrip = trips[trips.length - 1];
-      const lastArrival = Object.values(lastTrip.arrivalTimes).pop() || lastTrip.departureTime;
-      
-      const timeToMinutes = (timeStr: string): number => {
-        const [hours, minutes] = timeStr.split(':').map(Number);
-        return hours * 60 + minutes;
-      };
-      
-      const addMinutesToTime = (timeStr: string, minutesToAdd: number): string => {
-        const totalMinutes = timeToMinutes(timeStr) + minutesToAdd;
-        const hours = Math.floor(totalMinutes / 60);
-        const minutes = totalMinutes % 60;
-        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-      };
-      
-      const endTime = addMinutesToTime(lastArrival, lastTrip.recoveryMinutes);
-      const startMinutes = timeToMinutes(firstTrip.departureTime);
-      const endMinutes = timeToMinutes(endTime);
-      const duration = endMinutes - startMinutes;
       
       return {
         blockNumber: blockNum,
         tripCount: trips.length,
         startTime: firstTrip.departureTime,
-        endTime,
-        duration: `${Math.floor(duration / 60)}h ${duration % 60}m`
+        endTime: lastTrip.departureTime
       };
     });
-  }, [schedule.trips]);
+  }, [processedTrips]);
 
-  // Memoize column widths to prevent recalculation
-  const columnWidths = useMemo(() => {
-    const availableWidth = `calc((100% - 115px) / ${schedule.timePoints.length})`;
-    const cellWidth = `calc((100% - 115px) / ${schedule.timePoints.length} / 3)`;
-    return { availableWidth, cellWidth };
-  }, [schedule.timePoints.length]);
 
-  // ALWAYS sort by departure time (ignore block sorting for now)
+  // Sort trips by departure time
   const sortedTrips = useMemo(() => {
-    console.log('Force sorting by departure time - sortByBlock is:', sortByBlock);
-    
-    const sorted = [...schedule.trips].sort((a, b) => {
-      // Get first timepoint departure time for each trip
-      const firstTimePointId = schedule.timePoints[0]?.id;
-      const timeA = firstTimePointId ? (a.departureTimes[firstTimePointId] || a.departureTime) : a.departureTime;
-      const timeB = firstTimePointId ? (b.departureTimes[firstTimePointId] || b.departureTime) : b.departureTime;
-      return timeA.localeCompare(timeB);
+    return [...processedTrips].sort((a, b) => {
+      return a.departureTime.localeCompare(b.departureTime);
     });
-    
-    console.log('SORTED - First 5 trips:', sorted.slice(0, 5).map(t => ({ trip: t.tripNumber, block: t.blockNumber, time: t.departureTime })));
-    return sorted;
-  }, [schedule.trips, schedule.timePoints]);
+  }, [processedTrips]);
 
   // Get visible trips for virtualization
   const visibleTrips = useMemo(() => {
@@ -218,7 +380,7 @@ const BlockSummarySchedule: React.FC = () => {
     
     const container = e.target as HTMLDivElement;
     const scrollTop = container.scrollTop;
-    const rowHeight = 24; // Fixed row height
+    const rowHeight = 48; // Fixed row height - updated for larger design
     const containerHeight = container.clientHeight;
     
     const startIndex = Math.floor(scrollTop / rowHeight);
@@ -228,41 +390,6 @@ const BlockSummarySchedule: React.FC = () => {
     setVisibleRange({ start: startIndex, end: endIndex });
   }, [sortedTrips.length]);
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if (!tableContainerRef.current) return;
-    
-    setIsDragging(true);
-    setDragStart({ x: e.clientX, y: e.clientY });
-    setScrollStart({
-      left: tableContainerRef.current.scrollLeft,
-      top: tableContainerRef.current.scrollTop
-    });
-    
-    e.preventDefault();
-  }, []);
-
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!isDragging || !tableContainerRef.current) return;
-    
-    const deltaX = e.clientX - dragStart.x;
-    const deltaY = e.clientY - dragStart.y;
-    
-    // Use requestAnimationFrame to throttle scroll updates
-    requestAnimationFrame(() => {
-      if (tableContainerRef.current) {
-        tableContainerRef.current.scrollLeft = scrollStart.left - deltaX;
-        tableContainerRef.current.scrollTop = scrollStart.top - deltaY;
-      }
-    });
-  }, [isDragging, dragStart, scrollStart]);
-
-  const handleMouseUp = useCallback(() => {
-    setIsDragging(false);
-  }, []);
-
-  const handleMouseLeave = useCallback(() => {
-    setIsDragging(false);
-  }, []);
 
   const handleBack = () => {
     navigate(-1);
@@ -270,7 +397,7 @@ const BlockSummarySchedule: React.FC = () => {
 
   if (schedule.trips.length === 0) {
     return (
-      <Container maxWidth="lg">
+      <Container maxWidth={false} sx={{ px: 3 }}>
           <Box sx={{ py: 4 }}>
             <Breadcrumbs separator={<NavigateNextIcon fontSize="small" />} sx={{ mb: 3 }}>
               <Link 
@@ -333,7 +460,7 @@ const BlockSummarySchedule: React.FC = () => {
 
   return (
     <>
-      <Container maxWidth="xl">
+      <Container maxWidth={false} sx={{ px: 3 }}>
         <Box sx={{ py: 4 }}>
           <Breadcrumbs separator={<NavigateNextIcon fontSize="small" />} sx={{ mb: 3 }}>
             <Link 
@@ -375,26 +502,15 @@ const BlockSummarySchedule: React.FC = () => {
           <Card elevation={2}>
             <CardContent sx={{ p: 4 }}>
               <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-                <Typography variant="h5" fontWeight="bold">
-                  Summary Schedule (SORTED BY TIME - First trip: {sortedTrips[0]?.tripNumber} at {sortedTrips[0]?.departureTime})
+                <Typography variant="h4" fontWeight="bold">
+                  Summary Schedule
                 </Typography>
                 <Box display="flex" alignItems="center" gap={2}>
                   <Chip 
-                    label={`${schedule.trips.length} trips • ${blockStats.length} bus blocks`}
+                    label={`${sortedTrips.length} trips • ${blockStats.length} bus blocks`}
                     color="primary"
                     size="medium"
                   />
-                  {/* Temporarily hidden - sorting by time only
-                  <Button
-                    variant={sortByBlock ? "contained" : "outlined"}
-                    startIcon={<SortIcon />}
-                    onClick={() => setSortByBlock(!sortByBlock)}
-                    size="small"
-                    sx={{ backgroundColor: sortByBlock ? 'primary.main' : 'warning.main', color: 'white' }}
-                  >
-                    {sortByBlock ? "BY BLOCK" : "BY TIME"}
-                  </Button>
-                  */}
                   <Button
                     variant="outlined"
                     startIcon={<FullscreenIcon />}
@@ -418,176 +534,138 @@ const BlockSummarySchedule: React.FC = () => {
                 component={Paper} 
                 variant="outlined"
                 ref={tableContainerRef}
-                onMouseDown={handleMouseDown}
-                onMouseMove={handleMouseMove}
-                onMouseUp={handleMouseUp}
-                onMouseLeave={handleMouseLeave}
                 onScroll={handleScroll}
                 sx={{ 
                   width: '100%', 
-                  height: schedule.trips.length > 20 ? '600px' : '500px',
+                  height: sortedTrips.length > 20 ? '650px' : '550px',
                   overflowX: 'auto',
                   overflowY: 'auto',
-                  cursor: isDragging ? 'grabbing' : 'grab',
-                  userSelect: 'none',
-                  position: 'relative'
+                  position: 'relative',
+                  borderRadius: '8px',
+                  border: '1px solid #e2e8f0',
+                  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.05)',
+                  '&:hover': {
+                    boxShadow: '0 6px 20px rgba(0, 0, 0, 0.08)'
+                  }
                 }}
               >
                 <Table size="small" sx={{ 
                   width: '100%',
-                  tableLayout: 'fixed'
+                  minWidth: '600px',
+                  '& .MuiTableRow-root': {
+                    borderBottom: '1px solid #f1f5f9'
+                  }
                 }}>
                   <TableHead sx={{ 
                     position: 'sticky',
                     top: 0,
                     zIndex: 10,
-                    backgroundColor: 'white'
+                    backgroundColor: 'white',
+                    '&::after': {
+                      content: '""',
+                      position: 'absolute',
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      height: '2px',
+                      background: 'linear-gradient(90deg, #1976d2 0%, #42a5f5 100%)'
+                    }
                   }}>
                     <TableRow sx={{ 
-                      backgroundColor: 'grey.50',
+                      background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
                       '& .MuiTableCell-root': {
                         position: 'sticky',
                         top: 0,
-                        backgroundColor: 'grey.50',
-                        zIndex: 10
+                        background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
+                        zIndex: 10,
+                        borderBottom: '2px solid #cbd5e1',
+                        color: '#1e293b',
+                        fontWeight: '700',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                        padding: '16px 12px',
+                        fontSize: '0.85rem'
                       }
                     }}>
-                      <TableCell rowSpan={2} sx={{ 
-                        verticalAlign: 'middle',
-                        fontWeight: 'bold',
-                        padding: '2px 1px',
-                        fontSize: '0.6rem',
-                        width: '35px',
+                      {/* Block Number Column */}
+                      <TableCell sx={{ 
                         textAlign: 'center',
-                        position: 'sticky',
-                        top: 0,
-                        backgroundColor: 'grey.50',
-                        zIndex: 10
-                      }}>Blk</TableCell>
-                      <TableCell rowSpan={2} sx={{ 
-                        verticalAlign: 'middle',
-                        fontWeight: 'bold',
-                        padding: '2px 1px',
-                        fontSize: '0.6rem',
-                        width: '35px',
+                        minWidth: '80px',
+                        borderRight: '1px solid #cbd5e1'
+                      }}>
+                        Block Number
+                      </TableCell>
+                      
+                      {/* Trip Number Column */}
+                      <TableCell sx={{ 
                         textAlign: 'center',
-                        position: 'sticky',
-                        top: 0,
-                        backgroundColor: 'grey.50',
-                        zIndex: 10
-                      }}>Trip</TableCell>
-                      <TableCell rowSpan={2} sx={{ 
-                        verticalAlign: 'middle',
-                        fontWeight: 'bold',
-                        padding: '2px 1px',
-                        fontSize: '0.6rem',
-                        width: '45px',
+                        minWidth: '80px',
+                        borderRight: '1px solid #cbd5e1'
+                      }}>
+                        Trip Number
+                      </TableCell>
+                      
+                      {/* Service Band Column */}
+                      <TableCell sx={{ 
                         textAlign: 'center',
-                        position: 'sticky',
-                        top: 0,
-                        backgroundColor: 'grey.50',
-                        zIndex: 10
-                      }}>Svc</TableCell>
-                      {schedule.timePoints.map(tp => (
+                        minWidth: '140px',
+                        borderRight: '1px solid #cbd5e1'
+                      }}>
+                        Service Band
+                      </TableCell>
+                      
+                      {/* Time Points */}
+                      {schedule.timePoints.map((tp, index) => (
                         <TableCell 
-                          key={tp.id} 
-                          colSpan={3} 
-                          align="center"
+                          key={tp.id}
                           sx={{ 
-                            borderBottom: '1px solid #e0e0e0',
-                            fontWeight: 'bold',
-                            padding: '2px 1px',
-                            fontSize: '0.55rem',
-                            width: columnWidths.availableWidth,
-                            maxWidth: columnWidths.availableWidth,
+                            textAlign: 'center',
+                            borderRight: '1px solid #cbd5e1',
+                            minWidth: '100px',
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                            position: 'sticky',
-                            top: 0,
-                            backgroundColor: 'grey.50',
-                            zIndex: 10
+                            whiteSpace: 'nowrap'
                           }}
                           title={tp.name}
                         >
-                          {tp.name.length > 8 ? tp.name.substring(0, 6) + '..' : tp.name}
+                          {tp.name}
                         </TableCell>
                       ))}
-                    </TableRow>
-                    <TableRow sx={{ 
-                      backgroundColor: 'grey.50',
-                      '& .MuiTableCell-root': {
-                        position: 'sticky',
-                        top: '32px',
-                        backgroundColor: 'grey.50',
-                        zIndex: 9
-                      }
-                    }}>
-                      {schedule.timePoints.map(tp => (
-                        <React.Fragment key={tp.id}>
-                          <TableCell align="center" sx={{ 
-                            fontSize: '0.5rem', 
-                            color: 'text.secondary',
-                            padding: '1px',
-                            position: 'sticky',
-                            top: '32px',
-                            backgroundColor: 'grey.50',
-                            zIndex: 9
-                          }}>
-                            Arr
-                          </TableCell>
-                          <TableCell align="center" sx={{ 
-                            fontSize: '0.5rem', 
-                            color: 'text.secondary',
-                            padding: '1px',
-                            position: 'sticky',
-                            top: '32px',
-                            backgroundColor: 'grey.50',
-                            zIndex: 9
-                          }}>
-                            Rec
-                          </TableCell>
-                          <TableCell align="center" sx={{ 
-                            fontSize: '0.5rem', 
-                            color: 'text.secondary',
-                            padding: '1px',
-                            position: 'sticky',
-                            top: '32px',
-                            backgroundColor: 'grey.50',
-                            zIndex: 9
-                          }}>
-                            Dep
-                          </TableCell>
-                        </React.Fragment>
-                      ))}
+                      
+                      {/* Trip Time Column */}
+                      <TableCell sx={{ 
+                        textAlign: 'center',
+                        minWidth: '100px',
+                        backgroundColor: '#f3f7ff',
+                        fontWeight: '800'
+                      }}>
+                        Trip Time
+                      </TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
                     {/* Add spacer for virtualization offset */}
                     {sortedTrips.length > 50 && visibleRange.start > 0 && (
-                      <TableRow sx={{ height: `${visibleRange.start * 24}px` }}>
-                        <TableCell colSpan={3 + schedule.timePoints.length * 3} sx={{ p: 0, border: 'none' }} />
+                      <TableRow sx={{ height: `${visibleRange.start * 48}px` }}>
+                            <TableCell colSpan={4 + schedule.timePoints.length} sx={{ p: 0, border: 'none' }} />
                       </TableRow>
                     )}
                     
                     {visibleTrips.map((trip, idx) => {
                       const originalIdx = sortedTrips.length > 50 ? visibleRange.start + idx : idx;
-                      const isNewBlock = sortByBlock && (originalIdx === 0 || trip.blockNumber !== sortedTrips[originalIdx - 1]?.blockNumber);
                       return (
                         <TripRow
                           key={trip.tripNumber}
                           trip={trip}
                           idx={originalIdx}
-                          isNewBlock={isNewBlock}
-                          theme={theme}
                         />
                       );
                     })}
                     
                     {/* Add spacer for remaining items */}
                     {sortedTrips.length > 50 && visibleRange.end < sortedTrips.length && (
-                      <TableRow sx={{ height: `${(sortedTrips.length - visibleRange.end) * 24}px` }}>
-                        <TableCell colSpan={3 + schedule.timePoints.length * 3} sx={{ p: 0, border: 'none' }} />
+                      <TableRow sx={{ height: `${(sortedTrips.length - visibleRange.end) * 48}px` }}>
+                            <TableCell colSpan={4 + schedule.timePoints.length} sx={{ p: 0, border: 'none' }} />
                       </TableRow>
                     )}
                   </TableBody>
@@ -623,7 +701,7 @@ const BlockSummarySchedule: React.FC = () => {
             alignItems: 'center'
           }}>
             <Typography variant="h5">
-              Summary Schedule - Full Screen ({schedule.trips.length} trips)
+              Summary Schedule - Full Screen ({sortedTrips.length} trips)
             </Typography>
             <Button onClick={() => setIsFullscreen(false)} variant="outlined">
               Close
@@ -645,158 +723,120 @@ const BlockSummarySchedule: React.FC = () => {
             >
               <Table size="small" sx={{ 
                 width: '100%',
-                tableLayout: 'fixed'
+                minWidth: '600px',
+                '& .MuiTableRow-root': {
+                  borderBottom: '1px solid #f1f5f9'
+                }
               }}>
                 <TableHead sx={{ 
                   position: 'sticky',
                   top: 0,
                   zIndex: 10,
-                  backgroundColor: 'white'
+                  backgroundColor: 'white',
+                  '&::after': {
+                    content: '""',
+                    position: 'absolute',
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    height: '2px',
+                    background: 'linear-gradient(90deg, #1976d2 0%, #42a5f5 100%)'
+                  }
                 }}>
                   <TableRow sx={{ 
-                    backgroundColor: 'grey.50',
+                    background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
                     '& .MuiTableCell-root': {
                       position: 'sticky',
                       top: 0,
-                      backgroundColor: 'grey.50',
-                      zIndex: 10
+                      background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
+                      zIndex: 10,
+                      borderBottom: '2px solid #cbd5e1',
+                      color: '#1e293b',
+                      fontWeight: '700',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
+                      padding: '16px 12px',
+                      fontSize: '0.85rem'
                     }
                   }}>
-                    <TableCell rowSpan={2} sx={{ 
-                      verticalAlign: 'middle',
-                      fontWeight: 'bold',
-                      padding: '2px 1px',
-                      fontSize: '0.6rem',
-                      width: '35px',
+                    {/* Block Number Column */}
+                    <TableCell sx={{ 
                       textAlign: 'center',
-                      position: 'sticky',
-                      top: 0,
-                      backgroundColor: 'grey.50',
-                      zIndex: 10
-                    }}>Blk</TableCell>
-                    <TableCell rowSpan={2} sx={{ 
-                      verticalAlign: 'middle',
-                      fontWeight: 'bold',
-                      padding: '2px 1px',
-                      fontSize: '0.6rem',
-                      width: '35px',
+                      minWidth: '80px',
+                      borderRight: '1px solid #cbd5e1'
+                    }}>
+                      Block Number
+                    </TableCell>
+                    
+                    {/* Trip Number Column */}
+                    <TableCell sx={{ 
                       textAlign: 'center',
-                      position: 'sticky',
-                      top: 0,
-                      backgroundColor: 'grey.50',
-                      zIndex: 10
-                    }}>Trip</TableCell>
-                    <TableCell rowSpan={2} sx={{ 
-                      verticalAlign: 'middle',
-                      fontWeight: 'bold',
-                      padding: '2px 1px',
-                      fontSize: '0.6rem',
-                      width: '45px',
+                      minWidth: '80px',
+                      borderRight: '1px solid #cbd5e1'
+                    }}>
+                      Trip Number
+                    </TableCell>
+                    
+                    {/* Service Band Column */}
+                    <TableCell sx={{ 
                       textAlign: 'center',
-                      position: 'sticky',
-                      top: 0,
-                      backgroundColor: 'grey.50',
-                      zIndex: 10
-                    }}>Svc</TableCell>
-                    {schedule.timePoints.map(tp => (
+                      minWidth: '140px',
+                      borderRight: '1px solid #cbd5e1'
+                    }}>
+                      Service Band
+                    </TableCell>
+                    
+                    {/* Time Points */}
+                    {schedule.timePoints.map((tp, index) => (
                       <TableCell 
-                        key={tp.id} 
-                        colSpan={3} 
-                        align="center"
+                        key={tp.id}
                         sx={{ 
-                          borderBottom: '1px solid #e0e0e0',
-                          fontWeight: 'bold',
-                          padding: '2px 1px',
-                          fontSize: '0.55rem',
-                          width: columnWidths.availableWidth,
-                          maxWidth: columnWidths.availableWidth,
+                          textAlign: 'center',
+                          borderRight: '1px solid #cbd5e1',
+                          minWidth: '100px',
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                          position: 'sticky',
-                          top: 0,
-                          backgroundColor: 'grey.50',
-                          zIndex: 10
+                          whiteSpace: 'nowrap'
                         }}
                         title={tp.name}
                       >
-                        {tp.name.length > 8 ? tp.name.substring(0, 6) + '..' : tp.name}
+                        {tp.name}
                       </TableCell>
                     ))}
-                  </TableRow>
-                  <TableRow sx={{ 
-                    backgroundColor: 'grey.50',
-                    '& .MuiTableCell-root': {
-                      position: 'sticky',
-                      top: '32px',
-                      backgroundColor: 'grey.50',
-                      zIndex: 9
-                    }
-                  }}>
-                    {schedule.timePoints.map(tp => (
-                      <React.Fragment key={tp.id}>
-                        <TableCell align="center" sx={{ 
-                          fontSize: '0.5rem', 
-                          color: 'text.secondary',
-                          padding: '1px',
-                          position: 'sticky',
-                          top: '32px',
-                          backgroundColor: 'grey.50',
-                          zIndex: 9
-                        }}>
-                          Arr
-                        </TableCell>
-                        <TableCell align="center" sx={{ 
-                          fontSize: '0.5rem', 
-                          color: 'text.secondary',
-                          padding: '1px',
-                          position: 'sticky',
-                          top: '32px',
-                          backgroundColor: 'grey.50',
-                          zIndex: 9
-                        }}>
-                          Rec
-                        </TableCell>
-                        <TableCell align="center" sx={{ 
-                          fontSize: '0.5rem', 
-                          color: 'text.secondary',
-                          padding: '1px',
-                          position: 'sticky',
-                          top: '32px',
-                          backgroundColor: 'grey.50',
-                          zIndex: 9
-                        }}>
-                          Dep
-                        </TableCell>
-                      </React.Fragment>
-                    ))}
+                    
+                    {/* Trip Time Column */}
+                    <TableCell sx={{ 
+                      textAlign: 'center',
+                      minWidth: '100px',
+                      backgroundColor: '#f3f7ff',
+                      fontWeight: '800'
+                    }}>
+                      Trip Time
+                    </TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {/* Reuse same virtualization logic */}
                   {sortedTrips.length > 50 && visibleRange.start > 0 && (
-                    <TableRow sx={{ height: `${visibleRange.start * 24}px` }}>
-                      <TableCell colSpan={3 + schedule.timePoints.length * 3} sx={{ p: 0, border: 'none' }} />
+                    <TableRow sx={{ height: `${visibleRange.start * 48}px` }}>
+                      <TableCell colSpan={4 + schedule.timePoints.length} sx={{ p: 0, border: 'none' }} />
                     </TableRow>
                   )}
                   
                   {visibleTrips.map((trip, idx) => {
                     const originalIdx = sortedTrips.length > 50 ? visibleRange.start + idx : idx;
-                    const isNewBlock = sortByBlock && (originalIdx === 0 || trip.blockNumber !== sortedTrips[originalIdx - 1]?.blockNumber);
                     return (
                       <TripRow
                         key={trip.tripNumber}
                         trip={trip}
                         idx={originalIdx}
-                        isNewBlock={isNewBlock}
-                        theme={theme}
                       />
                     );
                   })}
                   
                   {sortedTrips.length > 50 && visibleRange.end < sortedTrips.length && (
-                    <TableRow sx={{ height: `${(sortedTrips.length - visibleRange.end) * 24}px` }}>
-                      <TableCell colSpan={3 + schedule.timePoints.length * 3} sx={{ p: 0, border: 'none' }} />
+                    <TableRow sx={{ height: `${(sortedTrips.length - visibleRange.end) * 48}px` }}>
+                      <TableCell colSpan={4 + schedule.timePoints.length} sx={{ p: 0, border: 'none' }} />
                     </TableRow>
                   )}
                 </TableBody>

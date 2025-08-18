@@ -400,7 +400,16 @@ const TimePoints: React.FC = () => {
   };
 
   const handleGenerateSummary = () => {
-    navigate('/block-configuration');
+    // Pass timePointData and service bands to BlockConfiguration
+    navigate('/block-configuration', {
+      state: {
+        timePointData,
+        serviceBands: timeBands,
+        deletedPeriods: Array.from(deletedPeriods),
+        scheduleId,
+        fileName
+      }
+    });
   };
 
   const handleToggleDetailedTable = () => {
