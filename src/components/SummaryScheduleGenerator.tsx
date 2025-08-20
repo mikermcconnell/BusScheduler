@@ -82,6 +82,7 @@ const SummaryScheduleGenerator: React.FC<SummaryScheduleGeneratorProps> = ({
           'Georgian College',
           'Georgian Mall',
           'Bayfield Mall',
+          'Downtown Terminal Arrive R',
         ],
       };
       

@@ -424,6 +424,60 @@ interface Schedule {
 - Memory usage is monitored and logged
 - File processing includes detailed validation feedback
 
+## Service Band Logic Implementation
+
+### Service Band Assignment Process
+The service band system uses a **trip-specific lookup approach** based on TimePoints analysis data:
+
+1. **Individual Trip Assessment**: Each trip gets its own service band based on its specific departure time
+2. **Time Period Matching**: Match departure time to corresponding time period ("16:00 - 16:29")
+3. **Service Band Lookup**: Retrieve pre-assigned service band from TimePoints data for that time period
+4. **Dynamic Travel Time Calculation**: Use trip-specific service band data for actual travel time calculations
+
+### Service Band Categories
+- **Fastest Service** (Green): Shortest travel times (e.g., 35min travel + 9min recovery = 44min total)
+- **Fast Service** (Light Green): Short travel times (e.g., 37-38min total)  
+- **Standard Service** (Orange): Average travel times (e.g., 39min total)
+- **Slow Service** (Orange): Longer travel times (e.g., 40min total)
+- **Slowest Service** (Red): Longest travel times (e.g., 41min+ total)
+
+### Advanced Implementation Details
+
+#### **Trip-Specific Service Band Assignment**
+```typescript
+// Each trip gets its own service band based on departure time
+const tripServiceBandName = getServiceBandForTime(currentDepartureTime, timePeriodServiceBands);
+const tripServiceBand = findServiceBand(schedule.serviceBands, tripServiceBandName);
+
+// Use trip-specific service band for travel time calculations
+const segmentTime = tripServiceBand.segmentTimes[index - 1];
+```
+
+#### **Key Implementation Points**
+- **Per-Trip Calculation**: Service bands determined individually for each trip, not per block
+- **Dynamic Travel Times**: Each trip uses its own service band's travel time data
+- **Time-Based Accuracy**: Reflects actual traffic conditions at trip departure time
+- **Recovery Time Integration**: Includes stop-specific recovery times in schedule display
+
+#### **Real-World Examples**
+- **Early Morning Trip (07:00)**: "Fastest Service" - minimal traffic, fastest travel times
+- **Rush Hour Trip (08:30)**: "Standard Service" - moderate traffic conditions  
+- **Afternoon Trip (16:00)**: "Slow Service" - heavy traffic, longer travel times
+- **Evening Trip (20:00)**: "Fast Service" - lighter evening traffic
+
+### Recovery Time Display
+- **Timepoint Columns**: Show departure time + recovery time (e.g., "07:44 +2min")
+- **Recovery Logic**: 
+  - First timepoint: 0 minutes (departure only)
+  - Middle timepoints: 1-2 minutes 
+  - Last timepoint: 3 minutes (end-of-route recovery)
+- **Visual Format**: Main time in bold, recovery time in smaller gray text below
+
+### Performance & Accuracy
+- **Data-Driven**: Service bands based on actual TimePoints analysis data
+- **Time-Sensitive**: Reflects real traffic patterns throughout the day
+- **Consistent Calculation**: Same logic used for both trip generation and display
+
 ## Production Readiness Status: ✅ COMPLETE
 - All core features implemented and tested
 - Security vulnerabilities addressed with comprehensive mitigations
@@ -432,6 +486,6 @@ interface Schedule {
 - Export functionality matching Excel format standards
 - Error handling and validation comprehensive
 
-**Last Updated**: August 15, 2025  
+**Last Updated**: August 18, 2025  
 **Security Level**: Production Ready with comprehensive protections  
-**MVP Status**: Complete and ready for deployment with advanced Bus Block Configuration system
+**MVP Status**: Complete and ready for deployment with advanced Bus Block Configuration system and trip-specific service band logic

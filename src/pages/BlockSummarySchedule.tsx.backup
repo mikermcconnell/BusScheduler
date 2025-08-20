@@ -24,7 +24,7 @@ import {
   Fullscreen as FullscreenIcon,
   Home as HomeIcon,
   NavigateNext as NavigateNextIcon,
-  Publish as PublishIcon
+  Save as SaveIcon
 } from '@mui/icons-material';
 import { calculateTripTime } from '../utils/dateHelpers';
 import { scheduleStorage } from '../services/scheduleStorage';
@@ -68,6 +68,10 @@ interface Schedule {
   cycleTimeMinutes?: number;
   // TimePoints data for service band mapping
   timePointData?: TimePointData[];
+  // Deleted time periods from TimePoints analysis
+  deletedPeriods?: string[];
+  // Service band assignments by time period (direct lookup)
+  timePeriodServiceBands?: { [timePeriod: string]: ServiceBand };
 }
 
 // TimePoint data structure from TimePoints analysis
@@ -89,90 +93,73 @@ interface BlockConfiguration {
 }
 
 /**
- * Determines service band based on trip departure time using TimePoints analysis data
+ * Determines service band based on trip departure time using direct lookup from TimePoints data
+ * This uses the pre-calculated service band assignments from the TimePoints page
  */
 const getServiceBand = (
   timeString: string, 
-  timePointData: TimePointData[] = [], 
-  deletedPeriods: Set<string> = new Set()
+  timePeriodServiceBands: { [timePeriod: string]: ServiceBand } = {},
+  timePointData: TimePointData[] = []
 ): ServiceBand => {
-  if (timePointData.length === 0) {
-    // Fallback to time-based logic if no TimePoints data available
-    const [hours] = timeString.split(':').map(Number);
-    if (hours >= 6 && hours < 9) return 'Fastest Service';
-    if (hours >= 9 && hours < 12) return 'Fast Service';
-    if (hours >= 12 && hours < 15) return 'Standard Service';
-    if (hours >= 15 && hours < 18) return 'Slow Service';
-    return 'Slowest Service';
-  }
-
-  // Find the time period that contains this trip time
+  // Parse the departure time to find matching time period
   const [tripHours, tripMinutes] = timeString.split(':').map(Number);
   const tripTotalMinutes = tripHours * 60 + tripMinutes;
   
-  // Find matching time period from TimePoints data
+  // Find matching time period 
   let matchingPeriod: string | null = null;
   
-  for (const data of timePointData) {
-    const timePeriod = data.timePeriod;
-    const [startTime, endTime] = timePeriod.split(' - ');
-    const [startHours, startMins] = startTime.split(':').map(Number);
-    const [endHours, endMins] = endTime.split(':').map(Number);
+  // If we have the direct service band mapping, use it
+  if (Object.keys(timePeriodServiceBands).length > 0) {
+    for (const timePeriod of Object.keys(timePeriodServiceBands)) {
+      const [startTime, endTime] = timePeriod.split(' - ');
+      
+      // Parse start time
+      const [startHours, startMins] = startTime.split(':').map(Number);
+      const startMinutes = startHours * 60 + startMins;
+      
+      // Parse end time 
+      const [endHours, endMins] = endTime.split(':').map(Number);
+      const endMinutes = endHours * 60 + endMins;
+      
+      // Check if trip time falls within this period
+      if (tripTotalMinutes >= startMinutes && tripTotalMinutes < endMinutes) {
+        matchingPeriod = timePeriod;
+        break;
+      }
+    }
     
-    const startMinutes = startHours * 60 + startMins;
-    const endMinutes = endHours * 60 + endMins;
-    
-    if (tripTotalMinutes >= startMinutes && tripTotalMinutes < endMinutes) {
-      matchingPeriod = timePeriod;
-      break;
+    if (matchingPeriod) {
+      const serviceBand = timePeriodServiceBands[matchingPeriod];
+      return serviceBand;
     }
   }
   
-  if (!matchingPeriod) {
-    return 'Standard Service'; // Default fallback
+  // Fallback: try to find from timePointData if direct mapping not available
+  if (timePointData.length > 0) {
+    for (const data of timePointData) {
+      const timePeriod = data.timePeriod;
+      const [startTime, endTime] = timePeriod.split(' - ');
+      
+      const [startHours, startMins] = startTime.split(':').map(Number);
+      const startMinutes = startHours * 60 + startMins;
+      
+      const [endHours, endMins] = endTime.split(':').map(Number);
+      const endMinutes = endHours * 60 + endMins;
+      
+      if (tripTotalMinutes >= startMinutes && tripTotalMinutes < endMinutes) {
+        matchingPeriod = timePeriod;
+        break;
+      }
+    }
   }
   
-  // Calculate service bands based on travel time percentiles (same logic as TimePoints page)
-  const timePeriodsMap = new Map<string, number>();
-  timePointData.forEach(row => {
-    if (deletedPeriods.has(row.timePeriod)) return;
-    const currentSum = timePeriodsMap.get(row.timePeriod) || 0;
-    timePeriodsMap.set(row.timePeriod, currentSum + row.percentile50);
-  });
-
-  const sortedPeriods = Array.from(timePeriodsMap.entries())
-    .map(([timePeriod, totalTravelTime]) => ({
-      timePeriod,
-      totalTravelTime: Math.round(totalTravelTime)
-    }))
-    .sort((a, b) => a.totalTravelTime - b.totalTravelTime);
-
-  const travelTimes = sortedPeriods.map(p => p.totalTravelTime);
-  
-  // Get the travel time for the matching period
-  const periodTravelTime = timePeriodsMap.get(matchingPeriod) || 0;
-  
-  // Calculate percentile thresholds
-  const getPercentile = (arr: number[], percentile: number): number => {
-    if (arr.length === 0) return 0;
-    const sorted = [...arr].sort((a, b) => a - b);
-    const index = Math.ceil((percentile / 100) * sorted.length) - 1;
-    return sorted[Math.max(0, index)];
-  };
-
-  const percentileThresholds = [
-    getPercentile(travelTimes, 20),  // 20th percentile
-    getPercentile(travelTimes, 40),  // 40th percentile
-    getPercentile(travelTimes, 60),  // 60th percentile
-    getPercentile(travelTimes, 80),  // 80th percentile
-  ];
-
-  // Determine band based on percentile thresholds
-  if (periodTravelTime < percentileThresholds[0]) return 'Fastest Service';
-  if (periodTravelTime < percentileThresholds[1]) return 'Fast Service';
-  if (periodTravelTime < percentileThresholds[2]) return 'Standard Service';
-  if (periodTravelTime < percentileThresholds[3]) return 'Slow Service';
-  return 'Slowest Service';
+  // Final fallback: time-based logic
+  const [hours] = timeString.split(':').map(Number);
+  if (hours >= 7 && hours < 9) return 'Fastest Service';    // Early morning - light traffic
+  if (hours >= 9 && hours < 12) return 'Fast Service';     // Mid morning
+  if (hours >= 12 && hours < 15) return 'Standard Service'; // Midday
+  if (hours >= 15 && hours < 18) return 'Slow Service';     // Afternoon - heavy traffic  
+  return 'Slowest Service';  // Peak hours and other times
 };
 
 /**
@@ -195,19 +182,40 @@ const BlockSummarySchedule: React.FC = () => {
   const theme = useTheme();
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 50 });
-  const [isPublishing, setIsPublishing] = useState(false);
-  const [publishSuccess, setPublishSuccess] = useState(false);
-  const [publishError, setPublishError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
-  const schedule: Schedule = location.state?.schedule || {
-    id: '',
-    name: 'Generated Schedule',
-    timePoints: [],
-    serviceBands: [],
-    trips: [],
-    updatedAt: new Date().toISOString()
-  };
+  // Load schedule from state or localStorage persistence
+  const [schedule, setSchedule] = useState<Schedule>(() => {
+    // Try location state first (from navigation)
+    if (location.state?.schedule) {
+      const scheduleData = location.state.schedule;
+      // Save to localStorage for persistence
+      localStorage.setItem('currentSummarySchedule', JSON.stringify(scheduleData));
+      return scheduleData;
+    }
+    
+    // Try localStorage (for persistence)
+    const savedSchedule = localStorage.getItem('currentSummarySchedule');
+    if (savedSchedule) {
+      try {
+        return JSON.parse(savedSchedule);
+      } catch (error) {
+        console.error('Failed to parse saved schedule:', error);
+      }
+    }
+    
+    // Fallback to empty schedule
+    return {
+      id: '',
+      name: 'Generated Schedule',
+      timePoints: [],
+      serviceBands: [],
+      trips: [],
+      updatedAt: new Date().toISOString()
+    };
+  });
 
   // Process trips to add service bands based on TimePoints data
   useEffect(() => {
@@ -215,7 +223,11 @@ const BlockSummarySchedule: React.FC = () => {
       // Update trips with service bands if not already present
       const updatedTrips = schedule.trips.map(trip => ({
         ...trip,
-        serviceBand: trip.serviceBand || getServiceBand(trip.departureTime, schedule.timePointData, new Set())
+        serviceBand: trip.serviceBand || getServiceBand(
+          trip.departureTime, 
+          schedule.timePeriodServiceBands || {}, 
+          schedule.timePointData || []
+        )
       }));
       
       // Only update if we actually added service bands
@@ -224,7 +236,7 @@ const BlockSummarySchedule: React.FC = () => {
         // For now, we'll handle it in the processing logic below
       }
     }
-  }, [schedule.trips, schedule.timePointData]);
+  }, [schedule.trips, schedule.timePointData, schedule.timePeriodServiceBands]);
 
   // New simplified trip row component
   const TripRow = memo(({ trip, idx }: { trip: Trip; idx: number }) => {
@@ -305,7 +317,7 @@ const BlockSummarySchedule: React.FC = () => {
           <TableCell 
             key={tp.id}
             sx={{ 
-              p: '12px', 
+              p: '8px 12px', 
               fontSize: '13px', 
               textAlign: 'center',
               fontFamily: 'monospace',
@@ -315,7 +327,23 @@ const BlockSummarySchedule: React.FC = () => {
               minWidth: '80px'
             }}
           >
-            {trip.departureTimes[tp.id] || trip.arrivalTimes[tp.id] || '-'}
+            <Box>
+              {/* Departure Time */}
+              <Typography variant="body2" sx={{ fontWeight: '600', fontSize: '0.85rem' }}>
+                {trip.departureTimes[tp.id] || trip.arrivalTimes[tp.id] || '-'}
+              </Typography>
+              {/* Recovery Time */}
+              {trip.recoveryTimes && trip.recoveryTimes[tp.id] > 0 && (
+                <Typography variant="caption" sx={{ 
+                  color: '#666', 
+                  fontSize: '0.7rem',
+                  display: 'block',
+                  lineHeight: '1.2'
+                }}>
+                  +{trip.recoveryTimes[tp.id]}min
+                </Typography>
+              )}
+            </Box>
           </TableCell>
         ))}
         
@@ -340,9 +368,13 @@ const BlockSummarySchedule: React.FC = () => {
   const processedTrips = useMemo(() => {
     return schedule.trips.map(trip => ({
       ...trip,
-      serviceBand: trip.serviceBand || getServiceBand(trip.departureTime, schedule.timePointData, new Set())
+      serviceBand: trip.serviceBand || getServiceBand(
+        trip.departureTime, 
+        schedule.timePeriodServiceBands || {}, 
+        schedule.timePointData || []
+      )
     }));
-  }, [schedule.trips, schedule.timePointData]);
+  }, [schedule.trips, schedule.timePointData, schedule.timePeriodServiceBands]);
 
   const blockStats = useMemo(() => {
     const blocks = new Map<number, Trip[]>();
@@ -401,30 +433,29 @@ const BlockSummarySchedule: React.FC = () => {
     navigate(-1);
   };
 
-  const handlePublish = async () => {
-    setIsPublishing(true);
-    setPublishError(null);
-    setPublishSuccess(false);
+  const handleSave = async () => {
+    setSaving(true);
+    setSaveSuccess(false);
 
     try {
-      // Create a summary schedule object from the trips
+      // Create a proper SummarySchedule object
       const summarySchedule: SummarySchedule = {
-        routeId: schedule.id || `route_${Date.now()}`,
-        routeName: schedule.name || 'Bus Route',
-        direction: 'Outbound', // Could be made configurable
+        routeId: `route_${Date.now()}`,
+        routeName: schedule.name || 'Summary Schedule',
+        direction: 'Outbound', // Could be made dynamic
         timePoints: schedule.timePoints || [],
         weekday: processedTrips.map(trip => 
-          schedule.timePoints.map(tp => trip.departureTimes?.[tp.id] || trip.arrivalTimes?.[tp.id] || '')
+          schedule.timePoints.map(tp => trip.departureTimes[tp.id] || trip.arrivalTimes[tp.id] || '')
         ),
-        saturday: [], // Could be populated if available
-        sunday: [],   // Could be populated if available
+        saturday: [], // Empty for now - could be populated if Saturday data available
+        sunday: [],   // Empty for now - could be populated if Sunday data available
         effectiveDate: new Date(),
         expirationDate: undefined,
         metadata: {
           weekdayTrips: processedTrips.length,
           saturdayTrips: 0,
           sundayTrips: 0,
-          frequency: schedule.cycleTimeMinutes,
+          frequency: schedule.cycleTimeMinutes ? Math.round(schedule.cycleTimeMinutes / (schedule.blockConfigurations?.length || 1)) : undefined,
           operatingHours: processedTrips.length > 0 ? {
             start: processedTrips[0].departureTime,
             end: processedTrips[processedTrips.length - 1].departureTime
@@ -432,31 +463,24 @@ const BlockSummarySchedule: React.FC = () => {
         }
       };
 
-      // Publish the schedule
-      const result = scheduleStorage.publishSchedule(
-        schedule.id || `schedule_${Date.now()}`,
+      // Save using the correct method
+      const result = scheduleStorage.saveSchedule(
         summarySchedule,
-        { 
-          timePointData: schedule.timePointData,
-          serviceBands: schedule.serviceBands,
-          blockConfigurations: schedule.blockConfigurations
-        }
+        'csv', // File type
+        schedule.name || 'Summary Schedule'
       );
 
       if (result.success) {
-        setPublishSuccess(true);
-        setTimeout(() => {
-          // Navigate to published schedules page after success
-          navigate('/schedules');
-        }, 2000);
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 3000);
+        console.log('Summary schedule saved successfully:', result.scheduleId);
       } else {
-        setPublishError(result.error || 'Failed to publish schedule');
+        console.error('Failed to save schedule:', result.error);
       }
     } catch (error) {
-      console.error('Error publishing schedule:', error);
-      setPublishError('An error occurred while publishing the schedule');
+      console.error('Error saving schedule:', error);
     } finally {
-      setIsPublishing(false);
+      setSaving(false);
     }
   };
 
@@ -464,21 +488,32 @@ const BlockSummarySchedule: React.FC = () => {
     return (
       <Container maxWidth={false} sx={{ px: 3 }}>
           <Box sx={{ py: 4 }}>
+            {/* Breadcrumbs now handled by WorkflowBreadcrumbs component */}
+
             <Card>
               <CardContent sx={{ textAlign: 'center', py: 8 }}>
                 <Typography variant="h5" gutterBottom>
                   No Schedule Data
                 </Typography>
                 <Typography variant="body1" color="text.secondary" paragraph>
-                  No schedule data was provided. Please go back and generate a schedule first.
+                  No schedule data was found. You can regenerate a schedule or go back to configure blocks.
                 </Typography>
-                <Button 
-                  variant="contained" 
-                  onClick={handleBack}
-                  startIcon={<BackIcon />}
-                >
-                  Go Back
-                </Button>
+                <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', mt: 3 }}>
+                  <Button 
+                    variant="contained" 
+                    onClick={() => navigate('/block-configuration')}
+                    startIcon={<SaveIcon />}
+                  >
+                    Regenerate Schedule
+                  </Button>
+                  <Button 
+                    variant="outlined" 
+                    onClick={handleBack}
+                    startIcon={<BackIcon />}
+                  >
+                    Go Back
+                  </Button>
+                </Box>
               </CardContent>
             </Card>
           </Box>
@@ -490,6 +525,8 @@ const BlockSummarySchedule: React.FC = () => {
     <>
       <Container maxWidth={false} sx={{ px: 3 }}>
         <Box sx={{ py: 4 }}>
+          {/* Breadcrumbs now handled by WorkflowBreadcrumbs component */}
+
           <Card elevation={2}>
             <CardContent sx={{ p: 4 }}>
               <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
@@ -502,29 +539,26 @@ const BlockSummarySchedule: React.FC = () => {
                     color="primary"
                     size="medium"
                   />
-                  {publishSuccess && (
+                  {saveSuccess && (
                     <Chip 
-                      label="✓ Published Successfully!"
+                      label="✓ Saved"
                       color="success"
                       size="small"
-                    />
-                  )}
-                  {publishError && (
-                    <Chip 
-                      label={publishError}
-                      color="error"
-                      size="small"
+                      sx={{ fontWeight: 'bold' }}
                     />
                   )}
                   <Button
                     variant="contained"
-                    startIcon={isPublishing ? null : <PublishIcon />}
-                    onClick={handlePublish}
-                    disabled={isPublishing || publishSuccess}
+                    startIcon={<SaveIcon />}
+                    onClick={handleSave}
+                    disabled={saving}
                     size="small"
-                    color="success"
+                    sx={{ 
+                      backgroundColor: saving ? 'grey.400' : 'success.main',
+                      '&:hover': { backgroundColor: 'success.dark' }
+                    }}
                   >
-                    {isPublishing ? 'Publishing...' : publishSuccess ? 'Published!' : 'Publish Schedule'}
+                    {saving ? 'Saving...' : 'Save Schedule'}
                   </Button>
                   <Button
                     variant="outlined"
@@ -641,9 +675,21 @@ const BlockSummarySchedule: React.FC = () => {
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap'
                           }}
-                          title={tp.name}
+                          title={`${tp.name} - Departure time & recovery time`}
                         >
-                          {tp.name}
+                          <Box>
+                            <Typography variant="body2" sx={{ fontWeight: '700', fontSize: '0.85rem' }}>
+                              {tp.name}
+                            </Typography>
+                            <Typography variant="caption" sx={{ 
+                              color: '#666', 
+                              fontSize: '0.7rem',
+                              display: 'block',
+                              lineHeight: '1.2'
+                            }}>
+                              (Time + Recovery)
+                            </Typography>
+                          </Box>
                         </TableCell>
                       ))}
                       
@@ -813,9 +859,21 @@ const BlockSummarySchedule: React.FC = () => {
                           textOverflow: 'ellipsis',
                           whiteSpace: 'nowrap'
                         }}
-                        title={tp.name}
+                        title={`${tp.name} - Departure time & recovery time`}
                       >
-                        {tp.name}
+                        <Box>
+                          <Typography variant="body2" sx={{ fontWeight: '700', fontSize: '0.85rem' }}>
+                            {tp.name}
+                          </Typography>
+                          <Typography variant="caption" sx={{ 
+                            color: '#666', 
+                            fontSize: '0.7rem',
+                            display: 'block',
+                            lineHeight: '1.2'
+                          }}>
+                            (Time + Recovery)
+                          </Typography>
+                        </Box>
                       </TableCell>
                     ))}
                     

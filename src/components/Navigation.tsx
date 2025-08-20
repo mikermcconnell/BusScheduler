@@ -13,12 +13,21 @@ import {
 } from '@mui/material';
 import { Menu as MenuIcon } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
+import { scheduleStorage } from '../services/scheduleStorage';
+import UserProfile from './UserProfile';
 
 const Navigation: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const { user } = useAuth();
+
+  // Set user ID in storage service when user changes
+  React.useEffect(() => {
+    scheduleStorage.setUserId(user?.id || null);
+  }, [user]);
   
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
   const open = Boolean(anchorEl);
@@ -31,6 +40,7 @@ const Navigation: React.FC = () => {
     { path: '/tod-shifts', label: 'Tod Shifts', key: 'tod-shifts' },
     { path: '/schedules', label: 'View Schedules', key: 'schedules' },
     { path: '/routes', label: 'Manage Routes', key: 'routes' },
+    { path: '/settings', label: 'Settings', key: 'settings' },
   ];
 
   const handleMenuClick = (event: React.MouseEvent<HTMLElement>) => {
@@ -68,6 +78,7 @@ const Navigation: React.FC = () => {
         {isMobile ? (
           <>
             <Box sx={{ flexGrow: 1 }} />
+            <UserProfile />
             <IconButton
               size="large"
               edge="end"
@@ -122,6 +133,7 @@ const Navigation: React.FC = () => {
                 </Button>
               ))}
             </Box>
+            <UserProfile />
           </>
         )}
       </Toolbar>

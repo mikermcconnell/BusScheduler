@@ -9,6 +9,7 @@ import { TimeBand, DayType } from '../utils/calculator';
 import { ParsedExcelData } from '../utils/excelParser';
 import { ParsedCsvData } from '../utils/csvParser';
 import { ValidationResult } from '../utils/validator';
+import { googleDriveStorage } from './googleDriveStorage';
 
 export interface SavedSchedule {
   id: string;
@@ -62,15 +63,37 @@ export interface ScheduleListItem {
   updatedAt: string;
 }
 
-const STORAGE_KEY = 'scheduler2_saved_schedules';
-const DRAFT_STORAGE_KEY = 'scheduler2_draft_schedules';
-const SESSION_STORAGE_KEY = 'scheduler2_current_session';
+const STORAGE_KEY_PREFIX = 'scheduler2_saved_schedules';
+const DRAFT_STORAGE_KEY_PREFIX = 'scheduler2_draft_schedules';
+const SESSION_STORAGE_KEY_PREFIX = 'scheduler2_current_session';
 const MAX_SCHEDULES = 50; // Limit number of saved schedules
 const MAX_DRAFTS = 20; // Limit number of draft schedules
 const MAX_SCHEDULE_SIZE = 5 * 1024 * 1024; // 5MB limit per schedule
 const DRAFT_AUTO_SAVE_INTERVAL = 30000; // Auto-save drafts every 30 seconds
+const GOOGLE_DRIVE_SYNC_INTERVAL = 60000; // Sync to Google Drive every 60 seconds
 
 class ScheduleStorageService {
+  private googleDriveSyncEnabled: boolean = false;
+  private currentUserId: string | null = null;
+
+  /**
+   * Set the current user ID for user-specific storage
+   */
+  setUserId(userId: string | null): void {
+    this.currentUserId = userId;
+  }
+
+  /**
+   * Get user-specific storage keys
+   */
+  private getStorageKeys() {
+    const userSuffix = this.currentUserId ? `_${this.currentUserId}` : '';
+    return {
+      schedules: `${STORAGE_KEY_PREFIX}${userSuffix}`,
+      drafts: `${DRAFT_STORAGE_KEY_PREFIX}${userSuffix}`,
+      session: `${SESSION_STORAGE_KEY_PREFIX}${userSuffix}`
+    };
+  }
   /**
    * Generates a unique ID for a schedule
    */
@@ -213,7 +236,11 @@ class ScheduleStorageService {
 
       // Save to localStorage
       const updatedSchedules = [...existingSchedules, savedSchedule];
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedSchedules));
+      const { schedules: storageKey } = this.getStorageKeys();
+      localStorage.setItem(storageKey, JSON.stringify(updatedSchedules));
+
+      // Auto-backup to Google Drive if enabled
+      this.syncToGoogleDrive();
 
       return { success: true, scheduleId };
 
@@ -231,7 +258,8 @@ class ScheduleStorageService {
    */
   getAllSchedules(): SavedSchedule[] {
     try {
-      const data = localStorage.getItem(STORAGE_KEY);
+      const { schedules: storageKey } = this.getStorageKeys();
+      const data = localStorage.getItem(storageKey);
       if (!data) {
         return [];
       }
@@ -250,6 +278,77 @@ class ScheduleStorageService {
     } catch (error) {
       console.error('Error loading schedules:', error);
       return [];
+    }
+  }
+
+  /**
+   * Publishes a draft schedule, moving it from draft status to published
+   */
+  publishSchedule(
+    scheduleId: string,
+    summarySchedule?: SummarySchedule,
+    rawData?: any
+  ): { success: boolean; error?: string } {
+    try {
+      const { schedules: storageKey } = this.getStorageKeys();
+      const schedules = this.getAllSchedules();
+      
+      // Find the schedule to publish
+      const scheduleIndex = schedules.findIndex(s => s.id === scheduleId);
+      if (scheduleIndex === -1) {
+        // If not found in saved schedules, try to create from draft
+        const draft = this.getDraftScheduleById(scheduleId);
+        if (!draft) {
+          return { success: false, error: 'Schedule not found' };
+        }
+        
+        // Create a new published schedule from draft
+        const newSchedule: SavedSchedule = {
+          id: scheduleId,
+          routeName: summarySchedule?.routeName || draft.fileName || 'Untitled Route',
+          direction: summarySchedule?.direction || 'Outbound',
+          effectiveDate: new Date().toISOString(),
+          status: 'Active',
+          tripCount: {
+            weekday: summarySchedule?.weekday?.length || 0,
+            saturday: summarySchedule?.saturday?.length || 0,
+            sunday: summarySchedule?.sunday?.length || 0,
+          },
+          fileType: draft.fileType || 'csv',
+          createdAt: draft.createdAt,
+          updatedAt: new Date().toISOString(),
+          summarySchedule: summarySchedule || draft.summarySchedule,
+          fileName: draft.fileName,
+          data: rawData || draft.uploadedData,
+          isDraft: false  // Mark as published
+        };
+        
+        schedules.push(newSchedule);
+      } else {
+        // Update existing schedule to published status
+        schedules[scheduleIndex] = {
+          ...schedules[scheduleIndex],
+          isDraft: false,
+          status: 'Active',
+          updatedAt: new Date().toISOString(),
+          summarySchedule: summarySchedule || schedules[scheduleIndex].summarySchedule,
+          data: rawData || schedules[scheduleIndex].data
+        };
+      }
+      
+      // Save updated schedules
+      localStorage.setItem(storageKey, JSON.stringify(schedules));
+      
+      // Auto-backup to Google Drive if enabled
+      this.syncToGoogleDrive();
+      
+      return { success: true };
+    } catch (error) {
+      console.error('Error publishing schedule:', error);
+      return { 
+        success: false, 
+        error: 'Failed to publish schedule' 
+      };
     }
   }
 
@@ -296,7 +395,8 @@ class ScheduleStorageService {
         return { success: false, error: 'Schedule not found' };
       }
 
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(filteredSchedules));
+      const { schedules: storageKey } = this.getStorageKeys();
+      localStorage.setItem(storageKey, JSON.stringify(filteredSchedules));
       return { success: true };
 
     } catch (error) {
@@ -361,7 +461,8 @@ class ScheduleStorageService {
       };
 
       schedules[scheduleIndex] = updatedSchedule;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(schedules));
+      const { schedules: storageKey } = this.getStorageKeys();
+      localStorage.setItem(storageKey, JSON.stringify(schedules));
 
       return { success: true };
 
@@ -376,7 +477,8 @@ class ScheduleStorageService {
    */
   clearAllSchedules(): void {
     try {
-      localStorage.removeItem(STORAGE_KEY);
+      const { schedules: storageKey } = this.getStorageKeys();
+      localStorage.removeItem(storageKey);
     } catch (error) {
       console.error('Error clearing schedules:', error);
     }
@@ -489,7 +591,8 @@ class ScheduleStorageService {
         drafts.push(draftSchedule);
       }
 
-      localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(drafts));
+      const { drafts: draftStorageKey } = this.getStorageKeys();
+      localStorage.setItem(draftStorageKey, JSON.stringify(drafts));
       return { success: true, draftId };
 
     } catch (error) {
@@ -506,7 +609,8 @@ class ScheduleStorageService {
    */
   getAllDraftSchedules(): DraftSchedule[] {
     try {
-      const data = localStorage.getItem(DRAFT_STORAGE_KEY);
+      const { drafts: draftStorageKey } = this.getStorageKeys();
+      const data = localStorage.getItem(draftStorageKey);
       if (!data) {
         return [];
       }
@@ -544,7 +648,8 @@ class ScheduleStorageService {
         return { success: false, error: 'Draft schedule not found' };
       }
 
-      localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(filteredDrafts));
+      const { drafts: draftStorageKey } = this.getStorageKeys();
+      localStorage.setItem(draftStorageKey, JSON.stringify(filteredDrafts));
       
       // Also clear session storage if this was the current draft
       this.clearCurrentSession();
@@ -597,7 +702,8 @@ class ScheduleStorageService {
    */
   clearAllDraftSchedules(): void {
     try {
-      localStorage.removeItem(DRAFT_STORAGE_KEY);
+      const { drafts: draftStorageKey } = this.getStorageKeys();
+      localStorage.removeItem(draftStorageKey);
     } catch (error) {
       console.error('Error clearing draft schedules:', error);
     }
@@ -622,7 +728,8 @@ class ScheduleStorageService {
         ...sessionData,
         timestamp: new Date().toISOString()
       };
-      sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+      const { session: sessionStorageKey } = this.getStorageKeys();
+      sessionStorage.setItem(sessionStorageKey, JSON.stringify(session));
     } catch (error) {
       console.error('Error saving session:', error);
     }
@@ -633,7 +740,8 @@ class ScheduleStorageService {
    */
   getCurrentSession(): any | null {
     try {
-      const data = sessionStorage.getItem(SESSION_STORAGE_KEY);
+      const { session: sessionStorageKey } = this.getStorageKeys();
+      const data = sessionStorage.getItem(sessionStorageKey);
       return data ? JSON.parse(data) : null;
     } catch (error) {
       console.error('Error loading session:', error);
@@ -646,9 +754,206 @@ class ScheduleStorageService {
    */
   clearCurrentSession(): void {
     try {
-      sessionStorage.removeItem(SESSION_STORAGE_KEY);
+      const { session: sessionStorageKey } = this.getStorageKeys();
+      sessionStorage.removeItem(sessionStorageKey);
     } catch (error) {
       console.error('Error clearing session:', error);
+    }
+  }
+
+  // ===== GOOGLE DRIVE SYNC METHODS =====
+
+  /**
+   * Enable Google Drive sync
+   */
+  async enableGoogleDriveSync(): Promise<{ success: boolean; error?: string }> {
+    try {
+      const result = await googleDriveStorage.signIn();
+      if (result.success) {
+        this.googleDriveSyncEnabled = true;
+        // Initial sync
+        await this.syncToGoogleDrive();
+      }
+      return result;
+    } catch (error) {
+      console.error('Error enabling Google Drive sync:', error);
+      return { success: false, error: 'Failed to enable Google Drive sync' };
+    }
+  }
+
+  /**
+   * Disable Google Drive sync
+   */
+  async disableGoogleDriveSync(): Promise<void> {
+    try {
+      this.googleDriveSyncEnabled = false;
+      await googleDriveStorage.signOut();
+    } catch (error) {
+      console.error('Error disabling Google Drive sync:', error);
+    }
+  }
+
+  /**
+   * Check if Google Drive sync is enabled
+   */
+  isGoogleDriveSyncEnabled(): boolean {
+    return this.googleDriveSyncEnabled && googleDriveStorage.getSignInStatus();
+  }
+
+  /**
+   * Sync data to Google Drive
+   */
+  private async syncToGoogleDrive(): Promise<void> {
+    if (!this.googleDriveSyncEnabled) {
+      return;
+    }
+
+    try {
+      const schedules = this.getAllSchedules();
+      const drafts = this.getAllDraftSchedules();
+      
+      // Use auto-backup which handles errors silently
+      await googleDriveStorage.autoBackup(schedules, drafts);
+    } catch (error) {
+      console.error('Error syncing to Google Drive:', error);
+      // Don't throw - sync should be silent
+    }
+  }
+
+  /**
+   * Manually backup to Google Drive
+   */
+  async backupToGoogleDrive(): Promise<{ success: boolean; error?: string }> {
+    try {
+      if (!this.googleDriveSyncEnabled) {
+        return { success: false, error: 'Google Drive sync is not enabled' };
+      }
+
+      const schedules = this.getAllSchedules();
+      const drafts = this.getAllDraftSchedules();
+
+      // Run backups in parallel
+      const [schedulesResult, draftsResult] = await Promise.all([
+        googleDriveStorage.backupSchedules(schedules),
+        googleDriveStorage.backupDrafts(drafts)
+      ]);
+
+      if (!schedulesResult.success) {
+        return schedulesResult;
+      }
+
+      if (!draftsResult.success) {
+        return draftsResult;
+      }
+
+      return { success: true };
+
+    } catch (error) {
+      console.error('Error backing up to Google Drive:', error);
+      return { success: false, error: 'Failed to backup to Google Drive' };
+    }
+  }
+
+  /**
+   * Restore from Google Drive
+   */
+  async restoreFromGoogleDrive(options: {
+    restoreSchedules?: boolean;
+    restoreDrafts?: boolean;
+    mergeWithExisting?: boolean;
+  } = {}): Promise<{ success: boolean; error?: string; restored?: { schedules: number; drafts: number } }> {
+    try {
+      if (!this.googleDriveSyncEnabled) {
+        return { success: false, error: 'Google Drive sync is not enabled' };
+      }
+
+      const { restoreSchedules = true, restoreDrafts = true, mergeWithExisting = false } = options;
+      let restoredSchedules = 0;
+      let restoredDrafts = 0;
+
+      // Restore schedules
+      if (restoreSchedules) {
+        const schedulesResult = await googleDriveStorage.restoreSchedules();
+        if (schedulesResult.success && schedulesResult.schedules) {
+          if (mergeWithExisting) {
+            const existingSchedules = this.getAllSchedules();
+            const mergedSchedules = [...existingSchedules, ...schedulesResult.schedules];
+            const { schedules: storageKey } = this.getStorageKeys();
+            localStorage.setItem(storageKey, JSON.stringify(mergedSchedules));
+            restoredSchedules = schedulesResult.schedules.length;
+          } else {
+            const { schedules: storageKey } = this.getStorageKeys();
+            localStorage.setItem(storageKey, JSON.stringify(schedulesResult.schedules));
+            restoredSchedules = schedulesResult.schedules.length;
+          }
+        } else if (schedulesResult.error && !schedulesResult.error.includes('No schedule backup found')) {
+          return schedulesResult;
+        }
+      }
+
+      // Restore drafts
+      if (restoreDrafts) {
+        const draftsResult = await googleDriveStorage.restoreDrafts();
+        if (draftsResult.success && draftsResult.drafts) {
+          if (mergeWithExisting) {
+            const existingDrafts = this.getAllDraftSchedules();
+            const mergedDrafts = [...existingDrafts, ...draftsResult.drafts];
+            const { drafts: draftStorageKey } = this.getStorageKeys();
+            localStorage.setItem(draftStorageKey, JSON.stringify(mergedDrafts));
+            restoredDrafts = draftsResult.drafts.length;
+          } else {
+            const { drafts: draftStorageKey } = this.getStorageKeys();
+            localStorage.setItem(draftStorageKey, JSON.stringify(draftsResult.drafts));
+            restoredDrafts = draftsResult.drafts.length;
+          }
+        } else if (draftsResult.error && !draftsResult.error.includes('No draft backup found')) {
+          return draftsResult;
+        }
+      }
+
+      return { 
+        success: true, 
+        restored: { 
+          schedules: restoredSchedules, 
+          drafts: restoredDrafts 
+        } 
+      };
+
+    } catch (error) {
+      console.error('Error restoring from Google Drive:', error);
+      return { success: false, error: 'Failed to restore from Google Drive' };
+    }
+  }
+
+  /**
+   * Get Google Drive backup information
+   */
+  async getGoogleDriveBackupInfo(): Promise<{
+    success: boolean;
+    error?: string;
+    info?: {
+      schedules?: { lastModified: string; size: string };
+      drafts?: { lastModified: string; size: string };
+    };
+  }> {
+    try {
+      if (!this.googleDriveSyncEnabled) {
+        return { success: false, error: 'Google Drive sync is not enabled' };
+      }
+
+      const result = await googleDriveStorage.getBackupInfo();
+      return {
+        success: result.success,
+        error: result.error,
+        info: result.success ? {
+          schedules: result.schedules,
+          drafts: result.drafts
+        } : undefined
+      };
+
+    } catch (error) {
+      console.error('Error getting Google Drive backup info:', error);
+      return { success: false, error: 'Failed to get Google Drive backup information' };
     }
   }
 }

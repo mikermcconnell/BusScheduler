@@ -30,6 +30,7 @@ import {
   Delete as DeleteIcon,
   FolderOpen as ExcelIcon,
   TableChart as CsvIcon,
+  DeleteSweep as DeleteSweepIcon,
 } from '@mui/icons-material';
 import { scheduleStorage, ScheduleListItem, SavedSchedule } from '../services/scheduleStorage';
 import ScheduleEditDialog from '../components/ScheduleEditDialog';
@@ -45,6 +46,8 @@ const ViewSchedules: React.FC = () => {
   const [selectedSchedule, setSelectedSchedule] = useState<SavedSchedule | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<'view' | 'edit'>('view');
+  const [deleteAllDialogOpen, setDeleteAllDialogOpen] = useState(false);
+  const [isDeletingAll, setIsDeletingAll] = useState(false);
 
   // Load schedules on component mount
   useEffect(() => {
@@ -55,8 +58,25 @@ const ViewSchedules: React.FC = () => {
     try {
       setIsLoading(true);
       setError(null);
-      const schedulesData = scheduleStorage.getScheduleListItems();
-      setSchedules(schedulesData);
+      // Get all schedules and filter for published ones only
+      const allSchedules = scheduleStorage.getAllSchedules();
+      const publishedSchedules = allSchedules
+        .filter(schedule => !schedule.isDraft) // Only show published schedules
+        .map(schedule => ({
+          id: schedule.id,
+          routeName: schedule.routeName,
+          direction: schedule.direction,
+          effectiveDate: schedule.effectiveDate,
+          expirationDate: schedule.expirationDate,
+          status: schedule.status,
+          tripCount: (schedule.tripCount.weekday || 0) + 
+                    (schedule.tripCount.saturday || 0) + 
+                    (schedule.tripCount.sunday || 0),
+          fileType: schedule.fileType,
+          createdAt: schedule.createdAt,
+          updatedAt: schedule.updatedAt
+        } as ScheduleListItem));
+      setSchedules(publishedSchedules);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load schedules');
     } finally {
@@ -142,6 +162,43 @@ const ViewSchedules: React.FC = () => {
     await loadSchedules(); // Refresh the list
   }, [loadSchedules]);
 
+  const handleDeleteAllClick = useCallback(() => {
+    setDeleteAllDialogOpen(true);
+  }, []);
+
+  const handleDeleteAllConfirm = useCallback(async () => {
+    setIsDeletingAll(true);
+    try {
+      // Delete all schedules one by one
+      let successCount = 0;
+      let failCount = 0;
+      
+      for (const schedule of schedules) {
+        const result = scheduleStorage.deleteSchedule(schedule.id);
+        if (result.success) {
+          successCount++;
+        } else {
+          failCount++;
+        }
+      }
+      
+      if (failCount > 0) {
+        setError(`Deleted ${successCount} schedules. Failed to delete ${failCount} schedules.`);
+      }
+      
+      await loadSchedules(); // Refresh the list
+      setDeleteAllDialogOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete all schedules');
+    } finally {
+      setIsDeletingAll(false);
+    }
+  }, [schedules, loadSchedules]);
+
+  const handleDeleteAllCancel = useCallback(() => {
+    setDeleteAllDialogOpen(false);
+  }, []);
+
   const formatDate = (dateString: string): string => {
     return new Date(dateString).toLocaleDateString();
   };
@@ -177,20 +234,33 @@ const ViewSchedules: React.FC = () => {
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
         <Box>
           <Typography variant="h4" component="h1" gutterBottom>
-            View Schedules
+            Published Schedules
           </Typography>
           <Typography variant="subtitle1" color="text.secondary">
-            Browse and manage your bus schedules ({schedules.length} saved)
+            Browse and manage your published bus schedules ({schedules.length} published)
           </Typography>
         </Box>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          size="large"
-          href="/upload"
-        >
-          New Schedule
-        </Button>
+        <Box sx={{ display: 'flex', gap: 2 }}>
+          {schedules.length > 0 && (
+            <Button
+              variant="outlined"
+              startIcon={<DeleteSweepIcon />}
+              size="large"
+              color="error"
+              onClick={handleDeleteAllClick}
+            >
+              Delete All
+            </Button>
+          )}
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            size="large"
+            href="/upload"
+          >
+            New Schedule
+          </Button>
+        </Box>
       </Box>
 
       {error && (
@@ -343,6 +413,44 @@ const ViewSchedules: React.FC = () => {
         onSave={handleScheduleSave}
         mode={dialogMode}
       />
+
+      {/* Delete All Confirmation Dialog */}
+      <Dialog
+        open={deleteAllDialogOpen}
+        onClose={handleDeleteAllCancel}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ color: 'error.main' }}>
+          Delete All Schedules
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            <strong>Warning:</strong> You are about to delete ALL {schedules.length} schedules.
+          </DialogContentText>
+          <DialogContentText sx={{ mt: 2 }}>
+            This action will permanently remove all saved schedules from the system. 
+            This action cannot be undone.
+          </DialogContentText>
+          <DialogContentText sx={{ mt: 2, fontWeight: 'bold', color: 'error.main' }}>
+            Are you absolutely sure you want to proceed?
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleDeleteAllCancel} disabled={isDeletingAll} variant="outlined">
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleDeleteAllConfirm} 
+            color="error" 
+            variant="contained"
+            disabled={isDeletingAll}
+            startIcon={isDeletingAll ? <CircularProgress size={16} /> : <DeleteSweepIcon />}
+          >
+            {isDeletingAll ? `Deleting ${schedules.length} schedules...` : `Delete All (${schedules.length})`}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

@@ -14,10 +14,12 @@ import {
   NavigateNext as NavigateNextIcon,
   Fullscreen as FullscreenIcon,
   FullscreenExit as FullscreenExitIcon,
-  Close as CloseIcon
+  Close as CloseIcon,
+  Schedule as ScheduleIcon
 } from '@mui/icons-material';
 import { scheduleStorage } from '../services/scheduleStorage';
 import { SummarySchedule } from '../types/schedule';
+import { workflowStateService } from '../services/workflowStateService';
 import {
   Box,
   Container,
@@ -77,7 +79,7 @@ interface TimeBand {
 }
 
 interface ServiceBand {
-  name: 'Fastest' | 'Fast' | 'Standard' | 'Slow' | 'Slowest';
+  name: 'Fastest Service' | 'Fast Service' | 'Standard Service' | 'Slow Service' | 'Slowest Service';
   color: string;
   segmentTimes: Array<{
     from: string;
@@ -162,6 +164,343 @@ const getTimeWithDefault = (time: string | undefined, defaultTime: string): stri
   return time && time.trim() ? time : defaultTime;
 };
 
+/**
+ * Validates service band name and provides fallback
+ */
+const validateServiceBandName = (name: string): ServiceBand['name'] => {
+  const validNames: ServiceBand['name'][] = [
+    'Fastest Service', 'Fast Service', 'Standard Service', 'Slow Service', 'Slowest Service'
+  ];
+  
+  if (validNames.includes(name as ServiceBand['name'])) {
+    return name as ServiceBand['name'];
+  }
+  
+  return 'Standard Service'; // Fallback
+};
+
+/**
+ * Finds service band by name, handling both full names and short names
+ */
+const findServiceBand = (serviceBands: ServiceBand[], targetName: string): ServiceBand | undefined => {
+  // First try exact match
+  let found = serviceBands.find(sb => sb.name === targetName);
+  if (found) return found;
+  
+  // If not found, try matching without "Service" suffix
+  const shortName = targetName.replace(' Service', '');
+  found = serviceBands.find(sb => sb.name === shortName || sb.name.replace(' Service', '') === shortName);
+  if (found) {
+    console.log(`🔧 Service band name mapping: "${targetName}" → "${found.name}"`);
+    return found;
+  }
+  
+  // Try the opposite - add "Service" if target doesn't have it
+  const longName = targetName.includes('Service') ? targetName : `${targetName} Service`;
+  found = serviceBands.find(sb => sb.name === longName);
+  if (found) {
+    console.log(`🔧 Service band name mapping: "${targetName}" → "${found.name}"`);
+    return found;
+  }
+  
+  return undefined;
+};
+
+/**
+ * Builds service bands with actual travel times from TimePoints data
+ */
+const buildServiceBandsFromTimePointsData = (
+  timePointData: TimePointData[],
+  timePeriodServiceBands: { [timePeriod: string]: string },
+  deletedPeriods: string[] = []
+): ServiceBand[] => {
+  if (!timePointData.length) {
+    console.log('⚠️ No TimePoints data available for building service bands');
+    return [];
+  }
+
+  // Create mapping if not provided
+  let workingMapping = timePeriodServiceBands;
+  if (!workingMapping || Object.keys(workingMapping).length === 0) {
+    console.log('🔧 Creating service band mapping from TimePoints data...');
+    workingMapping = createTimePeriodServiceBandMapping(timePointData, deletedPeriods);
+    
+    if (Object.keys(workingMapping).length === 0) {
+      console.warn('⚠️ Failed to create service band mapping from TimePoints data');
+      return [];
+    }
+  }
+
+  console.log('🔧 Building service bands from TimePoints data...');
+  console.log('🔧 Available timePeriodServiceBands:', workingMapping);
+  console.log('🔧 TimePointData length:', timePointData.length);
+
+  // Group data by time period and service band
+  const serviceBandData = new Map<string, TimePointData[]>();
+
+  timePointData.forEach(row => {
+    const serviceBand = workingMapping[row.timePeriod];
+    if (serviceBand) {
+      if (!serviceBandData.has(serviceBand)) {
+        serviceBandData.set(serviceBand, []);
+        console.log(`🔧 Creating service band group: ${serviceBand}`);
+      }
+      serviceBandData.get(serviceBand)!.push(row);
+    } else {
+      console.warn(`⚠️ No service band found for time period: ${row.timePeriod}`);
+    }
+  });
+  
+  console.log('🔧 Service band data groups:', Array.from(serviceBandData.keys()));
+
+  // Build service bands with actual travel times
+  const serviceBands: ServiceBand[] = [];
+  const bandNames: ServiceBand['name'][] = ['Fastest Service', 'Fast Service', 'Standard Service', 'Slow Service', 'Slowest Service'];
+  
+  bandNames.forEach(bandName => {
+    const bandData = serviceBandData.get(bandName);
+    if (!bandData) return;
+
+    console.log(`📊 Processing ${bandName}: ${bandData.length} data points`);
+
+    // Get unique route segments
+    const segments = new Map<string, TimePointData[]>();
+    bandData.forEach(row => {
+      const segmentKey = `${row.fromTimePoint}|${row.toTimePoint}`;
+      if (!segments.has(segmentKey)) {
+        segments.set(segmentKey, []);
+      }
+      segments.get(segmentKey)!.push(row);
+    });
+
+    // Calculate average travel times for each segment
+    const segmentTimes: Array<{ from: string, to: string, travelMinutes: number }> = [];
+    let totalMinutes = 0;
+
+    Array.from(segments.entries()).forEach(([segmentKey, segmentData]) => {
+      const [fromPoint, toPoint] = segmentKey.split('|');
+      const avgTravelTime = Math.round(
+        segmentData.reduce((sum, row) => sum + row.percentile50, 0) / segmentData.length
+      );
+      
+      // Convert timepoint names to IDs (simple mapping)
+      const fromId = fromPoint.toLowerCase().replace(/[^a-z0-9]/g, '_');
+      const toId = toPoint.toLowerCase().replace(/[^a-z0-9]/g, '_');
+      
+      segmentTimes.push({
+        from: fromId,
+        to: toId,
+        travelMinutes: avgTravelTime
+      });
+      
+      totalMinutes += avgTravelTime;
+      
+      console.log(`  🛤️ ${fromPoint} → ${toPoint}: ${avgTravelTime}min (${segmentData.length} data points)`);
+    });
+
+    serviceBands.push({
+      name: bandName,
+      color: getServiceBandColor(bandName),
+      segmentTimes,
+      totalMinutes
+    });
+    
+    console.log(`✅ Created service band: "${bandName}"`); // Debug to see actual names
+
+    console.log(`✅ ${bandName}: ${segmentTimes.length} segments, ${totalMinutes}min total`);
+  });
+
+  console.log(`🎯 Built ${serviceBands.length} service bands from TimePoints data`);
+  console.log(`🎯 Service band names:`, serviceBands.map(sb => sb.name));
+  return serviceBands;
+};
+
+/**
+ * Creates a default service band mapping for when no TimePoints data is available
+ * This provides a reasonable fallback based on typical traffic patterns
+ */
+const createDefaultServiceBandMapping = (): { [timePeriod: string]: string } => {
+  const mapping: { [timePeriod: string]: string } = {};
+  
+  // Generate time periods for a typical service day (7:00 AM to 10:00 PM)
+  for (let hour = 7; hour < 22; hour++) {
+    for (let half = 0; half < 2; half++) {
+      const startHour = hour;
+      const startMin = half * 30;
+      const endMin = startMin + 29;
+      
+      const startTime = `${String(startHour).padStart(2, '0')}:${String(startMin).padStart(2, '0')}`;
+      const endTime = `${String(startHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`;
+      const timePeriod = `${startTime} - ${endTime}`;
+      
+      // Assign service bands based on typical traffic patterns
+      if (hour >= 7 && hour < 9) {
+        mapping[timePeriod] = 'Slow Service'; // Morning rush
+      } else if (hour >= 9 && hour < 12) {
+        mapping[timePeriod] = 'Fast Service'; // Mid-morning
+      } else if (hour >= 12 && hour < 14) {
+        mapping[timePeriod] = 'Standard Service'; // Lunch
+      } else if (hour >= 14 && hour < 16) {
+        mapping[timePeriod] = 'Fast Service'; // Early afternoon
+      } else if (hour >= 16 && hour < 19) {
+        mapping[timePeriod] = 'Slowest Service'; // Evening rush
+      } else if (hour >= 19 && hour < 21) {
+        mapping[timePeriod] = 'Standard Service'; // Evening
+      } else {
+        mapping[timePeriod] = 'Fastest Service'; // Late evening
+      }
+    }
+  }
+  
+  console.log('🏗️ Created default service band mapping with', Object.keys(mapping).length, 'periods');
+  return mapping;
+};
+
+/**
+ * Creates time period to service band mapping from TimePoints data
+ * This recreates the mapping logic that was working before
+ */
+const createTimePeriodServiceBandMapping = (
+  timePointData: TimePointData[], 
+  deletedPeriods: string[] = []
+): { [timePeriod: string]: string } => {
+  console.log('📊 createTimePeriodServiceBandMapping called with:');
+  console.log('  - timePointData length:', timePointData.length);
+  console.log('  - deletedPeriods:', deletedPeriods);
+  
+  if (timePointData.length === 0) {
+    console.log('⚠️ No timePointData provided, returning empty mapping');
+    return {};
+  }
+  
+  // Group data by time period and calculate total travel times, excluding deleted periods
+  const timePeriodsMap = new Map<string, number>();
+  const deletedSet = new Set(deletedPeriods);
+  
+  console.log('🔄 Processing timePointData...');
+  timePointData.forEach(row => {
+    if (deletedSet.has(row.timePeriod)) {
+      console.log(`  - Skipping deleted period: ${row.timePeriod}`);
+      return; // Skip deleted periods
+    }
+    const currentSum = timePeriodsMap.get(row.timePeriod) || 0;
+    timePeriodsMap.set(row.timePeriod, currentSum + row.percentile50);
+  });
+  
+  console.log('📈 Time periods found:', timePeriodsMap.size);
+
+  // Sort periods by total travel time to determine service bands
+  const sortedPeriods = Array.from(timePeriodsMap.entries())
+    .map(([timePeriod, totalTravelTime]) => ({
+      timePeriod,
+      totalTravelTime: Math.round(totalTravelTime)
+    }))
+    .sort((a, b) => a.totalTravelTime - b.totalTravelTime);
+
+  if (sortedPeriods.length === 0) {
+    console.log('⚠️ No time periods after processing, returning empty mapping');
+    return {};
+  }
+  
+  console.log('📊 Sorted periods:', sortedPeriods.length, 'periods');
+  console.log('📊 Sample periods:', sortedPeriods.slice(0, 3));
+
+  // Calculate percentile thresholds for service band assignment
+  const travelTimes = sortedPeriods.map(p => p.totalTravelTime);
+  const getPercentile = (arr: number[], percentile: number): number => {
+    if (arr.length === 0) return 0;
+    const sorted = [...arr].sort((a, b) => a - b);
+    const index = Math.ceil((percentile / 100) * sorted.length) - 1;
+    return sorted[Math.max(0, index)];
+  };
+
+  const p20 = getPercentile(travelTimes, 20);
+  const p40 = getPercentile(travelTimes, 40);
+  const p60 = getPercentile(travelTimes, 60);
+  const p80 = getPercentile(travelTimes, 80);
+
+  // Create the mapping
+  const mapping: { [timePeriod: string]: string } = {};
+  
+  sortedPeriods.forEach(({ timePeriod, totalTravelTime }) => {
+    let serviceBand: string;
+    if (totalTravelTime <= p20) serviceBand = 'Fastest Service';
+    else if (totalTravelTime <= p40) serviceBand = 'Fast Service';
+    else if (totalTravelTime <= p60) serviceBand = 'Standard Service';
+    else if (totalTravelTime <= p80) serviceBand = 'Slow Service';
+    else serviceBand = 'Slowest Service';
+    
+    mapping[timePeriod] = serviceBand;
+  });
+
+  console.log(`🎯 Created service band mapping from ${timePointData.length} data points:`);
+  console.log(`📊 Percentile thresholds: P20=${p20}, P40=${p40}, P60=${p60}, P80=${p80}`);
+  console.log(`🗺️ Time period mappings:`, mapping);
+  
+  return mapping;
+};
+
+/**
+ * Gets service band for a departure time using TimePoints analysis data
+ * Provides fallback handling for times outside the TimePoints data range
+ */
+const getServiceBandForTime = (
+  departureTime: string,
+  timePeriodServiceBands: { [timePeriod: string]: string }
+): ServiceBand['name'] => {
+  // Parse the departure time
+  const [hours, minutes] = departureTime.split(':').map(Number);
+  const totalMinutes = hours * 60 + minutes;
+  
+  console.log(`🔍 getServiceBandForTime: Looking up service band for ${departureTime} (${totalMinutes} minutes)`);
+  console.log(`🔍 Available mapping keys:`, Object.keys(timePeriodServiceBands || {}));
+  
+  // Check if we have any mappings at all
+  if (!timePeriodServiceBands || Object.keys(timePeriodServiceBands).length === 0) {
+    console.warn(`⚠️ WARNING: No service band mappings available from TimePoints data. Using fallback 'Standard Service' for ${departureTime}`);
+    return 'Standard Service';
+  }
+  
+  // Find matching time period
+  for (const [timePeriod, serviceBand] of Object.entries(timePeriodServiceBands)) {
+    const [startTime, endTime] = timePeriod.split(' - ');
+    
+    // Parse start time
+    const [startHours, startMins] = startTime.split(':').map(Number);
+    const startMinutes = startHours * 60 + startMins;
+    
+    // Parse end time 
+    const [endHours, endMins] = endTime.split(':').map(Number);
+    const endMinutes = endHours * 60 + endMins;
+    
+    // Check if departure time falls within this period
+    if (totalMinutes >= startMinutes && totalMinutes < endMinutes) {
+      console.log(`✅ DEBUG: Found match - ${departureTime} in period ${timePeriod} = ${serviceBand}`);
+      return validateServiceBandName(serviceBand);
+    }
+  }
+  
+  // No mapping found - use intelligent fallback based on time of day
+  const availablePeriods = Object.keys(timePeriodServiceBands);
+  console.warn(`⚠️ WARNING: No service band mapping found for departure time ${departureTime}. Available periods: ${availablePeriods.join(', ')}`);
+  
+  // Early morning or late evening: use slower service (more conservative)
+  if (hours < 7 || hours >= 21) {
+    console.log(`🔄 FALLBACK: Using 'Slow Service' for early/late hours (${departureTime})`);
+    return 'Slow Service';
+  }
+  
+  // Rush hours: use standard service
+  if ((hours >= 7 && hours <= 9) || (hours >= 16 && hours <= 18)) {
+    console.log(`🔄 FALLBACK: Using 'Standard Service' for peak hours (${departureTime})`);
+    return 'Standard Service';
+  }
+  
+  // Off-peak hours: use faster service
+  console.log(`🔄 FALLBACK: Using 'Fast Service' for off-peak hours (${departureTime})`);
+  return 'Fast Service';
+};
+
 // ==================== COLOR UTILITIES ====================
 // Diverse professional colors for bus block cards
 const getProfessionalColor = (index: number): string => {
@@ -182,11 +521,11 @@ const getProfessionalColor = (index: number): string => {
 
 const getServiceBandColor = (bandName: ServiceBand['name']): string => {
   const colorMap: Record<ServiceBand['name'], string> = {
-    'Fastest': '#22c55e',   // Green
-    'Fast': '#3b82f6',      // Blue  
-    'Standard': '#f59e0b',  // Amber
-    'Slow': '#ef4444',      // Red
-    'Slowest': '#dc2626'    // Dark Red
+    'Fastest Service': '#22c55e',   // Green
+    'Fast Service': '#3b82f6',      // Blue  
+    'Standard Service': '#f59e0b',  // Amber
+    'Slow Service': '#ef4444',      // Red
+    'Slowest Service': '#dc2626'    // Dark Red
   };
   return colorMap[bandName] || '#6b7280';
 };
@@ -202,6 +541,7 @@ export default function BlockConfiguration() {
     timePointData = [],
     serviceBands = [],
     deletedPeriods = [],
+    timePeriodServiceBands = {},
     scheduleId,
     fileName
   } = location.state || {};
@@ -268,10 +608,28 @@ export default function BlockConfiguration() {
         { id: 'bayfield_mall', name: 'Bayfield Mall' },
         { id: 'downtown_return', name: 'Downtown Terminal' }
       ],
-      serviceBands: [
+      serviceBands: (() => {
+        // Build service bands from TimePoints data if available
+        const timePointsServiceBands = buildServiceBandsFromTimePointsData(timePointData, timePeriodServiceBands, deletedPeriods);
+        if (timePointsServiceBands.length > 0) {
+          console.log('✅ Using service bands built from TimePoints data:');
+          console.log(timePointsServiceBands.map(sb => `  - ${sb.name}: ${sb.segmentTimes.length} segments`));
+          return timePointsServiceBands;
+        }
+        
+        // Use passed serviceBands from navigation state if available
+        if (serviceBands.length > 0) {
+          console.log('✅ Using service bands from navigation state');
+          return serviceBands;
+        }
+        
+        // Fallback to hardcoded service bands
+        console.log('⚠️ Using fallback hardcoded service bands');
+        return [
+        // Fallback service bands if no TimePoints data available
         {
-          name: 'Fastest',
-          color: getServiceBandColor('Fastest'),
+          name: 'Fastest Service',
+          color: getServiceBandColor('Fastest Service'),
           segmentTimes: [
             { from: 'downtown_terminal', to: 'johnson_napier', travelMinutes: 8 },
             { from: 'johnson_napier', to: 'rvh_entrance', travelMinutes: 12 },
@@ -283,21 +641,8 @@ export default function BlockConfiguration() {
           totalMinutes: 88
         },
         {
-          name: 'Fast',
-          color: getServiceBandColor('Fast'),
-          segmentTimes: [
-            { from: 'downtown_terminal', to: 'johnson_napier', travelMinutes: 10 },
-            { from: 'johnson_napier', to: 'rvh_entrance', travelMinutes: 14 },
-            { from: 'rvh_entrance', to: 'georgian_college', travelMinutes: 17 },
-            { from: 'georgian_college', to: 'georgian_mall', travelMinutes: 12 },
-            { from: 'georgian_mall', to: 'bayfield_mall', travelMinutes: 20 },
-            { from: 'bayfield_mall', to: 'downtown_return', travelMinutes: 28 }
-          ],
-          totalMinutes: 101
-        },
-        {
-          name: 'Standard',
-          color: getServiceBandColor('Standard'),
+          name: 'Standard Service',
+          color: getServiceBandColor('Standard Service'),
           segmentTimes: [
             { from: 'downtown_terminal', to: 'johnson_napier', travelMinutes: 12 },
             { from: 'johnson_napier', to: 'rvh_entrance', travelMinutes: 16 },
@@ -307,34 +652,9 @@ export default function BlockConfiguration() {
             { from: 'bayfield_mall', to: 'downtown_return', travelMinutes: 32 }
           ],
           totalMinutes: 118
-        },
-        {
-          name: 'Slow',
-          color: getServiceBandColor('Slow'),
-          segmentTimes: [
-            { from: 'downtown_terminal', to: 'johnson_napier', travelMinutes: 15 },
-            { from: 'johnson_napier', to: 'rvh_entrance', travelMinutes: 20 },
-            { from: 'rvh_entrance', to: 'georgian_college', travelMinutes: 25 },
-            { from: 'georgian_college', to: 'georgian_mall', travelMinutes: 18 },
-            { from: 'georgian_mall', to: 'bayfield_mall', travelMinutes: 28 },
-            { from: 'bayfield_mall', to: 'downtown_return', travelMinutes: 38 }
-          ],
-          totalMinutes: 144
-        },
-        {
-          name: 'Slowest',
-          color: getServiceBandColor('Slowest'),
-          segmentTimes: [
-            { from: 'downtown_terminal', to: 'johnson_napier', travelMinutes: 18 },
-            { from: 'johnson_napier', to: 'rvh_entrance', travelMinutes: 25 },
-            { from: 'rvh_entrance', to: 'georgian_college', travelMinutes: 30 },
-            { from: 'georgian_college', to: 'georgian_mall', travelMinutes: 22 },
-            { from: 'georgian_mall', to: 'bayfield_mall', travelMinutes: 35 },
-            { from: 'bayfield_mall', to: 'downtown_return', travelMinutes: 45 }
-          ],
-          totalMinutes: 175
         }
-      ],
+        ];
+      })(),
       timePeriods: [],
       trips: [],
       blockConfigurations: [
@@ -348,6 +668,84 @@ export default function BlockConfiguration() {
     };
   });
 
+  // Store the service band mapping for reuse
+  const [serviceBandMapping, setServiceBandMapping] = useState<{ [timePeriod: string]: string }>(() => {
+    console.log('🔍 Initializing serviceBandMapping state...');
+    console.log('  - timePointData length:', timePointData?.length || 0);
+    console.log('  - timePeriodServiceBands:', timePeriodServiceBands);
+    console.log('  - deletedPeriods:', deletedPeriods);
+    
+    // First check for direct mapping from TimePoints page
+    if (timePeriodServiceBands && Object.keys(timePeriodServiceBands).length > 0) {
+      console.log('✅ Using provided timePeriodServiceBands with', Object.keys(timePeriodServiceBands).length, 'periods');
+      return timePeriodServiceBands;
+    }
+    
+    // Create initial mapping if we have TimePoints data
+    if (timePointData && timePointData.length > 0) {
+      const mapping = createTimePeriodServiceBandMapping(timePointData, deletedPeriods);
+      console.log('🎯 Initial service band mapping created with', Object.keys(mapping).length, 'periods');
+      console.log('🎯 Mapping:', mapping);
+      return mapping;
+    }
+    
+    console.log('⚠️ No initial mapping available, using default');
+    const defaultMapping = createDefaultServiceBandMapping();
+    console.log('📦 Created default mapping with', Object.keys(defaultMapping).length, 'periods');
+    return defaultMapping;
+  });
+  
+  // Update service bands when TimePoints data changes or on initial mount
+  useEffect(() => {
+    console.log('📌 useEffect triggered - checking location.state');
+    console.log('  - location.state:', location.state);
+    console.log('  - timePointData length:', timePointData.length);
+    console.log('  - timePeriodServiceBands:', timePeriodServiceBands);
+    
+    // First try to use the direct mapping if available
+    if (timePeriodServiceBands && Object.keys(timePeriodServiceBands).length > 0) {
+      console.log('✅ Using direct time period service band mapping from TimePoints');
+      setServiceBandMapping(timePeriodServiceBands);
+      
+      // Build service bands using the direct mapping
+      const newServiceBands = buildServiceBandsFromTimePointsData(timePointData, timePeriodServiceBands, deletedPeriods);
+      if (newServiceBands.length > 0) {
+        setSchedule(prev => ({
+          ...prev,
+          serviceBands: newServiceBands,
+          updatedAt: new Date().toISOString()
+        }));
+        console.log('✅ Service bands updated using direct mapping');
+      }
+    } else if (timePointData.length > 0) {
+      console.log('📊 TimePoints data available, rebuilding service bands...');
+      console.log('📊 Sample TimePoints data:', timePointData.slice(0, 2));
+      
+      // Create the mapping from TimePoints data
+      const newMapping = createTimePeriodServiceBandMapping(timePointData, deletedPeriods);
+      setServiceBandMapping(newMapping);
+      
+      // Then build service bands using the mapping
+      const newServiceBands = buildServiceBandsFromTimePointsData(timePointData, newMapping, deletedPeriods);
+      
+      if (newServiceBands.length > 0) {
+        setSchedule(prev => ({
+          ...prev,
+          serviceBands: newServiceBands,
+          updatedAt: new Date().toISOString()
+        }));
+        console.log('✅ Service bands updated from TimePoints data');
+        console.log('🗺️ Service band mapping:', newMapping);
+      }
+    } else {
+      console.log('⚠️ No TimePoints data available in useEffect');
+      // Create a default mapping for testing/fallback
+      const defaultMapping = createDefaultServiceBandMapping();
+      setServiceBandMapping(defaultMapping);
+      console.log('📦 Using default service band mapping:', defaultMapping);
+    }
+  }, [location.state]); // React to changes in location.state
+  
   // Mouse event handlers for drag scrolling
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     setIsDragging(true);
@@ -380,6 +778,18 @@ export default function BlockConfiguration() {
     setIsDragging(false);
   }, []);
 
+  // Auto-save functionality with debounce
+  const autoSave = useCallback(() => {
+    localStorage.setItem('busSchedule', JSON.stringify(schedule));
+    console.log('🔄 Auto-saved schedule configuration');
+  }, [schedule]);
+
+  // Debounced auto-save - saves 1 second after user stops typing
+  const debouncedAutoSave = useCallback(() => {
+    const timeoutId = setTimeout(autoSave, 1000);
+    return () => clearTimeout(timeoutId);
+  }, [autoSave]);
+
   // Calculate automated start time for blocks
   const calculateAutomatedStartTime = useCallback((
     blockIndex: number, 
@@ -400,12 +810,12 @@ export default function BlockConfiguration() {
       for (let i = currentConfigs.length; i < newCount; i++) {
         const blockNumber = i + 1;
         let startTime = '07:00';
-        let endTime = '22:00';
+        let endTime = currentConfigs[0]?.endTime || '22:00'; // Default to Block 1's end time
         
         if (schedule.automateBlockStartTimes && i > 0) {
           const frequencyMinutes = Math.round(schedule.cycleTimeMinutes / newCount);
           startTime = calculateAutomatedStartTime(i, frequencyMinutes, currentConfigs[0].startTime);
-          endTime = addMinutesToTime(startTime, schedule.cycleTimeMinutes);
+          endTime = currentConfigs[0]?.endTime || '22:00'; // Keep Block 1's end time even when automated
         }
         
         currentConfigs.push({
@@ -437,7 +847,7 @@ export default function BlockConfiguration() {
         return {
           ...config,
           startTime,
-          endTime: addMinutesToTime(startTime, schedule.cycleTimeMinutes)
+          endTime: schedule.blockConfigurations[0].endTime // Use Block 1's end time
         };
       });
       
@@ -448,6 +858,12 @@ export default function BlockConfiguration() {
       }));
     }
   }, [schedule.cycleTimeMinutes, schedule.automateBlockStartTimes, schedule.blockConfigurations.length, calculateAutomatedStartTime]);
+
+  // Auto-save whenever schedule changes
+  useEffect(() => {
+    const cleanup = debouncedAutoSave();
+    return cleanup;
+  }, [schedule, debouncedAutoSave]);
 
   // Auto-generate time periods based on service hours and traffic patterns
   const generateTimePeriods = () => {
@@ -466,17 +882,9 @@ export default function BlockConfiguration() {
           continue;
         }
         
-        // Determine service band based on traffic patterns
-        let serviceBand: ServiceBand['name'] = 'Standard';
-        
-        if (hour >= 6 && hour < 8) serviceBand = 'Fastest';  // Extended 6:00-8:00 for Fastest
-        else if (hour >= 8 && hour < 9) serviceBand = 'Slow';
-        else if (hour >= 9 && hour < 10) serviceBand = 'Standard';
-        else if (hour >= 10 && hour < 15) serviceBand = 'Fastest';
-        else if (hour >= 15 && hour < 17) serviceBand = 'Slowest';
-        else if (hour >= 17 && hour < 18) serviceBand = 'Slow';
-        else if (hour >= 18 && hour < 20) serviceBand = 'Standard';
-        else if (hour >= 20) serviceBand = 'Fast';
+        // Get service band from TimePoints analysis data (with fallback handling)
+        const currentTime = minutesToTime(startMinutes);
+        const serviceBand = getServiceBandForTime(currentTime, timePeriodServiceBands);
         
         periods.push({
           startTime: minutesToTime(startMinutes),
@@ -515,8 +923,19 @@ export default function BlockConfiguration() {
       return;
     }
     
+    // Use the service band mapping from state
+    const workingTimePeriodServiceBands = serviceBandMapping;
+    
+    if (!workingTimePeriodServiceBands || Object.keys(workingTimePeriodServiceBands).length === 0) {
+      console.warn('⚠️ No service band mapping available. Will use fallback service band assignment.');
+      console.log('Available TimePoints data:', timePointData.length, 'records');
+      console.log('Service band mapping state:', serviceBandMapping);
+    } else {
+      console.log('✅ Using service band mapping with', Object.keys(workingTimePeriodServiceBands).length, 'time periods');
+      console.log('📊 Sample mappings:', Object.entries(workingTimePeriodServiceBands).slice(0, 3));
+    }
+    
     const trips: Trip[] = [];
-    let tripNumber = 1;
     
     const firstMinutes = timeToMinutes(getTimeWithDefault(schedule.firstTripTime, '07:00'));
     const lastMinutes = timeToMinutes(getTimeWithDefault(schedule.lastTripTime, '22:00'));
@@ -537,36 +956,44 @@ export default function BlockConfiguration() {
     let currentTimePeriods = schedule.timePeriods;
     if (currentTimePeriods.length === 0) {
       const periods: TimePeriod[] = [];
-      for (let hour = 6; hour <= 22; hour++) {
-        for (let half = 0; half < 2; half++) {
-          const startMinutes = hour * 60 + half * 30;
-          const endMinutes = startMinutes + 30;
-          
-          // Dynamically determine service band based on traffic patterns and travel time data
-          let serviceBand: ServiceBand['name'] = 'Standard';
-          
-          // Early morning (6:00-8:00): Light traffic - Fastest
-          if (hour >= 6 && hour < 8) serviceBand = 'Fastest';  // Extended to include 7:00 AM
-          // Morning rush (8:00-9:00): Heavy traffic - Slow
-          else if (hour >= 8 && hour < 9) serviceBand = 'Slow';
-          // Late morning (9:00-11:00): Moderate traffic - Standard/Fast
-          else if (hour >= 9 && hour < 10) serviceBand = 'Standard';
-          else if (hour >= 10 && hour < 11) serviceBand = 'Fast';
-          // Midday (11:00-15:00): Light traffic - Fastest/Fast
-          else if (hour >= 11 && hour < 15) serviceBand = 'Fastest';
-          // Afternoon rush (15:00-18:00): Heavy traffic - Slowest/Slow
-          else if (hour >= 15 && hour < 17) serviceBand = 'Slowest';
-          else if (hour >= 17 && hour < 18) serviceBand = 'Slow';
-          // Evening (18:00-20:00): Moderate traffic - Standard
-          else if (hour >= 18 && hour < 20) serviceBand = 'Standard';
-          // Late evening (20:00-22:00): Light traffic - Fast
-          else if (hour >= 20 && hour <= 22) serviceBand = 'Fast';
+      
+      // Use the actual range from firstTripTime and lastTripTime, or derive from TimePoints data
+      const startHour = Math.floor(timeToMinutes(getTimeWithDefault(schedule.firstTripTime, '07:00')) / 60);
+      const endHour = Math.ceil(timeToMinutes(getTimeWithDefault(schedule.lastTripTime, '22:00')) / 60);
+      
+      // If we have TimePoints service bands, only generate periods within their range
+      if (timePeriodServiceBands && Object.keys(timePeriodServiceBands).length > 0) {
+        // Extract available time periods from TimePoints data
+        const availablePeriods = Object.keys(timePeriodServiceBands);
+        for (const timePeriod of availablePeriods) {
+          const serviceBand = timePeriodServiceBands[timePeriod];
+          const [startTime, endTime] = timePeriod.split(' - ');
           
           periods.push({
-            startTime: minutesToTime(startMinutes),
-            endTime: minutesToTime(endMinutes),
-            serviceBand
+            startTime,
+            endTime,
+            serviceBand: validateServiceBandName(serviceBand)
           });
+        }
+      } else {
+        // Fallback: generate periods within service hours with default service band
+        for (let hour = startHour; hour <= endHour; hour++) {
+          for (let half = 0; half < 2; half++) {
+            const startMinutes = hour * 60 + half * 30;
+            const endMinutes = startMinutes + 30;
+            
+            // Skip if outside service hours
+            if (startMinutes < timeToMinutes(getTimeWithDefault(schedule.firstTripTime, '07:00')) || 
+                endMinutes > timeToMinutes(getTimeWithDefault(schedule.lastTripTime, '22:00'))) {
+              continue;
+            }
+            
+            periods.push({
+              startTime: minutesToTime(startMinutes),
+              endTime: minutesToTime(endMinutes),
+              serviceBand: 'Standard Service' // Default fallback
+            });
+          }
         }
       }
       currentTimePeriods = periods;
@@ -595,37 +1022,69 @@ export default function BlockConfiguration() {
       let blockTripCount = 0;
       let loopIterations = 0;
       
-      // Generate trips for this block using cycle time
+      // Determine service band for this block based on its start time from TimePoints data
+      const blockServiceBand = getServiceBandForTime(blockStartTime, workingTimePeriodServiceBands);
+      console.log(`🚌 BLOCK ${blockConfig.blockNumber}: Start time ${blockStartTime} → Service Band: ${blockServiceBand}`);
+      
+      // First, calculate the actual trip time for this service band to use in loop condition
+      const serviceBandName = blockServiceBand;
+      const serviceBand = findServiceBand(schedule.serviceBands, serviceBandName);
+      
+      if (!serviceBand) {
+        console.error('Service band not found:', serviceBandName);
+        console.error('Available service bands in schedule:', schedule.serviceBands.map(sb => sb.name));
+        console.error('Looking for service band:', serviceBandName);
+        continue; // Skip to next block
+      }
+      
+      // Calculate actual trip time from service band (matching the exact recovery time logic)
+      let totalTravelTime = serviceBand.segmentTimes.reduce((total, segment) => total + segment.travelMinutes, 0);
+      let totalRecoveryTime = 0;
+      
+      // Calculate recovery time using the same logic as the detailed calculation
+      for (let i = 1; i < schedule.timePoints.length; i++) {
+        const recoveryMinutes = i === schedule.timePoints.length - 1 ? 3 : 
+                               i === Math.floor(schedule.timePoints.length / 2) ? 2 : 1;
+        totalRecoveryTime += recoveryMinutes;
+      }
+      
+      const actualTripTimeMinutes = totalTravelTime + totalRecoveryTime;
+      
+      console.log(`🚌 BLOCK ${blockConfig.blockNumber}: Using service band "${serviceBandName}"`);
+      console.log(`  📊 Service band travel time: ${totalTravelTime} minutes`);
+      console.log(`  ⏱️  Recovery time breakdown: ${totalRecoveryTime} minutes`);
+      console.log(`  🔄 Total actual trip time: ${actualTripTimeMinutes} minutes`);
+      console.log(`  📋 Service band segments:`, serviceBand.segmentTimes.map(s => `${s.travelMinutes}min`).join(' + '));
+      
+      // Generate trips for this block using actual trip time from service band
       while (
-        timeToMinutes(currentDepartureTime) + schedule.cycleTimeMinutes <= timeToMinutes(blockEndTime) &&
+        timeToMinutes(currentDepartureTime) + actualTripTimeMinutes <= timeToMinutes(blockEndTime) &&
         blockTripCount < MAX_TRIPS_PER_BLOCK &&
         trips.length < MAX_TOTAL_TRIPS &&
         loopIterations < MAX_LOOP_ITERATIONS
       ) {
         loopIterations++;
         
-        // Find appropriate service band for departure time
-        const departureMinutes = timeToMinutes(currentDepartureTime);
-        const currentPeriod = currentTimePeriods.find(period => {
-          const periodStart = timeToMinutes(period.startTime);
-          const periodEnd = timeToMinutes(period.endTime);
-          return departureMinutes >= periodStart && departureMinutes < periodEnd;
-        });
+        // Determine service band for THIS TRIP based on its departure time (not block start time)
+        const tripServiceBandName = getServiceBandForTime(currentDepartureTime, workingTimePeriodServiceBands);
+        const tripServiceBand = findServiceBand(schedule.serviceBands, tripServiceBandName);
         
-        const serviceBandName = currentPeriod?.serviceBand || 'Standard';
-        const serviceBand = schedule.serviceBands.find(sb => sb.name === serviceBandName);
-        
-        if (!serviceBand) {
-          console.error('Service band not found:', serviceBandName);
+        if (!tripServiceBand) {
+          console.error(`Service band not found for trip at ${currentDepartureTime}:`, tripServiceBandName);
+          console.error('Available service bands:', schedule.serviceBands.map(sb => sb.name));
           break;
         }
         
-        // Calculate arrival and departure times for each timepoint
+        console.log(`  🎯 Trip ${blockTripCount + 1} at ${currentDepartureTime}: Using service band "${tripServiceBandName}" (trip-specific, not block-wide)`);
+        console.log(`  📊 Trip service band travel time: ${tripServiceBand.segmentTimes.reduce((sum, seg) => sum + seg.travelMinutes, 0)} minutes`);
+        
+        // Calculate arrival and departure times for each timepoint using trip-specific service band
         const arrivalTimes: { [timePointId: string]: string } = {};
         const departureTimes: { [timePointId: string]: string } = {};
         const recoveryTimes: { [timePointId: string]: number } = {};
         
         let currentMinutes = timeToMinutes(currentDepartureTime);
+        const tripStartMinutes = currentMinutes; // Save start time for calculating total trip time
         
         schedule.timePoints.forEach((timePoint, index) => {
           if (index === 0) {
@@ -634,8 +1093,8 @@ export default function BlockConfiguration() {
             departureTimes[timePoint.id] = currentDepartureTime;
             recoveryTimes[timePoint.id] = 0;
           } else {
-            // Subsequent timepoints - add travel time
-            const segmentTime = serviceBand.segmentTimes[index - 1];
+            // Subsequent timepoints - add travel time from trip-specific service band
+            const segmentTime = tripServiceBand.segmentTimes[index - 1];
             if (segmentTime) {
               currentMinutes += segmentTime.travelMinutes;
               const arrivalTime = minutesToTime(currentMinutes);
@@ -651,28 +1110,69 @@ export default function BlockConfiguration() {
           }
         });
         
+        // Note: actualTripTimeMinutes is already calculated outside the loop for consistency
+        
+        console.log(`  📍 Trip departure ${currentDepartureTime} → Service Band: ${tripServiceBandName}`);
+        
         trips.push({
-          tripNumber,
+          tripNumber: 0, // Will be assigned after sorting by departure time
           blockNumber: blockConfig.blockNumber,
           departureTime: currentDepartureTime,
           arrivalTimes,
           departureTimes,
           recoveryTimes,
-          serviceBand: serviceBandName,
+          serviceBand: tripServiceBandName, // Each trip gets its own service band based on its departure time
           recoveryMinutes: 5 // Default recovery time at end of trip
         });
         
-        tripNumber++;
         blockTripCount++;
         
-        // Move to next trip departure time (cycle time interval)
-        currentDepartureTime = minutesToTime(timeToMinutes(currentDepartureTime) + schedule.cycleTimeMinutes);
+        // Move to next trip departure time - must start after the current trip arrives at final timepoint
+        const finalTimePointId = schedule.timePoints[schedule.timePoints.length - 1].id;
+        const finalArrivalTime = arrivalTimes[finalTimePointId];
+        
+        // Next trip can't start until current trip arrives at final destination
+        // Add a small buffer (e.g., 2 minutes) for bus turnaround/deadhead time
+        const turnaroundMinutes = 2;
+        const nextDepartureMinutes = timeToMinutes(finalArrivalTime) + turnaroundMinutes;
+        currentDepartureTime = minutesToTime(nextDepartureMinutes);
+        
+        console.log(`  🔄 Trip ends at ${finalArrivalTime}, next trip starts at ${currentDepartureTime} (${turnaroundMinutes}min turnaround)`);
+        
       }
       
       console.log(`Block ${blockConfig.blockNumber}: Generated ${blockTripCount} trips`);
     }
     
     console.log(`Total trips generated: ${trips.length}`);
+    
+    if (trips.length === 0) {
+      console.error('❌ No trips were generated!');
+      console.error('Debug info:', {
+        blockConfigurations: schedule.blockConfigurations,
+        cycleTimeMinutes: schedule.cycleTimeMinutes,
+        firstMinutes,
+        lastMinutes,
+        timePeriodServiceBands,
+        currentTimePeriods: currentTimePeriods.length
+      });
+      alert('Error: No trips were generated. Check console for debug information.');
+      return;
+    }
+    
+    // Sort trips by departure time and assign trip numbers chronologically
+    trips.sort((a, b) => {
+      const aMinutes = timeToMinutes(a.departureTime);
+      const bMinutes = timeToMinutes(b.departureTime);
+      return aMinutes - bMinutes;
+    });
+    
+    // Assign trip numbers based on chronological order (earliest departure = trip #1)
+    trips.forEach((trip, index) => {
+      trip.tripNumber = index + 1;
+    });
+    
+    console.log(`✅ Trips sorted chronologically and numbered. First trip: ${trips[0]?.departureTime}, Last trip: ${trips[trips.length - 1]?.departureTime}`);
     
     // Update schedule with generated trips and time periods
     const updatedSchedule = {
@@ -720,38 +1220,54 @@ export default function BlockConfiguration() {
       
       if (result.success && result.scheduleId) {
         console.log('Schedule saved successfully with ID:', result.scheduleId);
+        // Save complete schedule to localStorage for persistence
+        const completeSchedule = { 
+          ...updatedSchedule, 
+          timePointData: timePointData,
+          deletedPeriods: deletedPeriods,
+          timePeriodServiceBands: timePeriodServiceBands
+        };
+        localStorage.setItem('currentSummarySchedule', JSON.stringify(completeSchedule));
+        console.log('💾 Summary schedule saved to localStorage for persistence');
+        
         // Navigate to BlockSummarySchedule page with the generated schedule and TimePoints data
         navigate('/block-summary-schedule', { 
           state: { 
-            schedule: { 
-              ...updatedSchedule, 
-              timePointData: timePointData,
-              deletedPeriods: deletedPeriods 
-            } 
+            schedule: completeSchedule
           } 
         });
       } else {
         // If save fails, still navigate but without saved ID
+        const completeSchedule = { 
+          ...updatedSchedule, 
+          timePointData: timePointData,
+          deletedPeriods: deletedPeriods,
+          timePeriodServiceBands: timePeriodServiceBands
+        };
+        localStorage.setItem('currentSummarySchedule', JSON.stringify(completeSchedule));
+        console.log('💾 Summary schedule saved to localStorage for persistence (save failed)');
+        
         navigate('/block-summary-schedule', { 
           state: { 
-            schedule: { 
-              ...updatedSchedule, 
-              timePointData: timePointData,
-              deletedPeriods: deletedPeriods 
-            } 
+            schedule: completeSchedule
           } 
         });
       }
     } catch (error) {
       console.error('Failed to save schedule:', error);
       // Still navigate to show the generated schedule even if save fails
+      const completeSchedule = { 
+        ...updatedSchedule, 
+        timePointData: timePointData,
+        deletedPeriods: deletedPeriods,
+        timePeriodServiceBands: timePeriodServiceBands
+      };
+      localStorage.setItem('currentSummarySchedule', JSON.stringify(completeSchedule));
+      console.log('💾 Summary schedule saved to localStorage for persistence (catch error)');
+      
       navigate('/block-summary-schedule', { 
         state: { 
-          schedule: { 
-            ...updatedSchedule, 
-            timePointData: timePointData,
-            deletedPeriods: deletedPeriods 
-          } 
+          schedule: completeSchedule
         } 
       });
     }
@@ -780,16 +1296,37 @@ export default function BlockConfiguration() {
           </Link>
           <Link
             component="button"
-            onClick={() => navigate('/timepoints')}
+            onClick={() => navigate('/timepoints', {
+              state: {
+                timePointData,
+                serviceBands,
+                deletedPeriods,
+                timePeriodServiceBands,
+                scheduleId,
+                fileName
+              }
+            })}
             sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'primary.main' }}
           >
             <TimelineIcon sx={{ mr: 0.5, fontSize: 16 }} />
             Timepoint Page
           </Link>
-          <Typography color="text.primary" variant="body2" sx={{ display: 'flex', alignItems: 'center' }}>
+          <Link
+            component="button"
+            onClick={() => navigate('/block-configuration')}
+            sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'primary.main' }}
+          >
             <BusIcon sx={{ mr: 0.5, fontSize: 16 }} />
             Block Configuration
-          </Typography>
+          </Link>
+          <Link
+            component="button"
+            onClick={() => navigate('/block-summary-schedule')}
+            sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'primary.main' }}
+          >
+            <ScheduleIcon sx={{ mr: 0.5, fontSize: 16 }} />
+            Summary Schedule
+          </Link>
         </Breadcrumbs>
       </Box>
 
@@ -798,148 +1335,25 @@ export default function BlockConfiguration() {
         <Button
           variant="outlined"
           startIcon={<BackIcon />}
-          onClick={() => navigate('/timepoints')}
+          onClick={() => navigate('/timepoints', {
+            state: {
+              timePointData,
+              serviceBands,
+              deletedPeriods,
+              timePeriodServiceBands,
+              scheduleId,
+              fileName
+            }
+          })}
           sx={{ mr: 2 }}
         >
           Back to Timepoints
         </Button>
       </Box>
 
-      {/* Header */}
-      <Paper 
-        elevation={3} 
-        sx={{ 
-          p: 4, 
-          mb: 4, 
-          background: `linear-gradient(135deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
-          color: 'white'
-        }}
-      >
-        <Grid container alignItems="center" justifyContent="space-between">
-          <Grid item xs={12} md={8}>
-            <Box display="flex" alignItems="center" gap={3}>
-              <BusIcon sx={{ fontSize: 48 }} />
-              <Box>
-                <Typography variant="h4" fontWeight="bold">
-                  {schedule.name}
-                </Typography>
-                <Typography variant="h6" sx={{ opacity: 0.9 }}>
-                  Advanced Schedule Generator
-                </Typography>
-              </Box>
-            </Box>
-          </Grid>
-          <Grid item xs={12} md={4} sx={{ textAlign: { xs: 'left', md: 'right' }, mt: { xs: 2, md: 0 } }}>
-            <Box display="flex" gap={2} justifyContent={{ xs: 'flex-start', md: 'flex-end' }}>
-              <Button
-                variant="contained"
-                startIcon={<SaveIcon />}
-                onClick={() => {
-                  localStorage.setItem('busSchedule', JSON.stringify(schedule));
-                  alert('Schedule saved!');
-                }}
-                sx={{ 
-                  bgcolor: 'white', 
-                  color: theme.palette.primary.main,
-                  '&:hover': { bgcolor: 'grey.100' }
-                }}
-              >
-                Save Schedule
-              </Button>
-              <Button
-                variant="outlined"
-                startIcon={<DownloadIcon />}
-                sx={{ 
-                  borderColor: 'white', 
-                  color: 'white',
-                  '&:hover': { borderColor: 'grey.200', bgcolor: 'rgba(255,255,255,0.1)' }
-                }}
-              >
-                Export CSV
-              </Button>
-            </Box>
-          </Grid>
-        </Grid>
-      </Paper>
 
       {/* Configuration Content - No Tabs */}
         <Grid container spacing={4}>
-          {/* Service Bands Configuration */}
-          <Grid item xs={12}>
-            <Card elevation={2}>
-              <CardContent sx={{ p: 4 }}>
-                <Typography variant="h5" fontWeight="bold" gutterBottom>
-                  Service Bands & Travel Times
-                </Typography>
-                <Typography variant="body2" color="text.secondary" paragraph>
-                  Configure travel time profiles for different traffic conditions
-                </Typography>
-                
-                <Grid container spacing={3}>
-                  {schedule.serviceBands.map((band) => (
-                    <Grid item xs={12} key={band.name}>
-                      <Card 
-                        variant="outlined" 
-                        sx={{ 
-                          border: `2px solid ${band.color}40`,
-                          backgroundColor: `${band.color}08`
-                        }}
-                      >
-                        <CardContent>
-                          <Box display="flex" alignItems="center" gap={2} mb={2}>
-                            <Box 
-                              sx={{ 
-                                width: 20, 
-                                height: 20, 
-                                borderRadius: '50%', 
-                                backgroundColor: band.color 
-                              }} 
-                            />
-                            <Typography variant="h6" fontWeight="bold">
-                              {band.name}
-                            </Typography>
-                            <Chip 
-                              label={`${band.totalMinutes} min total`} 
-                              size="small" 
-                              color="primary" 
-                            />
-                          </Box>
-                          <Grid container spacing={2}>
-                            {band.segmentTimes.map((segment, idx) => (
-                              <Grid item xs={6} sm={4} md={2} key={idx}>
-                                <TextField
-                                  label={`Segment ${idx + 1}`}
-                                  type="number"
-                                  size="small"
-                                  value={segment.travelMinutes}
-                                  onChange={(e) => {
-                                    const newBands = [...schedule.serviceBands];
-                                    const bandIndex = newBands.findIndex(b => b.name === band.name);
-                                    newBands[bandIndex].segmentTimes[idx].travelMinutes = parseInt(e.target.value) || 0;
-                                    newBands[bandIndex].totalMinutes = newBands[bandIndex].segmentTimes.reduce(
-                                      (sum, seg) => sum + seg.travelMinutes, 0
-                                    );
-                                    setSchedule(prev => ({
-                                      ...prev,
-                                      serviceBands: newBands,
-                                      updatedAt: new Date().toISOString()
-                                    }));
-                                  }}
-                                  inputProps={{ min: 1, max: 60 }}
-                                  helperText={`${segment.from?.replace('_', ' ') || 'Unknown'} → ${segment.to?.replace('_', ' ') || 'Unknown'}`}
-                                />
-                              </Grid>
-                            ))}
-                          </Grid>
-                        </CardContent>
-                      </Card>
-                    </Grid>
-                  ))}
-                </Grid>
-              </CardContent>
-            </Card>
-          </Grid>
-
           {/* Block Configuration */}
           <Grid item xs={12}>
             <Card elevation={2}>
@@ -969,6 +1383,9 @@ export default function BlockConfiguration() {
                           onChange={(e) => {
                             const newCount = Math.max(1, Math.min(10, parseInt(e.target.value) || 1));
                             updateBlockCount(newCount);
+                          }}
+                          onBlur={() => {
+                            autoSave(); // Immediate save when user finishes input
                           }}
                           inputProps={{ min: 1, max: 10 }}
                           sx={{ 
@@ -1025,6 +1442,9 @@ export default function BlockConfiguration() {
                               updatedAt: new Date().toISOString()
                             }));
                           }}
+                          onBlur={() => {
+                            autoSave(); // Immediate save when user finishes input
+                          }}
                           inputProps={{ min: 1 }}
                           sx={{ 
                             backgroundColor: 'white', 
@@ -1079,6 +1499,7 @@ export default function BlockConfiguration() {
                             automateBlockStartTimes: e.target.checked,
                             updatedAt: new Date().toISOString()
                           }));
+                          autoSave(); // Immediate save when toggle is changed
                         }}
                         color="primary"
                       />
@@ -1264,6 +1685,11 @@ export default function BlockConfiguration() {
                                           }));
                                         }
                                       }}
+                                      onBlur={() => {
+                                        if (!isAutomated) {
+                                          autoSave(); // Immediate save when user finishes input
+                                        }
+                                      }}
                                       disabled={isAutomated}
                                       sx={{ 
                                         width: '100%',
@@ -1325,6 +1751,9 @@ export default function BlockConfiguration() {
                                           blockConfigurations: newConfigs,
                                           updatedAt: new Date().toISOString()
                                         }));
+                                      }}
+                                      onBlur={() => {
+                                        autoSave(); // Immediate save when user finishes input
                                       }}
                                       sx={{ 
                                         width: '100%',
@@ -1429,13 +1858,14 @@ export default function BlockConfiguration() {
                         newConfigs.push({
                           blockNumber: newConfigs.length + 1,
                           startTime: '07:00',
-                          endTime: '22:00'
+                          endTime: newConfigs[0]?.endTime || '22:00' // Default to Block 1's end time
                         });
                         setSchedule(prev => ({
                           ...prev,
                           blockConfigurations: newConfigs,
                           updatedAt: new Date().toISOString()
                         }));
+                        autoSave(); // Immediate save when new block is added
                       }}
                       elevation={2}
                       sx={{

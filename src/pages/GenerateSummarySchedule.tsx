@@ -240,7 +240,7 @@ const GenerateSummarySchedule: React.FC = () => {
 
         const timePointsArray: TimePoint[] = allOrderedTimePoints.map((name, index) => ({
           id: `tp_${index + 1}`,
-          name: index === 0 ? name : (index === allOrderedTimePoints.length - 1 && name === 'Downtown Barrie Terminal' ? `${name} (Return)` : name),
+          name: index === 0 ? name : (index === allOrderedTimePoints.length - 1 && name === 'Downtown Barrie Terminal' ? `${name} Arrive R` : name),
           sequence: index + 1,
         }));
 

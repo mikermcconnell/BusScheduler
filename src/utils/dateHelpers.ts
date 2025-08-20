@@ -132,3 +132,68 @@ export const formatDuration = (durationMs: number): string => {
     return `${seconds} second${seconds !== 1 ? 's' : ''}`;
   }
 };
+
+/**
+ * Converts time string (HH:MM) to minutes since midnight
+ */
+export const timeToMinutes = (timeString: string): number => {
+  if (!timeString || timeString === '-') {
+    return 0;
+  }
+  
+  const [hours, minutes] = timeString.split(':').map(Number);
+  if (isNaN(hours) || isNaN(minutes)) {
+    return 0;
+  }
+  
+  return hours * 60 + minutes;
+};
+
+/**
+ * Converts minutes since midnight to time string (HH:MM)
+ */
+export const minutesToTime = (minutes: number): string => {
+  if (minutes < 0) {
+    return '00:00';
+  }
+  
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  
+  return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+};
+
+/**
+ * Calculates trip time between first and last timepoint departures
+ * Returns formatted time duration (HH:MM) or '-' if invalid
+ */
+export const calculateTripTime = (
+  firstDepartureTime: string,
+  lastDepartureTime: string
+): string => {
+  if (!firstDepartureTime || !lastDepartureTime || 
+      firstDepartureTime === '-' || lastDepartureTime === '-') {
+    return '-';
+  }
+
+  try {
+    const startMinutes = timeToMinutes(firstDepartureTime);
+    const endMinutes = timeToMinutes(lastDepartureTime);
+    
+    let durationMinutes = endMinutes - startMinutes;
+    
+    // Handle trips that cross midnight
+    if (durationMinutes < 0) {
+      durationMinutes += 24 * 60; // Add 24 hours
+    }
+    
+    // Convert to HH:MM format
+    const hours = Math.floor(durationMinutes / 60);
+    const minutes = durationMinutes % 60;
+    
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+  } catch (error) {
+    console.error('Error calculating trip time:', error);
+    return '-';
+  }
+};

@@ -26,6 +26,8 @@ import {
   Link,
   Collapse,
   IconButton,
+  Tabs,
+  Tab,
 } from '@mui/material';
 import {
   Timeline as TimelineIcon,
@@ -46,6 +48,8 @@ import {
   Clear as RemoveIcon,
   Schedule as ScheduleIcon,
   ExpandMore as ExpandMoreIcon,
+  TableChart as TableIcon,
+  DirectionsBus as BusIcon,
 } from '@mui/icons-material';
 import {
   BarChart,
@@ -59,6 +63,7 @@ import {
 } from 'recharts';
 import { ParsedCsvData } from '../utils/csvParser';
 import { scheduleStorage } from '../services/scheduleStorage';
+import { workflowStateService } from '../services/workflowStateService';
 
 interface TimePointData {
   fromTimePoint: string;
@@ -140,6 +145,9 @@ const TimePoints: React.FC = () => {
   
   // Detailed table collapse state
   const [detailedTableExpanded, setDetailedTableExpanded] = useState(false);
+  
+  // Chart/Table tab state
+  const [chartTableTab, setChartTableTab] = useState(0);
   
   // Service period management state
   const [selectedPeriod, setSelectedPeriod] = useState<ChartData | null>(null);
@@ -400,12 +408,30 @@ const TimePoints: React.FC = () => {
   };
 
   const handleGenerateSummary = () => {
-    // Pass timePointData and service bands to BlockConfiguration
+    // Mark the TimePoints step as complete
+    workflowStateService.completeStep('timepoints', {
+      timePointData,
+      serviceBands: timeBands,
+      deletedPeriods: Array.from(deletedPeriods)
+    });
+    
+    // Create direct time period to service band mapping for BlockSummarySchedule
+    const timePeriodServiceBands: { [timePeriod: string]: string } = {};
+    chartData.forEach(item => {
+      if (!item.isDeleted) {
+        timePeriodServiceBands[item.timePeriod] = item.timebandName;
+      }
+    });
+    
+    console.log('🔍 DEBUG: Created service band mapping:', timePeriodServiceBands);
+    
+    // Pass timePointData, service bands, and direct mapping to BlockConfiguration
     navigate('/block-configuration', {
       state: {
         timePointData,
         serviceBands: timeBands,
         deletedPeriods: Array.from(deletedPeriods),
+        timePeriodServiceBands,
         scheduleId,
         fileName
       }
@@ -838,10 +864,33 @@ const TimePoints: React.FC = () => {
             <DraftIcon sx={{ mr: 0.5, fontSize: 16 }} />
             Draft Schedules
           </Link>
-          <Typography color="text.primary" variant="body2" sx={{ display: 'flex', alignItems: 'center' }}>
+          <Link
+            component="button"
+            variant="body2"
+            onClick={() => navigate('/timepoints')}
+            sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'primary.main' }}
+          >
             <TimelineIcon sx={{ mr: 0.5, fontSize: 16 }} />
             Timepoint Page
-          </Typography>
+          </Link>
+          <Link
+            component="button"
+            variant="body2"
+            onClick={() => navigate('/block-configuration')}
+            sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'primary.main' }}
+          >
+            <BusIcon sx={{ mr: 0.5, fontSize: 16 }} />
+            Block Configuration
+          </Link>
+          <Link
+            component="button"
+            variant="body2"
+            onClick={() => navigate('/block-summary-schedule')}
+            sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'primary.main' }}
+          >
+            <ScheduleIcon sx={{ mr: 0.5, fontSize: 16 }} />
+            Summary Schedule
+          </Link>
         </Breadcrumbs>
       </Box>
 
@@ -922,14 +971,14 @@ const TimePoints: React.FC = () => {
             )}
           </Box>
 
-          {/* Bar Chart Section */}
+          {/* Chart/Table Section with Tabs */}
           {chartData.length > 0 && (
             <Box sx={{ mb: 4 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center' }}>
                   <ChartIcon color="secondary" sx={{ mr: 1 }} />
                   <Typography variant="h6" sx={{ color: 'black' }}>
-                    Total Travel Times by Time Period
+                    Service Bands Summary
                   </Typography>
                 </Box>
                 {deletedPeriods.size > 0 && (
@@ -945,49 +994,178 @@ const TimePoints: React.FC = () => {
               </Box>
               <Box sx={{ mb: 2, p: 2, backgroundColor: 'info.50', borderRadius: 1 }}>
                 <Typography variant="body2" color="text.secondary">
-                  <strong>Interactive Chart:</strong> Click on any bar to manage that service period. 
+                  <strong>Interactive Data:</strong> Click on chart bars or table rows to manage service periods. 
                   You can delete periods from analysis or change their timeband assignment. 
-                  Deleted periods appear as white bars with dashed borders and are excluded from timeband calculations.
+                  Deleted periods appear with white fill and are excluded from timeband calculations.
                 </Typography>
               </Box>
+              
               <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
-                <ResponsiveContainer width="100%" height={500}>
-                  <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis 
-                      dataKey="timePeriod" 
-                      angle={-45}
-                      textAnchor="end"
-                      height={80}
-                      tick={{ fontSize: 12, fill: 'black' }}
+                {/* Tabs */}
+                <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
+                  <Tabs 
+                    value={chartTableTab} 
+                    onChange={(event, newValue) => setChartTableTab(newValue)}
+                    aria-label="chart and table tabs"
+                  >
+                    <Tab 
+                      icon={<ChartIcon />} 
+                      iconPosition="start" 
+                      label="Chart View" 
+                      sx={{ textTransform: 'none' }}
                     />
-                    <YAxis 
-                      tick={{ fontSize: 12, fill: 'black' }}
-                      label={{ 
-                        value: 'Total Travel Time (minutes)', 
-                        angle: -90, 
-                        position: 'insideLeft',
-                        style: { textAnchor: 'middle', fill: 'black' }
-                      }}
+                    <Tab 
+                      icon={<TableIcon />} 
+                      iconPosition="start" 
+                      label="Service Band Data" 
+                      sx={{ textTransform: 'none' }}
                     />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Bar 
-                      dataKey="totalTravelTime" 
-                      onClick={handleBarClick}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      {chartData.map((entry, index) => (
-                        <Cell 
-                          key={`cell-${index}`} 
-                          fill={entry.color}
-                          stroke={entry.isDeleted ? '#666' : 'none'}
-                          strokeWidth={entry.isDeleted ? 2 : 0}
-                          strokeDasharray={entry.isDeleted ? '5,5' : 'none'}
-                        />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
+                  </Tabs>
+                </Box>
+
+                {/* Chart Tab Content */}
+                {chartTableTab === 0 && (
+                  <ResponsiveContainer width="100%" height={500}>
+                    <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis 
+                        dataKey="timePeriod" 
+                        angle={-45}
+                        textAnchor="end"
+                        height={80}
+                        tick={{ fontSize: 12, fill: 'black' }}
+                      />
+                      <YAxis 
+                        tick={{ fontSize: 12, fill: 'black' }}
+                        label={{ 
+                          value: 'Total Travel Time (minutes)', 
+                          angle: -90, 
+                          position: 'insideLeft',
+                          style: { textAnchor: 'middle', fill: 'black' }
+                        }}
+                      />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Bar 
+                        dataKey="totalTravelTime" 
+                        onClick={handleBarClick}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        {chartData.map((entry, index) => (
+                          <Cell 
+                            key={`cell-${index}`} 
+                            fill={entry.color}
+                            stroke={entry.isDeleted ? '#666' : 'none'}
+                            strokeWidth={entry.isDeleted ? 2 : 0}
+                            strokeDasharray={entry.isDeleted ? '5,5' : 'none'}
+                          />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+
+                {/* Table Tab Content */}
+                {chartTableTab === 1 && (
+                  <TableContainer sx={{ maxHeight: 500 }}>
+                    <Table stickyHeader>
+                      <TableHead>
+                        <TableRow>
+                          <TableCell sx={{ backgroundColor: 'grey.100', fontWeight: 'bold', color: 'black' }}>
+                            Time Period
+                          </TableCell>
+                          <TableCell align="right" sx={{ backgroundColor: 'grey.100', fontWeight: 'bold', color: 'black' }}>
+                            Total Travel Time
+                          </TableCell>
+                          <TableCell align="center" sx={{ backgroundColor: 'grey.100', fontWeight: 'bold', color: 'black' }}>
+                            Service Band
+                          </TableCell>
+                          <TableCell align="center" sx={{ backgroundColor: 'grey.100', fontWeight: 'bold', color: 'black' }}>
+                            Status
+                          </TableCell>
+                          <TableCell align="center" sx={{ backgroundColor: 'grey.100', fontWeight: 'bold', color: 'black' }}>
+                            Actions
+                          </TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {[...chartData]
+                          .sort((a, b) => a.timePeriod.localeCompare(b.timePeriod))
+                          .map((row, index) => (
+                            <TableRow
+                              key={index}
+                              hover
+                              sx={{ 
+                                cursor: 'pointer',
+                                '&:nth-of-type(odd)': { backgroundColor: 'action.hover' },
+                                ...(row.isDeleted && {
+                                  backgroundColor: 'grey.50',
+                                  '&:hover': { backgroundColor: 'grey.100' }
+                                })
+                              }}
+                              onClick={() => {
+                                setSelectedPeriod(row);
+                                setPeriodDialogOpen(true);
+                              }}
+                            >
+                              <TableCell component="th" scope="row">
+                                <Typography variant="body2" sx={{ color: 'black', fontWeight: 'medium' }}>
+                                  {row.timePeriod}
+                                </Typography>
+                              </TableCell>
+                              <TableCell align="right">
+                                <Typography variant="body2" sx={{ color: 'black', fontWeight: 'bold' }}>
+                                  {formatTime(row.totalTravelTime)}
+                                </Typography>
+                              </TableCell>
+                              <TableCell align="center">
+                                <Chip
+                                  label={row.timebandName}
+                                  size="small"
+                                  sx={{
+                                    backgroundColor: row.isDeleted ? 'grey.300' : row.color,
+                                    color: 'white',
+                                    fontWeight: 'bold'
+                                  }}
+                                />
+                              </TableCell>
+                              <TableCell align="center">
+                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
+                                  {row.isDeleted ? (
+                                    <Chip label="Deleted" color="error" size="small" />
+                                  ) : (
+                                    <Chip label="Active" color="success" size="small" />
+                                  )}
+                                  {!row.isDeleted && row.hasOutliers && (
+                                    <Chip 
+                                      label={`${row.outlierCount} outlier${row.outlierCount !== 1 ? 's' : ''}`}
+                                      color="warning" 
+                                      size="small"
+                                      icon={<WarningIcon />}
+                                    />
+                                  )}
+                                </Box>
+                              </TableCell>
+                              <TableCell align="center">
+                                <Button
+                                  variant="outlined"
+                                  size="small"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedPeriod(row);
+                                    setPeriodDialogOpen(true);
+                                  }}
+                                  sx={{ textTransform: 'none' }}
+                                >
+                                  Manage
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        }
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                )}
               </Paper>
             </Box>
           )}
