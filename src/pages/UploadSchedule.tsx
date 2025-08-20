@@ -54,9 +54,18 @@ import { CalculationResults, TimeBand } from '../utils/calculator';
 import SummaryDisplay from '../components/SummaryDisplay';
 import { scheduleStorage, DraftSchedule, startAutoSave, stopAutoSave } from '../services/scheduleStorage';
 import DraftScheduleList from '../components/DraftScheduleList';
+import { workflowStateService } from '../services/workflowStateService';
+import { useWorkflowDraft } from '../hooks/useWorkflowDraft';
 
 const UploadSchedule: React.FC = () => {
   const navigate = useNavigate();
+  const { 
+    createDraftFromUpload, 
+    draft, 
+    loading: draftLoading, 
+    error: draftError,
+    isSaving 
+  } = useWorkflowDraft();
   const [extractedData, setExtractedData] = useState<ParsedExcelData | null>(null);
   const [csvData, setCsvData] = useState<ParsedCsvData | null>(null);
   const [validation, setValidation] = useState<ValidationResult | null>(null);
@@ -88,6 +97,14 @@ const UploadSchedule: React.FC = () => {
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const steps = ['Upload File', 'Process Data', 'View Results'];
+  
+  // Initialize workflow when component mounts
+  useEffect(() => {
+    const currentWorkflow = workflowStateService.getCurrentWorkflow();
+    if (!currentWorkflow || currentWorkflow.workflowType !== 'schedule-creation') {
+      workflowStateService.startWorkflow('schedule-creation');
+    }
+  }, []);
 
   // Default time bands for demonstration - in real app this would be configurable
   const defaultTimeBands: { weekday: TimeBand[]; saturday: TimeBand[]; sunday: TimeBand[] } = {
@@ -325,6 +342,13 @@ const UploadSchedule: React.FC = () => {
     
     setFileType(data.fileType);
     setValidation(validation);
+    
+    // Mark the upload step as complete in the workflow
+    workflowStateService.completeStep('upload', {
+      fileName,
+      fileType: data.fileType,
+      uploadedAt: new Date().toISOString()
+    });
     setUploadedFileName(fileName);
     setQualityReport(report);
     setUploadError(null);

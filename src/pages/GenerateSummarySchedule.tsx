@@ -34,6 +34,7 @@ import { ParsedCsvData } from '../utils/csvParser';
 import BusBlockCreator from '../components/BusBlockCreator';
 import { BusBlock, ServiceBand, TimePoint } from '../types/schedule';
 import { createServiceBandsFromData } from '../utils/serviceBandLookup';
+import WorkflowBreadcrumbs from '../components/WorkflowBreadcrumbs';
 
 interface TimePointData {
   fromTimePoint: string;
@@ -318,42 +319,6 @@ const GenerateSummarySchedule: React.FC = () => {
 
   return (
     <Box>
-      {/* Breadcrumb Navigation */}
-      <Box sx={{ mb: 2 }}>
-        <Breadcrumbs separator={<NavigateNextIcon fontSize="small" />}>
-          <Link
-            component="button"
-            variant="body2"
-            onClick={() => navigate('/')}
-            sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'primary.main' }}
-          >
-            <HomeIcon sx={{ mr: 0.5, fontSize: 16 }} />
-            Dashboard
-          </Link>
-          <Link
-            component="button"
-            variant="body2"
-            onClick={() => navigate('/drafts')}
-            sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'primary.main' }}
-          >
-            <DraftIcon sx={{ mr: 0.5, fontSize: 16 }} />
-            Draft Schedules
-          </Link>
-          <Link
-            component="button"
-            variant="body2"
-            onClick={() => navigate('/timepoints')}
-            sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'primary.main' }}
-          >
-            <TimelineIcon sx={{ mr: 0.5, fontSize: 16 }} />
-            Timepoint Page
-          </Link>
-          <Typography color="text.primary" variant="body2" sx={{ display: 'flex', alignItems: 'center' }}>
-            Continue to Trip Details
-          </Typography>
-        </Breadcrumbs>
-      </Box>
-
       {/* Page Header */}
       <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
         <Button

@@ -20,6 +20,7 @@ import {
 import { scheduleStorage } from '../services/scheduleStorage';
 import { SummarySchedule } from '../types/schedule';
 import { workflowStateService } from '../services/workflowStateService';
+import WorkflowBreadcrumbs from '../components/WorkflowBreadcrumbs';
 import {
   Box,
   Container,
@@ -47,7 +48,9 @@ import {
   Dialog,
   DialogContent,
   DialogTitle,
-  IconButton
+  IconButton,
+  Snackbar,
+  Alert
 } from '@mui/material';
 
 // ==================== TYPES ====================
@@ -214,7 +217,7 @@ const buildServiceBandsFromTimePointsData = (
   timePeriodServiceBands: { [timePeriod: string]: string },
   deletedPeriods: string[] = []
 ): ServiceBand[] => {
-  if (!timePointData.length) {
+  if (!timePointData || timePointData.length === 0) {
     console.log('⚠️ No TimePoints data available for building service bands');
     return [];
   }
@@ -233,7 +236,7 @@ const buildServiceBandsFromTimePointsData = (
 
   console.log('🔧 Building service bands from TimePoints data...');
   console.log('🔧 Available timePeriodServiceBands:', workingMapping);
-  console.log('🔧 TimePointData length:', timePointData.length);
+  console.log('🔧 TimePointData length:', timePointData?.length || 0);
 
   // Group data by time period and service band
   const serviceBandData = new Map<string, TimePointData[]>();
@@ -365,10 +368,10 @@ const createTimePeriodServiceBandMapping = (
   deletedPeriods: string[] = []
 ): { [timePeriod: string]: string } => {
   console.log('📊 createTimePeriodServiceBandMapping called with:');
-  console.log('  - timePointData length:', timePointData.length);
+  console.log('  - timePointData length:', timePointData?.length || 0);
   console.log('  - deletedPeriods:', deletedPeriods);
   
-  if (timePointData.length === 0) {
+  if (!timePointData || timePointData.length === 0) {
     console.log('⚠️ No timePointData provided, returning empty mapping');
     return {};
   }
@@ -433,7 +436,7 @@ const createTimePeriodServiceBandMapping = (
     mapping[timePeriod] = serviceBand;
   });
 
-  console.log(`🎯 Created service band mapping from ${timePointData.length} data points:`);
+  console.log(`🎯 Created service band mapping from ${timePointData?.length || 0} data points:`);
   console.log(`📊 Percentile thresholds: P20=${p20}, P40=${p40}, P60=${p60}, P80=${p80}`);
   console.log(`🗺️ Time period mappings:`, mapping);
   
@@ -536,17 +539,14 @@ export default function BlockConfiguration() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Get TimePoints data from navigation state
+  // Extract TimePoints data from navigation state
   const {
     timePointData = [],
     serviceBands = [],
     deletedPeriods = [],
-    timePeriodServiceBands = {},
-    scheduleId,
-    fileName
+    timePeriodServiceBands = {}
   } = location.state || {};
-  // Removed tab state - no longer using tabs
-  
+
   // Click and drag scrolling state
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const fullscreenTableContainerRef = useRef<HTMLDivElement>(null);
@@ -555,6 +555,11 @@ export default function BlockConfiguration() {
   const [scrollStart, setScrollStart] = useState({ left: 0, top: 0 });
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [activeTab, setActiveTab] = useState(0);
+  const [saveNotification, setSaveNotification] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
+    open: false,
+    message: '',
+    severity: 'success'
+  });
 
   // Initialize default schedule configuration
   const [schedule, setSchedule] = useState<Schedule>(() => {
@@ -610,15 +615,15 @@ export default function BlockConfiguration() {
       ],
       serviceBands: (() => {
         // Build service bands from TimePoints data if available
-        const timePointsServiceBands = buildServiceBandsFromTimePointsData(timePointData, timePeriodServiceBands, deletedPeriods);
-        if (timePointsServiceBands.length > 0) {
+        const timePointsServiceBands = buildServiceBandsFromTimePointsData(timePointData || [], timePeriodServiceBands || {}, deletedPeriods || []);
+        if (timePointsServiceBands && timePointsServiceBands.length > 0) {
           console.log('✅ Using service bands built from TimePoints data:');
           console.log(timePointsServiceBands.map(sb => `  - ${sb.name}: ${sb.segmentTimes.length} segments`));
           return timePointsServiceBands;
         }
         
         // Use passed serviceBands from navigation state if available
-        if (serviceBands.length > 0) {
+        if (serviceBands && serviceBands.length > 0) {
           console.log('✅ Using service bands from navigation state');
           return serviceBands;
         }
@@ -668,22 +673,35 @@ export default function BlockConfiguration() {
     };
   });
 
+  // Get additional data from navigation state
+  const {
+    scheduleId,
+    fileName
+  } = location.state || {};
+
   // Store the service band mapping for reuse
   const [serviceBandMapping, setServiceBandMapping] = useState<{ [timePeriod: string]: string }>(() => {
+    // Get data from location state inside initializer
+    const {
+      timePointData: initTimePointData = [],
+      deletedPeriods: initDeletedPeriods = [],
+      timePeriodServiceBands: initTimePeriodServiceBands = {}
+    } = location.state || {};
+    
     console.log('🔍 Initializing serviceBandMapping state...');
-    console.log('  - timePointData length:', timePointData?.length || 0);
-    console.log('  - timePeriodServiceBands:', timePeriodServiceBands);
-    console.log('  - deletedPeriods:', deletedPeriods);
+    console.log('  - timePointData length:', initTimePointData?.length || 0);
+    console.log('  - timePeriodServiceBands:', initTimePeriodServiceBands);
+    console.log('  - deletedPeriods:', initDeletedPeriods);
     
     // First check for direct mapping from TimePoints page
-    if (timePeriodServiceBands && Object.keys(timePeriodServiceBands).length > 0) {
-      console.log('✅ Using provided timePeriodServiceBands with', Object.keys(timePeriodServiceBands).length, 'periods');
-      return timePeriodServiceBands;
+    if (initTimePeriodServiceBands && Object.keys(initTimePeriodServiceBands).length > 0) {
+      console.log('✅ Using provided timePeriodServiceBands with', Object.keys(initTimePeriodServiceBands).length, 'periods');
+      return initTimePeriodServiceBands;
     }
     
     // Create initial mapping if we have TimePoints data
-    if (timePointData && timePointData.length > 0) {
-      const mapping = createTimePeriodServiceBandMapping(timePointData, deletedPeriods);
+    if (initTimePointData && initTimePointData.length > 0) {
+      const mapping = createTimePeriodServiceBandMapping(initTimePointData, initDeletedPeriods);
       console.log('🎯 Initial service band mapping created with', Object.keys(mapping).length, 'periods');
       console.log('🎯 Mapping:', mapping);
       return mapping;
@@ -699,7 +717,7 @@ export default function BlockConfiguration() {
   useEffect(() => {
     console.log('📌 useEffect triggered - checking location.state');
     console.log('  - location.state:', location.state);
-    console.log('  - timePointData length:', timePointData.length);
+    console.log('  - timePointData length:', timePointData?.length || 0);
     console.log('  - timePeriodServiceBands:', timePeriodServiceBands);
     
     // First try to use the direct mapping if available
@@ -708,7 +726,7 @@ export default function BlockConfiguration() {
       setServiceBandMapping(timePeriodServiceBands);
       
       // Build service bands using the direct mapping
-      const newServiceBands = buildServiceBandsFromTimePointsData(timePointData, timePeriodServiceBands, deletedPeriods);
+      const newServiceBands = buildServiceBandsFromTimePointsData(timePointData || [], timePeriodServiceBands, deletedPeriods || []);
       if (newServiceBands.length > 0) {
         setSchedule(prev => ({
           ...prev,
@@ -717,16 +735,16 @@ export default function BlockConfiguration() {
         }));
         console.log('✅ Service bands updated using direct mapping');
       }
-    } else if (timePointData.length > 0) {
+    } else if (timePointData && timePointData.length > 0) {
       console.log('📊 TimePoints data available, rebuilding service bands...');
-      console.log('📊 Sample TimePoints data:', timePointData.slice(0, 2));
+      console.log('📊 Sample TimePoints data:', timePointData?.slice(0, 2) || []);
       
       // Create the mapping from TimePoints data
-      const newMapping = createTimePeriodServiceBandMapping(timePointData, deletedPeriods);
+      const newMapping = createTimePeriodServiceBandMapping(timePointData || [], deletedPeriods || []);
       setServiceBandMapping(newMapping);
       
       // Then build service bands using the mapping
-      const newServiceBands = buildServiceBandsFromTimePointsData(timePointData, newMapping, deletedPeriods);
+      const newServiceBands = buildServiceBandsFromTimePointsData(timePointData || [], newMapping, deletedPeriods || []);
       
       if (newServiceBands.length > 0) {
         setSchedule(prev => ({
@@ -928,7 +946,7 @@ export default function BlockConfiguration() {
     
     if (!workingTimePeriodServiceBands || Object.keys(workingTimePeriodServiceBands).length === 0) {
       console.warn('⚠️ No service band mapping available. Will use fallback service band assignment.');
-      console.log('Available TimePoints data:', timePointData.length, 'records');
+      console.log('Available TimePoints data:', timePointData?.length || 0, 'records');
       console.log('Service band mapping state:', serviceBandMapping);
     } else {
       console.log('✅ Using service band mapping with', Object.keys(workingTimePeriodServiceBands).length, 'time periods');
@@ -1211,6 +1229,7 @@ export default function BlockConfiguration() {
         }
       };
       
+      // Auto-save the schedule
       const result = scheduleStorage.saveSchedule(
         summaryScheduleData,
         'excel',
@@ -1218,8 +1237,40 @@ export default function BlockConfiguration() {
         null // no raw data since this is generated
       );
       
+      // Also save as a draft for better persistence
+      // Create minimal upload data structure for generated schedules
+      const generatedData = {
+        sheets: [],
+        metadata: {
+          fileName: `${updatedSchedule.name}_generated`,
+          generatedFromBlocks: true,
+          blockConfigurations: updatedSchedule.blockConfigurations,
+          trips: updatedSchedule.trips
+        }
+      };
+      
+      const draftResult = scheduleStorage.saveDraftSchedule(
+        `${updatedSchedule.name}_generated_${new Date().toISOString().split('T')[0]}`,
+        'excel',
+        generatedData as any, // Minimal structure for generated schedules
+        {
+          summarySchedule: summaryScheduleData,
+          processingStep: 'completed',
+          autoSaved: true
+        }
+      );
+      
       if (result.success && result.scheduleId) {
-        console.log('Schedule saved successfully with ID:', result.scheduleId);
+        console.log('✅ Schedule auto-saved successfully with ID:', result.scheduleId);
+        console.log('✅ Also saved as draft with ID:', draftResult.draftId);
+        
+        // Show success notification
+        setSaveNotification({
+          open: true,
+          message: '✅ Schedule auto-saved successfully!',
+          severity: 'success'
+        });
+        
         // Save complete schedule to localStorage for persistence
         const completeSchedule = { 
           ...updatedSchedule, 
@@ -1229,6 +1280,12 @@ export default function BlockConfiguration() {
         };
         localStorage.setItem('currentSummarySchedule', JSON.stringify(completeSchedule));
         console.log('💾 Summary schedule saved to localStorage for persistence');
+        
+        // Mark the Block Configuration step as complete
+        workflowStateService.completeStep('block-config', {
+          schedule: completeSchedule,
+          trips: updatedSchedule.trips
+        });
         
         // Navigate to BlockSummarySchedule page with the generated schedule and TimePoints data
         navigate('/block-summary-schedule', { 
@@ -1246,6 +1303,12 @@ export default function BlockConfiguration() {
         };
         localStorage.setItem('currentSummarySchedule', JSON.stringify(completeSchedule));
         console.log('💾 Summary schedule saved to localStorage for persistence (save failed)');
+        
+        // Mark the Block Configuration step as complete even if save failed
+        workflowStateService.completeStep('block-config', {
+          schedule: completeSchedule,
+          trips: updatedSchedule.trips
+        });
         
         navigate('/block-summary-schedule', { 
           state: { 
@@ -1265,6 +1328,12 @@ export default function BlockConfiguration() {
       localStorage.setItem('currentSummarySchedule', JSON.stringify(completeSchedule));
       console.log('💾 Summary schedule saved to localStorage for persistence (catch error)');
       
+      // Mark the Block Configuration step as complete even in error case
+      workflowStateService.completeStep('block-config', {
+        schedule: completeSchedule,
+        trips: updatedSchedule.trips
+      });
+      
       navigate('/block-summary-schedule', { 
         state: { 
           schedule: completeSchedule
@@ -1275,61 +1344,6 @@ export default function BlockConfiguration() {
 
   return (
     <Container maxWidth="xl" sx={{ py: 4 }}>
-      {/* Breadcrumb Navigation */}
-      <Box sx={{ mb: 3 }}>
-        <Breadcrumbs separator={<NavigateNextIcon fontSize="small" />} aria-label="breadcrumb">
-          <Link
-            component="button"
-            onClick={() => navigate('/')}
-            sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'primary.main' }}
-          >
-            <HomeIcon sx={{ mr: 0.5, fontSize: 16 }} />
-            Dashboard
-          </Link>
-          <Link
-            component="button"
-            onClick={() => navigate('/drafts')}
-            sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'primary.main' }}
-          >
-            <DraftIcon sx={{ mr: 0.5, fontSize: 16 }} />
-            Draft Schedules
-          </Link>
-          <Link
-            component="button"
-            onClick={() => navigate('/timepoints', {
-              state: {
-                timePointData,
-                serviceBands,
-                deletedPeriods,
-                timePeriodServiceBands,
-                scheduleId,
-                fileName
-              }
-            })}
-            sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'primary.main' }}
-          >
-            <TimelineIcon sx={{ mr: 0.5, fontSize: 16 }} />
-            Timepoint Page
-          </Link>
-          <Link
-            component="button"
-            onClick={() => navigate('/block-configuration')}
-            sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'primary.main' }}
-          >
-            <BusIcon sx={{ mr: 0.5, fontSize: 16 }} />
-            Block Configuration
-          </Link>
-          <Link
-            component="button"
-            onClick={() => navigate('/block-summary-schedule')}
-            sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'primary.main' }}
-          >
-            <ScheduleIcon sx={{ mr: 0.5, fontSize: 16 }} />
-            Summary Schedule
-          </Link>
-        </Breadcrumbs>
-      </Box>
-
       {/* Back Button */}
       <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
         <Button
@@ -1997,6 +2011,22 @@ export default function BlockConfiguration() {
         </Grid>
 
       {/* End of Configuration Content */}
+      
+      {/* Save Notification Snackbar */}
+      <Snackbar
+        open={saveNotification.open}
+        autoHideDuration={4000}
+        onClose={() => setSaveNotification({ ...saveNotification, open: false })}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert 
+          onClose={() => setSaveNotification({ ...saveNotification, open: false })}
+          severity={saveNotification.severity}
+          sx={{ width: '100%' }}
+        >
+          {saveNotification.message}
+        </Alert>
+      </Snackbar>
     </Container>
   );
 }

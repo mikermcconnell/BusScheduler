@@ -8,11 +8,9 @@ import {
   Stepper,
   Step,
   StepLabel,
-  StepIcon,
   useTheme,
   useMediaQuery,
   Paper,
-  IconButton,
   Tooltip
 } from '@mui/material';
 import {
@@ -39,6 +37,7 @@ interface WorkflowStep {
   description: string;
   status: 'completed' | 'active' | 'pending';
   optional?: boolean;
+  isCurrentPage?: boolean;
 }
 
 interface BreadcrumbItem {
@@ -165,6 +164,15 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
 
   const currentWorkflowContext = workflowContext || detectWorkflowContext();
   const currentWorkflow = currentWorkflowContext ? workflows[currentWorkflowContext as keyof typeof workflows] : [];
+  
+  // Debug logging for TimePoints page
+  if (location.pathname.includes('timepoints')) {
+    console.log('🔍 WorkflowBreadcrumbs Debug - TimePoints page:');
+    console.log('  - Current path:', location.pathname);
+    console.log('  - Detected workflow context:', currentWorkflowContext);
+    console.log('  - showWorkflow prop:', showWorkflow);
+    console.log('  - Current workflow steps:', currentWorkflow);
+  }
 
   // Initialize or update persistent workflow state
   useEffect(() => {
@@ -183,56 +191,80 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
 
   // Update workflow status based on persistent state and current path
   const updateWorkflowStatus = (steps: WorkflowStep[]): WorkflowStep[] => {
+    if (!steps || !Array.isArray(steps)) {
+      return [];
+    }
+    
     const currentPath = location.pathname;
     
-    if (persistentWorkflow) {
-      // Use persistent workflow state
-      return steps.map(step => {
+    if (persistentWorkflow && persistentWorkflow.steps) {
+      // Use persistent workflow state and update it based on the current path
+      return steps.map((step, index) => {
         const persistentStep = persistentWorkflow.steps.find(s => s.key === step.key);
+        
+        // Check if this step matches the current path
+        const isCurrentPage = step.path === currentPath || 
+                            (currentPath.startsWith('/drafts') && step.key === 'drafts') ||
+                            (currentPath.includes('timepoints') && step.key === 'timepoints') ||
+                            (currentPath.includes('block-configuration') && step.key === 'block-config') ||
+                            (currentPath.includes('block-summary-schedule') && step.key === 'summary') ||
+                            (currentPath.includes('upload') && step.key === 'upload');
+        
+        // Mark current step as active while preserving completion status
+        if (isCurrentPage) {
+          // If the step was already completed, keep it completed but also mark as current
+          if (persistentStep && persistentStep.status === 'completed') {
+            return { ...step, status: 'completed', isCurrentPage: true };
+          }
+          // Update persistent workflow to mark current step as active
+          workflowStateService.updateStepStatus(step.key, 'active');
+          return { ...step, status: 'active', isCurrentPage: true };
+        }
+        
         if (persistentStep) {
           return {
             ...step,
-            status: persistentStep.status
+            status: persistentStep.status,
+            isCurrentPage: false
           };
         }
         
-        // Fallback for current path
-        if (step.path === currentPath) {
-          return { ...step, status: 'active' };
-        }
-        
-        return step;
+        return { ...step, isCurrentPage: false };
       });
     }
     
     // Fallback to localStorage-based logic if no persistent workflow
     const hasScheduleData = localStorage.getItem('currentSummarySchedule');
     const hasDraftData = localStorage.getItem('currentSchedule');
+    const busScheduleData = localStorage.getItem('busSchedule');
     
     return steps.map((step, index) => {
-      // Mark current step as active
-      if (step.path === currentPath) {
-        return { ...step, status: 'active' };
-      }
+      // Check if this step matches the current path
+      const isCurrentPage = step.path === currentPath || 
+                          (currentPath.startsWith('/drafts') && step.key === 'drafts') ||
+                          (currentPath.includes('timepoints') && step.key === 'timepoints') ||
+                          (currentPath.includes('block-configuration') && step.key === 'block-config') ||
+                          (currentPath.includes('block-summary-schedule') && step.key === 'summary') ||
+                          (currentPath.includes('upload') && step.key === 'upload');
       
       // Mark completed steps based on data availability and path progression
       let isCompleted = false;
       
       switch (step.key) {
         case 'upload':
-          isCompleted = !!hasDraftData;
+          isCompleted = !!hasDraftData || !!busScheduleData;
           break;
         case 'drafts':
-          isCompleted = !!hasDraftData && currentPath !== '/upload';
+          isCompleted = (!!hasDraftData || !!busScheduleData) && !['/upload', '/drafts'].includes(currentPath);
           break;
         case 'timepoints':
-          isCompleted = !!hasDraftData && ['/block-configuration', '/block-summary-schedule'].includes(currentPath);
+          isCompleted = (!!hasDraftData || !!busScheduleData) && ['/block-configuration', '/block-summary-schedule'].includes(currentPath);
           break;
         case 'block-config':
-          isCompleted = !!hasScheduleData && currentPath === '/block-summary-schedule';
+          isCompleted = (!!hasScheduleData || !!busScheduleData) && currentPath === '/block-summary-schedule';
           break;
         case 'summary':
-          isCompleted = !!hasScheduleData && currentPath === '/block-summary-schedule';
+          isCompleted = false; // Only completed when we're done with the entire workflow
           break;
         default:
           // For other workflows, use simple path-based completion
@@ -242,12 +274,13 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
       
       return {
         ...step,
-        status: isCompleted ? 'completed' : (step.path === currentPath ? 'active' : 'pending')
+        status: isCompleted ? 'completed' : (isCurrentPage ? 'active' : 'pending'),
+        isCurrentPage
       };
     });
   };
 
-  const workflowSteps = updateWorkflowStatus(currentWorkflow);
+  const workflowSteps = updateWorkflowStatus(currentWorkflow || []);
 
   // Generate breadcrumbs from current path
   const generateBreadcrumbs = (): BreadcrumbItem[] => {
@@ -286,6 +319,32 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
   const breadcrumbs = customBreadcrumbs || generateBreadcrumbs();
 
   const getStepIcon = (step: WorkflowStep) => {
+    // If this is the current page, show a special indicator
+    if (step.isCurrentPage) {
+      if (step.status === 'completed') {
+        // Show completed icon with a ring around it for current page
+        return (
+          <Box sx={{ position: 'relative', display: 'inline-flex' }}>
+            <CompleteIcon color="success" />
+            <Box
+              sx={{
+                position: 'absolute',
+                top: -4,
+                left: -4,
+                right: -4,
+                bottom: -4,
+                border: '2px solid',
+                borderColor: 'primary.main',
+                borderRadius: '50%',
+                animation: 'pulse 2s infinite'
+              }}
+            />
+          </Box>
+        );
+      }
+      return <ActiveIcon color="primary" />;
+    }
+    
     switch (step.status) {
       case 'completed':
         return <CompleteIcon color="success" />;
@@ -302,7 +361,36 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
     if (step && persistentWorkflow) {
       workflowStateService.navigateToStep(step.key);
     }
-    navigate(path);
+    
+    // Preserve state data when navigating between workflow steps
+    let timePointData = null;
+    let serviceBands = null;
+    
+    try {
+      timePointData = localStorage.getItem('currentTimePointData') ? JSON.parse(localStorage.getItem('currentTimePointData')!) : null;
+      serviceBands = localStorage.getItem('currentServiceBands') ? JSON.parse(localStorage.getItem('currentServiceBands')!) : null;
+    } catch (error) {
+      console.warn('Error parsing localStorage data:', error);
+    }
+    
+    const scheduleState = location.state;
+    
+    const navigationState = {
+      timePointData: scheduleState?.timePointData || timePointData,
+      serviceBands: scheduleState?.serviceBands || serviceBands,
+      deletedPeriods: scheduleState?.deletedPeriods || [],
+      timePeriodServiceBands: scheduleState?.timePeriodServiceBands || {},
+      scheduleId: scheduleState?.scheduleId,
+      fileName: scheduleState?.fileName
+    };
+    
+    // Only pass state for workflow pages that need it
+    const workflowPages = ['/timepoints', '/block-configuration', '/block-summary-schedule'];
+    if (workflowPages.includes(path)) {
+      navigate(path, { state: navigationState });
+    } else {
+      navigate(path);
+    }
   };
 
   return (
@@ -375,7 +463,7 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
         </Box>
 
         {/* Workflow Stepper */}
-        {showWorkflow && workflowSteps.length > 0 && (
+        {showWorkflow && workflowSteps && workflowSteps.length > 0 && (
           <Box>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
               <Typography variant="subtitle2" color="text.secondary">
@@ -407,7 +495,7 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
               </Box>
             ) : (
               // Desktop: Full stepper
-              <Stepper activeStep={workflowSteps.findIndex(s => s.status === 'active')} alternativeLabel>
+              <Stepper activeStep={workflowSteps.findIndex(s => s && s.status === 'active')} alternativeLabel>
                 {workflowSteps.map((step) => (
                   <Step 
                     key={step.key} 
@@ -437,8 +525,17 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
                       }}
                     >
                       <Box>
-                        <Typography variant="body2" fontWeight={step.status === 'active' ? 'medium' : 'normal'}>
+                        <Typography 
+                          variant="body2" 
+                          fontWeight={step.isCurrentPage ? 'bold' : (step.status === 'active' ? 'medium' : 'normal')}
+                          color={step.isCurrentPage ? 'primary' : 'inherit'}
+                        >
                           {step.label}
+                          {step.isCurrentPage && (
+                            <Typography component="span" variant="caption" color="primary" sx={{ ml: 1 }}>
+                              (Current)
+                            </Typography>
+                          )}
                         </Typography>
                         <Typography variant="caption" color="text.secondary">
                           {step.description}

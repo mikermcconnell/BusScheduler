@@ -64,6 +64,7 @@ import {
 import { ParsedCsvData } from '../utils/csvParser';
 import { scheduleStorage } from '../services/scheduleStorage';
 import { workflowStateService } from '../services/workflowStateService';
+import WorkflowBreadcrumbs from '../components/WorkflowBreadcrumbs';
 
 interface TimePointData {
   fromTimePoint: string;
@@ -424,6 +425,10 @@ const TimePoints: React.FC = () => {
     });
     
     console.log('🔍 DEBUG: Created service band mapping:', timePeriodServiceBands);
+    
+    // Store state data in localStorage for persistence across navigation
+    localStorage.setItem('currentTimePointData', JSON.stringify(timePointData));
+    localStorage.setItem('currentServiceBands', JSON.stringify(timeBands));
     
     // Pass timePointData, service bands, and direct mapping to BlockConfiguration
     navigate('/block-configuration', {
@@ -843,57 +848,6 @@ const TimePoints: React.FC = () => {
 
   return (
     <Box>
-      {/* Breadcrumb Navigation */}
-      <Box sx={{ mb: 2 }}>
-        <Breadcrumbs separator={<NavigateNextIcon fontSize="small" />}>
-          <Link
-            component="button"
-            variant="body2"
-            onClick={() => navigate('/')}
-            sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'primary.main' }}
-          >
-            <HomeIcon sx={{ mr: 0.5, fontSize: 16 }} />
-            Dashboard
-          </Link>
-          <Link
-            component="button"
-            variant="body2"
-            onClick={() => navigate('/drafts')}
-            sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'primary.main' }}
-          >
-            <DraftIcon sx={{ mr: 0.5, fontSize: 16 }} />
-            Draft Schedules
-          </Link>
-          <Link
-            component="button"
-            variant="body2"
-            onClick={() => navigate('/timepoints')}
-            sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'primary.main' }}
-          >
-            <TimelineIcon sx={{ mr: 0.5, fontSize: 16 }} />
-            Timepoint Page
-          </Link>
-          <Link
-            component="button"
-            variant="body2"
-            onClick={() => navigate('/block-configuration')}
-            sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'primary.main' }}
-          >
-            <BusIcon sx={{ mr: 0.5, fontSize: 16 }} />
-            Block Configuration
-          </Link>
-          <Link
-            component="button"
-            variant="body2"
-            onClick={() => navigate('/block-summary-schedule')}
-            sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'primary.main' }}
-          >
-            <ScheduleIcon sx={{ mr: 0.5, fontSize: 16 }} />
-            Summary Schedule
-          </Link>
-        </Breadcrumbs>
-      </Box>
-
       <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
         <Button
           variant="outlined"

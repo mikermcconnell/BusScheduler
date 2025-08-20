@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { workflowStateService } from '../services/workflowStateService';
 import {
   Card,
   CardContent,
@@ -104,6 +105,13 @@ const DraftScheduleList: React.FC<DraftScheduleListProps> = ({
   };
 
   const handleDraftClick = (draft: DraftSchedule) => {
+    // Mark the draft review step as complete
+    workflowStateService.completeStep('drafts', {
+      draftId: draft.id,
+      draftName: draft.fileName,
+      reviewedAt: new Date().toISOString()
+    });
+    
     // Navigate to timepoints page with the draft data
     navigate('/drafts/timepoints', {
       state: {

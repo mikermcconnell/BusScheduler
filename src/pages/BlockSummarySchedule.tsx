@@ -15,20 +15,18 @@ import {
   TableHead,
   TableRow,
   Paper,
-  Breadcrumbs,
-  Link,
   useTheme
 } from '@mui/material';
 import {
   ArrowBack as BackIcon,
   Fullscreen as FullscreenIcon,
-  Home as HomeIcon,
-  NavigateNext as NavigateNextIcon,
   Publish as PublishIcon
 } from '@mui/icons-material';
 import { calculateTripTime } from '../utils/dateHelpers';
 import { scheduleStorage } from '../services/scheduleStorage';
 import { SummarySchedule } from '../types/schedule';
+import { workflowStateService } from '../services/workflowStateService';
+import WorkflowBreadcrumbs from '../components/WorkflowBreadcrumbs';
 
 // Service Band Types based on travel time data from TimePoints analysis
 export type ServiceBand = 'Fastest Service' | 'Fast Service' | 'Standard Service' | 'Slow Service' | 'Slowest Service';
@@ -200,14 +198,69 @@ const BlockSummarySchedule: React.FC = () => {
   const [publishError, setPublishError] = useState<string | null>(null);
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
-  const schedule: Schedule = location.state?.schedule || {
-    id: '',
-    name: 'Generated Schedule',
-    timePoints: [],
-    serviceBands: [],
-    trips: [],
-    updatedAt: new Date().toISOString()
-  };
+  // Mark the summary step as completed when the component loads
+  useEffect(() => {
+    workflowStateService.completeStep('summary', {
+      scheduleGenerated: true,
+      timestamp: new Date().toISOString()
+    });
+  }, []);
+
+  // Load schedule data from multiple sources with fallback logic
+  const [schedule, setSchedule] = useState<Schedule>(() => {
+    // First try location.state (direct navigation)
+    if (location.state?.schedule) {
+      console.log('📋 Loading schedule from navigation state');
+      return location.state.schedule;
+    }
+    
+    // Second try localStorage (persistence across page refreshes)
+    try {
+      const storedSchedule = localStorage.getItem('currentSummarySchedule');
+      if (storedSchedule) {
+        console.log('📋 Loading schedule from localStorage');
+        return JSON.parse(storedSchedule);
+      }
+    } catch (error) {
+      console.warn('Error loading schedule from localStorage:', error);
+    }
+    
+    // Third try most recent saved schedule
+    try {
+      const savedSchedules = scheduleStorage.getAllSchedules();
+      const mostRecentSchedule = savedSchedules
+        .filter(s => s.summarySchedule)
+        .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0];
+      
+      if (mostRecentSchedule?.summarySchedule) {
+        console.log('📋 Loading most recent saved schedule');
+        // Convert saved schedule format to component format
+        return {
+          id: mostRecentSchedule.id,
+          name: mostRecentSchedule.routeName,
+          timePoints: mostRecentSchedule.summarySchedule.timePoints,
+          serviceBands: [],
+          trips: mostRecentSchedule.summarySchedule.weekday || [],
+          updatedAt: mostRecentSchedule.updatedAt,
+          timePointData: (mostRecentSchedule as any).timePointData || []
+        };
+      }
+    } catch (error) {
+      console.warn('Error loading saved schedules:', error);
+    }
+    
+    // Final fallback - empty schedule
+    console.log('📋 No schedule data found, using empty schedule');
+    return {
+      id: '',
+      name: 'Generated Schedule',
+      timePoints: [],
+      serviceBands: [],
+      trips: [],
+      updatedAt: new Date().toISOString(),
+      timePointData: []
+    };
+  });
 
   // Process trips to add service bands based on TimePoints data
   useEffect(() => {

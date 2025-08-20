@@ -150,9 +150,16 @@ const Layout: React.FC = () => {
         >
           {/* Workflow Breadcrumbs */}
           {shouldShowBreadcrumbs && (
-            <WorkflowBreadcrumbs 
-              showWorkflow={shouldShowWorkflow}
-            />
+            <>
+              {location.pathname.includes('timepoints') && console.log('🔍 Layout Debug - TimePoints page:', {
+                pathname: location.pathname,
+                shouldShowBreadcrumbs,
+                shouldShowWorkflow
+              })}
+              <WorkflowBreadcrumbs 
+                showWorkflow={shouldShowWorkflow}
+              />
+            </>
           )}
 
           {/* Page Routes */}
