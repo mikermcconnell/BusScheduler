@@ -15,7 +15,8 @@ import {
   TableHead,
   TableRow,
   Paper,
-  useTheme
+  useTheme,
+  Tooltip
 } from '@mui/material';
 import {
   ArrowBack as BackIcon,
@@ -197,6 +198,13 @@ const BlockSummarySchedule: React.FC = () => {
   const [publishSuccess, setPublishSuccess] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
   const tableContainerRef = useRef<HTMLDivElement>(null);
+  
+  // Recovery time editing state
+  const [editingRecovery, setEditingRecovery] = useState<{tripId: string, timePointId: string} | null>(null);
+  const [tempRecoveryValue, setTempRecoveryValue] = useState<string>('');
+  
+  // Store original travel times to maintain consistency when recovery changes
+  const [originalTravelTimes, setOriginalTravelTimes] = useState<{[tripId: string]: number}>({});
 
   // Mark the summary step as completed when the component loads
   useEffect(() => {
@@ -278,6 +286,301 @@ const BlockSummarySchedule: React.FC = () => {
       }
     }
   }, [schedule.trips, schedule.timePointData]);
+
+  // Calculate and store original travel times when schedule loads
+  useEffect(() => {
+    if (schedule.trips.length > 0) {
+      const travelTimes: {[tripId: string]: number} = {};
+      
+      schedule.trips.forEach(trip => {
+        // Calculate original travel time based on service band or trip duration
+        let travelTime = 0;
+        
+        if (trip.serviceBandInfo) {
+          travelTime = trip.serviceBandInfo.totalMinutes || 0;
+        } else {
+          // Calculate from first to last timepoint without recovery
+          const firstTimepointId = schedule.timePoints[0]?.id;
+          const lastTimepointId = schedule.timePoints[schedule.timePoints.length - 1]?.id;
+          const firstTime = firstTimepointId ? (trip.departureTimes[firstTimepointId] || trip.arrivalTimes[firstTimepointId]) : '';
+          const lastTime = lastTimepointId ? (trip.departureTimes[lastTimepointId] || trip.arrivalTimes[lastTimepointId]) : '';
+          
+          if (firstTime && lastTime) {
+            const firstMinutes = timeStringToMinutes(firstTime);
+            const lastMinutes = timeStringToMinutes(lastTime);
+            const totalTripTime = lastMinutes - firstMinutes;
+            
+            // Get initial total recovery time
+            const initialTotalRecovery = trip.recoveryTimes 
+              ? Object.values(trip.recoveryTimes).reduce((sum, time) => sum + (time || 0), 0)
+              : 0;
+            
+            // Travel time is trip time minus recovery time (using initial recovery values)
+            travelTime = Math.max(0, totalTripTime - initialTotalRecovery);
+          }
+        }
+        
+        travelTimes[trip.tripNumber.toString()] = travelTime;
+      });
+      
+      setOriginalTravelTimes(travelTimes);
+    }
+  }, [schedule.trips, schedule.timePoints]);
+
+  // Helper function to convert time string to minutes
+  const timeStringToMinutes = (timeString: string): number => {
+    const [hours, minutes] = timeString.split(':').map(Number);
+    return hours * 60 + minutes;
+  };
+
+  // Helper function to add minutes to time string
+  const addMinutesToTime = (timeString: string, minutes: number): string => {
+    const [hours, mins] = timeString.split(':').map(Number);
+    const totalMinutes = hours * 60 + mins + minutes;
+    const newHours = Math.floor(totalMinutes / 60) % 24;
+    const newMins = totalMinutes % 60;
+    return `${newHours.toString().padStart(2, '0')}:${newMins.toString().padStart(2, '0')}`;
+  };
+
+  // Helper function to convert minutes to time string
+  const minutesToTime = (minutes: number): string => {
+    const hours = Math.floor(minutes / 60) % 24;
+    const mins = minutes % 60;
+    return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+  };
+
+  // Recovery time editing functions
+  const handleRecoveryClick = useCallback((tripId: string, timePointId: string, currentValue: number) => {
+    const tripIdentifier = `${tripId}-${timePointId}`;
+    setEditingRecovery({ tripId: tripIdentifier, timePointId });
+    setTempRecoveryValue(currentValue.toString());
+    
+    // Auto-select the value after React renders the input
+    setTimeout(() => {
+      const input = document.querySelector('input[data-recovery-edit="true"]') as HTMLInputElement;
+      if (input) {
+        input.select();
+      }
+    }, 0);
+  }, []);
+
+  const handleRecoveryChange = useCallback((value: string) => {
+    // Only allow numbers
+    if (value === '' || /^\d+$/.test(value)) {
+      setTempRecoveryValue(value);
+    }
+  }, []);
+
+  const handleRecoverySubmit = useCallback(() => {
+    if (!editingRecovery) return;
+    
+    const newRecoveryTime = parseInt(tempRecoveryValue) || 0;
+    const [tripIdStr, timePointId] = editingRecovery.tripId.split('-');
+    const tripNumber = parseInt(tripIdStr);
+    
+    // Calculate recovery difference first
+    const targetTrip = schedule.trips.find(t => t.tripNumber === tripNumber);
+    const oldRecoveryTime = targetTrip?.recoveryTimes[timePointId] || 0;
+    const recoveryDifference = newRecoveryTime - oldRecoveryTime;
+    
+    // Update the schedule with new recovery time
+    setSchedule(prevSchedule => {
+      const updatedTrips = prevSchedule.trips.map(trip => {
+        if (trip.tripNumber === tripNumber) {
+          // Update recovery time for this timepoint
+          const updatedRecoveryTimes = {
+            ...trip.recoveryTimes,
+            [timePointId]: newRecoveryTime
+          };
+          
+          // Update subsequent trip times within this trip
+          const updatedTrip = updateSubsequentTripTimes(trip, timePointId, recoveryDifference, prevSchedule.timePoints);
+          
+          return {
+            ...updatedTrip,
+            recoveryTimes: updatedRecoveryTimes
+          };
+        }
+        return trip;
+      });
+      
+      // Update subsequent trips in the same block for ANY recovery time change
+      // because any change affects when the trip ends and thus when the next trip can start
+      const finalTimePointId = prevSchedule.timePoints[prevSchedule.timePoints.length - 1]?.id;
+      if (recoveryDifference !== 0) {
+        // Find the trip that was modified
+        const modifiedTrip = updatedTrips.find(t => t.tripNumber === tripNumber);
+        if (modifiedTrip) {
+          const blockNumber = modifiedTrip.blockNumber;
+          
+          // Find all trips in the same block and sort them by departure time
+          const blockTrips = updatedTrips
+            .filter(t => t.blockNumber === blockNumber)
+            .sort((a, b) => a.departureTime.localeCompare(b.departureTime));
+          
+          // Find the position of the modified trip in the block
+          const modifiedTripIndexInBlock = blockTrips.findIndex(t => t.tripNumber === tripNumber);
+          
+          // Update all subsequent trips in this block (based on block cycling order)
+          for (let i = modifiedTripIndexInBlock + 1; i < blockTrips.length; i++) {
+            const subsequentTrip = blockTrips[i];
+            
+            // Calculate new start time based on simplified logic:
+            // Next trip starts when previous trip departs from final stop
+            const prevTripInBlock = blockTrips[i - 1];
+            
+            // Get the updated previous trip from our working array
+            const updatedPrevTrip = updatedTrips.find(t => t.tripNumber === prevTripInBlock.tripNumber) || prevTripInBlock;
+            
+            // Use the updated departure time from the final stop
+            const prevTripFinalDeparture = updatedPrevTrip.departureTimes[finalTimePointId] || 
+              addMinutesToTime(updatedPrevTrip.arrivalTimes[finalTimePointId], updatedPrevTrip.recoveryTimes[finalTimePointId] || 0);
+            const newStartMinutes = timeStringToMinutes(prevTripFinalDeparture);
+            const newDepartureTime = minutesToTime(newStartMinutes);
+            
+            // Calculate the time shift for this trip
+            const tripShift = newStartMinutes - timeStringToMinutes(subsequentTrip.departureTime);
+            
+            // Update all times for this trip
+            const updatedDepartureTimes = { ...subsequentTrip.departureTimes };
+            const updatedArrivalTimes = { ...subsequentTrip.arrivalTimes };
+            
+            Object.keys(updatedDepartureTimes).forEach(tpId => {
+              if (updatedDepartureTimes[tpId]) {
+                updatedDepartureTimes[tpId] = addMinutesToTime(updatedDepartureTimes[tpId], tripShift);
+              }
+              if (updatedArrivalTimes[tpId]) {
+                updatedArrivalTimes[tpId] = addMinutesToTime(updatedArrivalTimes[tpId], tripShift);
+              }
+            });
+            
+            // Find and update this trip in the main array
+            const tripIndex = updatedTrips.findIndex(t => t.tripNumber === subsequentTrip.tripNumber);
+            if (tripIndex !== -1) {
+              updatedTrips[tripIndex] = {
+                ...subsequentTrip,
+                departureTime: newDepartureTime,
+                departureTimes: updatedDepartureTimes,
+                arrivalTimes: updatedArrivalTimes
+              };
+              
+              console.log(`🔄 Updated trip ${subsequentTrip.tripNumber} in block ${blockNumber}: ${subsequentTrip.departureTime} → ${newDepartureTime} (shift: ${tripShift}min)`);
+            }
+          }
+        }
+      }
+      
+      // Force re-sort trips to ensure display order is maintained
+      const sortedUpdatedTrips = [...updatedTrips].sort((a, b) => {
+        // First sort by departure time
+        const timeCompare = a.departureTime.localeCompare(b.departureTime);
+        if (timeCompare !== 0) return timeCompare;
+        // Then by block number if times are equal
+        return a.blockNumber - b.blockNumber;
+      });
+      
+      const updatedSchedule = {
+        ...prevSchedule,
+        trips: sortedUpdatedTrips
+      };
+      
+      // Persist to localStorage for consistency
+      try {
+        localStorage.setItem('currentSummarySchedule', JSON.stringify(updatedSchedule));
+        console.log('✅ Schedule updated and persisted with cascading changes');
+      } catch (error) {
+        console.warn('Failed to persist schedule updates:', error);
+      }
+      
+      return updatedSchedule;
+    });
+    
+    // Special logic for RVH entrance affecting downstream stops
+    if (timePointId === 'rvh-entrance' && newRecoveryTime === 0) {
+      handleRVHEntranceZeroRecovery(tripNumber);
+    }
+    
+    setEditingRecovery(null);
+    setTempRecoveryValue('');
+  }, [editingRecovery, tempRecoveryValue]);
+
+  const handleRecoveryCancel = useCallback(() => {
+    setEditingRecovery(null);
+    setTempRecoveryValue('');
+  }, []);
+
+  // Function to update subsequent trip times when recovery changes
+  const updateSubsequentTripTimes = useCallback((trip: Trip, changedTimePointId: string, recoveryDifference: number, timePoints: TimePoint[]) => {
+    if (recoveryDifference === 0) return trip;
+    
+    const timePointIndex = timePoints.findIndex(tp => tp.id === changedTimePointId);
+    if (timePointIndex === -1) return trip;
+    
+    // Update departure time at the changed timepoint first
+    const updatedDepartureTimes = { ...trip.departureTimes };
+    const updatedArrivalTimes = { ...trip.arrivalTimes };
+    
+    // The departure time at the changed point needs to be recalculated
+    // Departure = Arrival + Recovery
+    if (updatedArrivalTimes[changedTimePointId]) {
+      const newRecovery = (trip.recoveryTimes[changedTimePointId] || 0) + recoveryDifference;
+      updatedDepartureTimes[changedTimePointId] = addMinutesToTime(
+        updatedArrivalTimes[changedTimePointId], 
+        newRecovery
+      );
+    }
+    
+    // Update all subsequent timepoints in this trip
+    for (let i = timePointIndex + 1; i < timePoints.length; i++) {
+      const timePointId = timePoints[i].id;
+      
+      // Both arrival and departure shift by the recovery difference
+      if (updatedArrivalTimes[timePointId]) {
+        updatedArrivalTimes[timePointId] = addMinutesToTime(updatedArrivalTimes[timePointId], recoveryDifference);
+      }
+      
+      if (updatedDepartureTimes[timePointId]) {
+        updatedDepartureTimes[timePointId] = addMinutesToTime(updatedDepartureTimes[timePointId], recoveryDifference);
+      }
+    }
+    
+    return {
+      ...trip,
+      departureTimes: updatedDepartureTimes,
+      arrivalTimes: updatedArrivalTimes
+    };
+  }, []);
+
+  // Special logic for RVH entrance affecting downstream stops
+  const handleRVHEntranceZeroRecovery = useCallback((tripNumber: number) => {
+    const downstreamStops = ['georgian-college', 'georgian-mall', 'bayfield-mall', 'downtown-terminal'];
+    
+    setSchedule(prevSchedule => {
+      const updatedTrips = prevSchedule.trips.map(trip => {
+        if (trip.tripNumber === tripNumber) {
+          const updatedRecoveryTimes = { ...trip.recoveryTimes };
+          
+          // Reduce recovery time by 1 minute for downstream stops
+          downstreamStops.forEach(stopId => {
+            if (updatedRecoveryTimes[stopId] > 0) {
+              updatedRecoveryTimes[stopId] = Math.max(0, updatedRecoveryTimes[stopId] - 1);
+            }
+          });
+          
+          return {
+            ...trip,
+            recoveryTimes: updatedRecoveryTimes
+          };
+        }
+        return trip;
+      });
+      
+      return {
+        ...prevSchedule,
+        trips: updatedTrips
+      };
+    });
+  }, []);
 
   // New simplified trip row component
   const TripRow = memo(({ trip, idx }: { trip: Trip; idx: number }) => {
@@ -368,7 +671,111 @@ const BlockSummarySchedule: React.FC = () => {
               minWidth: '80px'
             }}
           >
-            {trip.departureTimes[tp.id] || trip.arrivalTimes[tp.id] || '-'}
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+              {/* Arrival time (or departure for first timepoint) */}
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px', width: '100%' }}>
+                <Typography component="div" sx={{ 
+                  fontSize: '11px',
+                  color: '#94a3b8',
+                  fontWeight: '400',
+                  minWidth: '20px',
+                  textAlign: 'right'
+                }}>
+                  {tpIndex === 0 ? 'dep:' : 'arr:'}
+                </Typography>
+                <Typography component="div" sx={{ 
+                  fontSize: '12px',
+                  fontWeight: '600',
+                  color: tpIndex === 0 ? '#3b82f6' : '#1e293b'
+                }}>
+                  {tpIndex === 0 ? (trip.departureTimes[tp.id] || trip.arrivalTimes[tp.id] || '-') : (trip.arrivalTimes[tp.id] || '-')}
+                </Typography>
+              </Box>
+              
+              {/* Departure time (if different from arrival due to recovery, but not for first timepoint) */}
+              {tpIndex > 0 && trip.recoveryTimes && trip.recoveryTimes[tp.id] > 0 && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px', width: '100%' }}>
+                  <Typography component="div" sx={{ 
+                    fontSize: '11px',
+                    color: '#94a3b8',
+                    fontWeight: '400',
+                    minWidth: '20px',
+                    textAlign: 'right'
+                  }}>
+                    dep:
+                  </Typography>
+                  <Typography component="div" sx={{ 
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    color: '#3b82f6'
+                  }}>
+                    {trip.departureTimes[tp.id] || '-'}
+                  </Typography>
+                </Box>
+              )}
+              
+              {/* Recovery time display - editable */}
+              {trip.recoveryTimes && trip.recoveryTimes[tp.id] !== undefined && trip.recoveryTimes[tp.id] > 0 && (
+                <Box sx={{ mt: '1px' }}>
+                  {editingRecovery?.tripId === `${trip.tripNumber}-${tp.id}` ? (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      <input
+                        type="text"
+                        data-recovery-edit="true"
+                        value={tempRecoveryValue}
+                        onChange={(e) => handleRecoveryChange(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleRecoverySubmit();
+                          if (e.key === 'Escape') handleRecoveryCancel();
+                          if (e.key === 'Tab') {
+                            e.preventDefault();
+                            handleRecoverySubmit();
+                          }
+                        }}
+                        onBlur={handleRecoverySubmit}
+                        autoFocus
+                        onFocus={(e) => e.target.select()}
+                        style={{
+                          width: '30px',
+                          fontSize: '10px',
+                          padding: '1px 2px',
+                          border: '2px solid #3b82f6',
+                          borderRadius: '2px',
+                          textAlign: 'center',
+                          backgroundColor: '#eff6ff',
+                          outline: 'none'
+                        }}
+                      />
+                      <span style={{ fontSize: '10px', color: '#64748b' }}>min</span>
+                    </Box>
+                  ) : (
+                    <Typography 
+                      component="div" 
+                      onClick={() => handleRecoveryClick(trip.tripNumber.toString(), tp.id, trip.recoveryTimes[tp.id] || 0)}
+                      sx={{ 
+                        fontSize: '10px',
+                        color: '#10b981',
+                        fontWeight: '500',
+                        cursor: 'pointer',
+                        padding: '1px 4px',
+                        borderRadius: '2px',
+                        backgroundColor: '#f0fdf4',
+                        border: '1px solid #86efac',
+                        transition: 'all 0.15s ease-in-out',
+                        '&:hover': {
+                          backgroundColor: '#dcfce7',
+                          color: '#059669',
+                          borderColor: '#10b981',
+                          transform: 'scale(1.05)'
+                        }
+                      }}
+                    >
+                      {`${trip.recoveryTimes[tp.id]}min dwell`}
+                    </Typography>
+                  )}
+                </Box>
+              )}
+            </Box>
           </TableCell>
         ))}
         
@@ -384,6 +791,146 @@ const BlockSummarySchedule: React.FC = () => {
           minWidth: '80px'
         }}>
           {tripTime}
+        </TableCell>
+        
+        {/* Recovery Time */}
+        <TableCell sx={{ 
+          p: '12px', 
+          fontSize: '13px', 
+          textAlign: 'center',
+          fontFamily: 'monospace',
+          fontWeight: '600',
+          color: '#0d9488',
+          backgroundColor: '#f0f9ff',
+          minWidth: '80px'
+        }}>
+          {(() => {
+            // Calculate total recovery time for this trip
+            const totalRecoveryTime = trip.recoveryTimes 
+              ? Object.values(trip.recoveryTimes).reduce((sum, time) => sum + (time || 0), 0)
+              : 0;
+            return totalRecoveryTime > 0 ? `${totalRecoveryTime}min` : '0min';
+          })()}
+        </TableCell>
+        
+        {/* Travel Time */}
+        <TableCell sx={{ 
+          p: '12px', 
+          fontSize: '13px', 
+          textAlign: 'center',
+          fontFamily: 'monospace',
+          fontWeight: '600',
+          color: '#059669',
+          backgroundColor: '#ecfdf5',
+          minWidth: '80px'
+        }}>
+          {(() => {
+            // Use stored original travel time to maintain consistency
+            const originalTravelTime = originalTravelTimes[trip.tripNumber.toString()] || 0;
+            
+            if (originalTravelTime > 0) {
+              return `${originalTravelTime}min`;
+            }
+            
+            // Fallback: use service band info if original not available
+            const serviceBandInfo = trip.serviceBandInfo;
+            if (serviceBandInfo) {
+              const totalTravelTime = serviceBandInfo.totalMinutes || 0;
+              return totalTravelTime > 0 ? `${totalTravelTime}min` : '0min';
+            }
+            
+            return '0min';
+          })()}
+        </TableCell>
+        
+        {/* Recovery Percentage */}
+        <TableCell sx={{ 
+          p: '12px', 
+          fontSize: '13px', 
+          textAlign: 'center',
+          fontFamily: 'monospace',
+          fontWeight: '600',
+          minWidth: '100px'
+        }}>
+          {(() => {
+            // Calculate recovery percentage
+            const totalRecoveryTime = trip.recoveryTimes 
+              ? Object.values(trip.recoveryTimes).reduce((sum, time) => sum + (time || 0), 0)
+              : 0;
+            
+            // Get travel time from stored original travel times
+            let travelTime = originalTravelTimes[trip.tripNumber.toString()] || 0;
+            
+            // Fallback to service band info if original not available
+            if (travelTime === 0) {
+              const serviceBandInfo = trip.serviceBandInfo;
+              if (serviceBandInfo) {
+                travelTime = serviceBandInfo.totalMinutes || 0;
+              }
+            }
+            
+            if (travelTime === 0) {
+              return (
+                <Tooltip title="Not enough recovery time" arrow>
+                  <Box sx={{ 
+                    color: '#dc2626',
+                    backgroundColor: '#fef2f2',
+                    borderRadius: '4px',
+                    py: '2px',
+                    px: '6px',
+                    display: 'inline-block',
+                    cursor: 'help'
+                  }}>
+                    0%
+                  </Box>
+                </Tooltip>
+              );
+            }
+            
+            const percentage = (totalRecoveryTime / travelTime) * 100;
+            const percentageText = `${percentage.toFixed(1)}%`;
+            
+            // Color coding based on percentage ranges and tooltip messages
+            // < 10%: Red (not enough recovery time)
+            // 10-15%: Yellow-green (okay recovery time) 
+            // 15%: Green (great recovery time)
+            // > 15%: Red (too much recovery time)
+            
+            let color, backgroundColor, tooltipText;
+            if (percentage < 10) {
+              color = '#dc2626';      // Red text
+              backgroundColor = '#fef2f2'; // Light red background
+              tooltipText = 'Not enough recovery time';
+            } else if (percentage >= 10 && percentage < 15) {
+              color = '#ca8a04';      // Yellow-green text
+              backgroundColor = '#fefce8'; // Light yellow background
+              tooltipText = 'Okay recovery time';
+            } else if (percentage === 15) {
+              color = '#059669';      // Green text
+              backgroundColor = '#ecfdf5'; // Light green background
+              tooltipText = 'Great recovery time';
+            } else {
+              color = '#dc2626';      // Red text (too much)
+              backgroundColor = '#fef2f2'; // Light red background
+              tooltipText = 'Too much recovery time';
+            }
+            
+            return (
+              <Tooltip title={tooltipText} arrow>
+                <Box sx={{ 
+                  color, 
+                  backgroundColor, 
+                  borderRadius: '4px',
+                  py: '2px',
+                  px: '6px',
+                  display: 'inline-block',
+                  cursor: 'help'
+                }}>
+                  {percentageText}
+                </Box>
+              </Tooltip>
+            );
+          })()}
         </TableCell>
       </TableRow>
     );
@@ -709,13 +1256,43 @@ const BlockSummarySchedule: React.FC = () => {
                       }}>
                         Trip Time
                       </TableCell>
+                      
+                      {/* Recovery Time Column */}
+                      <TableCell sx={{ 
+                        textAlign: 'center',
+                        minWidth: '100px',
+                        backgroundColor: '#f0f9ff',
+                        fontWeight: '800'
+                      }}>
+                        Recovery Time
+                      </TableCell>
+                      
+                      {/* Travel Time Column */}
+                      <TableCell sx={{ 
+                        textAlign: 'center',
+                        minWidth: '100px',
+                        backgroundColor: '#ecfdf5',
+                        fontWeight: '800'
+                      }}>
+                        Travel Time
+                      </TableCell>
+                      
+                      {/* Recovery Percentage Column */}
+                      <TableCell sx={{ 
+                        textAlign: 'center',
+                        minWidth: '120px',
+                        backgroundColor: '#fffbeb',
+                        fontWeight: '800'
+                      }}>
+                        Recovery %
+                      </TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
                     {/* Add spacer for virtualization offset */}
                     {sortedTrips.length > 50 && visibleRange.start > 0 && (
                       <TableRow sx={{ height: `${visibleRange.start * 48}px` }}>
-                            <TableCell colSpan={4 + schedule.timePoints.length} sx={{ p: 0, border: 'none' }} />
+                            <TableCell colSpan={7 + schedule.timePoints.length} sx={{ p: 0, border: 'none' }} />
                       </TableRow>
                     )}
                     
@@ -733,7 +1310,7 @@ const BlockSummarySchedule: React.FC = () => {
                     {/* Add spacer for remaining items */}
                     {sortedTrips.length > 50 && visibleRange.end < sortedTrips.length && (
                       <TableRow sx={{ height: `${(sortedTrips.length - visibleRange.end) * 48}px` }}>
-                            <TableCell colSpan={4 + schedule.timePoints.length} sx={{ p: 0, border: 'none' }} />
+                            <TableCell colSpan={7 + schedule.timePoints.length} sx={{ p: 0, border: 'none' }} />
                       </TableRow>
                     )}
                   </TableBody>
@@ -881,13 +1458,43 @@ const BlockSummarySchedule: React.FC = () => {
                     }}>
                       Trip Time
                     </TableCell>
+                    
+                    {/* Recovery Time Column */}
+                    <TableCell sx={{ 
+                      textAlign: 'center',
+                      minWidth: '100px',
+                      backgroundColor: '#f0f9ff',
+                      fontWeight: '800'
+                    }}>
+                      Recovery Time
+                    </TableCell>
+                    
+                    {/* Travel Time Column */}
+                    <TableCell sx={{ 
+                      textAlign: 'center',
+                      minWidth: '100px',
+                      backgroundColor: '#ecfdf5',
+                      fontWeight: '800'
+                    }}>
+                      Travel Time
+                    </TableCell>
+                    
+                    {/* Recovery Percentage Column */}
+                    <TableCell sx={{ 
+                      textAlign: 'center',
+                      minWidth: '120px',
+                      backgroundColor: '#fffbeb',
+                      fontWeight: '800'
+                    }}>
+                      Recovery %
+                    </TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {/* Reuse same virtualization logic */}
                   {sortedTrips.length > 50 && visibleRange.start > 0 && (
                     <TableRow sx={{ height: `${visibleRange.start * 48}px` }}>
-                      <TableCell colSpan={4 + schedule.timePoints.length} sx={{ p: 0, border: 'none' }} />
+                      <TableCell colSpan={7 + schedule.timePoints.length} sx={{ p: 0, border: 'none' }} />
                     </TableRow>
                   )}
                   
@@ -904,7 +1511,7 @@ const BlockSummarySchedule: React.FC = () => {
                   
                   {sortedTrips.length > 50 && visibleRange.end < sortedTrips.length && (
                     <TableRow sx={{ height: `${(sortedTrips.length - visibleRange.end) * 48}px` }}>
-                      <TableCell colSpan={4 + schedule.timePoints.length} sx={{ p: 0, border: 'none' }} />
+                      <TableCell colSpan={7 + schedule.timePoints.length} sx={{ p: 0, border: 'none' }} />
                     </TableRow>
                   )}
                 </TableBody>

@@ -6,11 +6,11 @@
 **Purpose**: Eliminate manual Excel formatting pain points by automating the conversion of raw schedule data into professional, formatted schedules for weekday, Saturday, and Sunday service patterns.
 
 ## Tech Stack
-- **Frontend**: React 18 + TypeScript
-- **UI Framework**: Material-UI v5 (@mui/material)
-- **Routing**: React Router DOM v6
+- **Frontend**: React 19 + TypeScript 5.9
+- **UI Framework**: Material-UI v7 (@mui/material)
+- **Routing**: React Router DOM v7
 - **Excel Processing**: xlsx library
-- **Testing**: Jest + React Testing Library, Vitest
+- **Testing**: Jest + React Testing Library v16, Vitest v3
 - **Build**: Create React App (react-scripts 5.0.1)
 - **Styling**: CSS with Material-UI theming
 
@@ -424,6 +424,114 @@ interface Schedule {
 - Memory usage is monitored and logged
 - File processing includes detailed validation feedback
 
+## Summary Schedule System
+
+### Overview
+The Summary Schedule (src/pages/BlockSummarySchedule.tsx) provides a professional, transit-industry-standard display of generated bus schedules with advanced editing capabilities and real-time cascading updates.
+
+### Key Features
+
+#### **Professional Transit Display**
+- **Industry-Standard Layout**: Timepoint columns with departure/arrival times matching professional transit schedules
+- **Service Band Integration**: Color-coded service bands (Fastest, Fast, Standard, Slow, Slowest) with visual chips
+- **Block-Based Organization**: Trips organized by bus blocks with proper cycling logic
+- **Performance Metrics**: Trip time, recovery time, travel time, and recovery percentage calculations
+
+#### **Advanced Time Display Logic**
+- **Origin Timepoint**: Shows "dep:" (departure) for first timepoint - where trips begin
+- **Intermediate Timepoints**: Shows "arr:" (arrival) + optional "dep:" if recovery time > 0
+- **Destination Timepoint**: Shows "arr:" (arrival) - where trips end
+- **Smart Recovery Display**: Only shows separate departure time when there's actual dwell time
+
+#### **Inline Dwell Time Editing**
+- **Click-to-Edit**: Click any dwell time ("Xmin dwell") to instantly edit
+- **Auto-Select**: Input value is automatically selected for immediate replacement
+- **Keyboard Navigation**: Enter/Tab saves, Escape cancels, seamless editing flow
+- **Visual Feedback**: Enhanced styling with hover effects and edit state indicators
+- **Real-Time Validation**: Only accepts numeric input (0-99 minutes)
+
+#### **Intelligent Cascading Updates**
+- **Trip-Level Cascading**: When recovery time changes, all subsequent stops in that trip update
+- **Block-Level Cascading**: When final stop recovery changes, all subsequent trips in the block shift
+- **Simplified Start Logic**: Next trip starts when previous trip departs (departure time already includes recovery)
+- **Automatic Refresh**: Schedule display updates immediately with all cascading changes
+- **Persistence**: Changes save to localStorage and maintain state across sessions
+
+### Technical Implementation
+
+#### **Core Logic**
+```typescript
+// Trip start time calculation
+nextTrip.startTime = previousTrip.departureTime;
+
+// Departure time calculation at each stop
+departureTime = arrivalTime + recoveryTime;
+
+// Cascading update logic
+if (recoveryTimeChanged) {
+  updateCurrentTripSubsequentStops();
+  updateAllSubsequentTripsInBlock();
+  refreshScheduleDisplay();
+}
+```
+
+#### **Key Functions**
+- `handleRecoverySubmit()`: Processes dwell time edits with full cascading
+- `updateSubsequentTripTimes()`: Updates times within current trip
+- `updateSubsequentTripsInBlock()`: Updates all later trips in same block
+- `timeStringToMinutes()` / `minutesToTime()`: Time conversion utilities
+
+#### **State Management**
+- **React State**: Schedule state with real-time updates
+- **localStorage**: Persistent schedule storage across sessions
+- **Optimistic Updates**: UI updates immediately, saves asynchronously
+- **Conflict Resolution**: Last write wins with visual feedback
+
+### User Experience Flow
+
+1. **Schedule Display**
+   - Professional tabular layout with timepoint columns
+   - Color-coded service bands and block organization
+   - Clear arrival/departure time distinctions
+   - Editable dwell times with visual indicators
+
+2. **Inline Editing**
+   - Click any dwell time → input appears with value selected
+   - Type new number → immediately replaces selected value
+   - Save via Enter/Tab/click-outside → triggers cascading updates
+   - Escape → cancels edit and reverts to original value
+
+3. **Cascading Updates**
+   - Immediate visual feedback as changes propagate
+   - All affected trips update their times automatically
+   - Schedule maintains transit operational constraints
+   - Changes persist and survive page refreshes
+
+### Performance & Accuracy
+
+#### **Virtualization Support**
+- **Large Schedule Handling**: Supports 500+ trips with virtual scrolling
+- **Memory Efficiency**: Only renders visible rows for performance
+- **Smooth Scrolling**: Maintains 60fps even with large datasets
+
+#### **Real-Time Calculations**
+- **Instant Updates**: No loading states for cascading changes
+- **Accurate Timing**: Maintains proper block cycling constraints
+- **Consistent Logic**: Same calculation engine used throughout
+
+### Transit Industry Compliance
+
+#### **Professional Standards**
+- **GTFS-Compatible**: Time formats match transit industry standards
+- **Operator-Friendly**: Layout familiar to transit schedulers
+- **Block Cycling**: Proper bus turnaround time calculations
+- **Recovery Time Management**: Industry-standard dwell time handling
+
+#### **Operational Accuracy**
+- **Trip Chaining**: Buses can only start next trip after completing previous
+- **Schedule Constraints**: Maintains feasible operating scenarios
+- **Time Precision**: Minute-level accuracy for operational planning
+
 ## Service Band Logic Implementation
 
 ### Service Band Assignment Process
@@ -486,6 +594,7 @@ const segmentTime = tripServiceBand.segmentTimes[index - 1];
 - Export functionality matching Excel format standards
 - Error handling and validation comprehensive
 
-**Last Updated**: August 18, 2025  
+**Last Updated**: August 22, 2025  
 **Security Level**: Production Ready with comprehensive protections  
-**MVP Status**: Complete and ready for deployment with advanced Bus Block Configuration system and trip-specific service band logic
+**MVP Status**: Complete and ready for deployment with advanced Bus Block Configuration system and trip-specific service band logic  
+**Migration Status**: Fully migrated to React 19, Material-UI v7, TypeScript 5.9, and React Router v7
