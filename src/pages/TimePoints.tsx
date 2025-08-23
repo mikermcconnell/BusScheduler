@@ -65,7 +65,15 @@ import { ParsedCsvData } from '../utils/csvParser';
 import { scheduleStorage } from '../services/scheduleStorage';
 import { workflowStateService } from '../services/workflowStateService';
 import WorkflowBreadcrumbs from '../components/WorkflowBreadcrumbs';
+import { useWorkflowDraft } from '../hooks/useWorkflowDraft';
+import { 
+  TimePointData as WorkflowTimePointData,
+  OutlierData,
+  TimepointsModification
+} from '../types/workflow';
+import { ServiceBand as WorkflowServiceBand } from '../types/schedule';
 
+// Local TimePointData interface that's different from workflow
 interface TimePointData {
   fromTimePoint: string;
   toTimePoint: string;
@@ -108,6 +116,18 @@ interface TimeBandEditData {
 const TimePoints: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  
+  // Get draft from location state or session
+  const { draftId: locationDraftId, fromUpload } = location.state || {};
+  const { 
+    draft, 
+    createDraftFromUpload,
+    updateTimepointsAnalysis,
+    loading: draftLoading,
+    error: draftError,
+    isSaving: isDraftSaving
+  } = useWorkflowDraft(locationDraftId);
+  
   const [timePointData, setTimePointData] = useState<TimePointData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -141,6 +161,9 @@ const TimePoints: React.FC = () => {
   const [removedOutliers, setRemovedOutliers] = useState<Set<string>>(new Set());
   const [outlierDialogOpen, setOutlierDialogOpen] = useState(false);
   
+  // Service Band Data table assignments - this is the single source of truth
+  const [serviceBandDataAssignments, setServiceBandDataAssignments] = useState<{ [timePeriod: string]: string }>({});
+  
   // Service period deletion state
   const [deletedPeriods, setDeletedPeriods] = useState<Set<string>>(new Set());
   
@@ -155,7 +178,12 @@ const TimePoints: React.FC = () => {
   const [periodDialogOpen, setPeriodDialogOpen] = useState(false);
 
   // Get data from location state (passed during navigation)
-  const { csvData, dayType, savedScheduleId } = location.state || {};
+  const { csvData: initialCsvData, dayType, savedScheduleId } = location.state || {};
+  const [csvData, setCsvData] = useState<ParsedCsvData | null>(initialCsvData || null);
+  
+  // Auto-save state
+  const [lastAutoSave, setLastAutoSave] = useState<Date | null>(null);
+  const [isAutoSaving, setIsAutoSaving] = useState(false);
 
   // Analyze travel time data and create data-driven service bands
   const createDataDrivenTimebands = (timePointData: TimePointData[], excludeDeleted: boolean = true): TimeBand[] => {
@@ -294,8 +322,29 @@ const TimePoints: React.FC = () => {
       try {
         let data: ParsedCsvData | null = null;
         
+        // Check if we have a draft loaded
+        if (draft && draft.originalData && draft.originalData.fileType === 'csv') {
+          data = draft.originalData.uploadedData as ParsedCsvData;
+          setFileName(draft.originalData.fileName);
+          setOriginalFileName(draft.originalData.fileName);
+          
+          // If draft has existing timepoints analysis, load it
+          if (draft.timepointsAnalysis) {
+            // Restore previous state from draft
+            if (draft.timepointsAnalysis.deletedPeriods) {
+              setDeletedPeriods(new Set(draft.timepointsAnalysis.deletedPeriods));
+            }
+            if (draft.timepointsAnalysis.serviceBands) {
+              setTimeBands(draft.timepointsAnalysis.serviceBands);
+            }
+            // Load service band assignments from draft - this is the source of truth
+            if (draft.timepointsAnalysis.timePeriodServiceBands) {
+              setServiceBandDataAssignments(draft.timepointsAnalysis.timePeriodServiceBands);
+            }
+          }
+        }
         // If we have csvData from navigation state, use it
-        if (csvData) {
+        else if (csvData) {
           data = csvData;
           setScheduleId(savedScheduleId);
         } 
@@ -308,7 +357,8 @@ const TimePoints: React.FC = () => {
           }
         }
         // If no data from navigation or specific ID, try to load the most recent draft
-        else {
+        else if (!draft) {
+          // If no workflow draft is loaded, try the old draft system
           const drafts = scheduleStorage.getAllDraftSchedules();
           if (drafts.length > 0) {
             // Sort by lastModified and get the most recent
@@ -319,6 +369,10 @@ const TimePoints: React.FC = () => {
             if (mostRecent.uploadedData && 'segments' in mostRecent.uploadedData) {
               data = mostRecent.uploadedData as ParsedCsvData;
               setScheduleId(mostRecent.id);
+              setCurrentDraftId(mostRecent.id);
+              
+              // Store CSV data for potential draft creation
+              setCsvData(data);
             }
           }
         }
@@ -394,7 +448,7 @@ const TimePoints: React.FC = () => {
     };
 
     loadTimePointData();
-  }, [csvData, dayType, savedScheduleId]);
+  }, [csvData, dayType, savedScheduleId, draft]);
 
   // Recalculate timebands when deletedPeriods changes
   useEffect(() => {
@@ -403,20 +457,220 @@ const TimePoints: React.FC = () => {
       setTimeBands(recalculatedBands);
     }
   }, [deletedPeriods, timePointData]);
+  
+  // Auto-save functionality - triggers on page load and when key data changes
+  useEffect(() => {
+    const performAutoSave = async () => {
+      // Skip auto-save if we're already saving or don't have data
+      if (isAutoSaving || !draft || timePointData.length === 0) {
+        return;
+      }
+      
+      setIsAutoSaving(true);
+      console.log('🔄 Auto-saving TimePoints analysis...');
+      
+      try {
+        // Create time period to service band mapping
+        const timePeriodServiceBands: { [timePeriod: string]: string } = {};
+        chartData.forEach(item => {
+          if (!item.isDeleted) {
+            timePeriodServiceBands[item.timePeriod] = item.timebandName;
+          }
+        });
+        
+        // Convert local TimePointData to workflow format
+        const workflowTimePointData: WorkflowTimePointData[] = timePointData.map(tp => ({
+          timePeriod: tp.timePeriod,
+          from: tp.fromTimePoint,
+          to: tp.toTimePoint,
+          percentile25: tp.percentile50 * 0.9,
+          percentile50: tp.percentile50,
+          percentile75: tp.percentile80,
+          percentile90: tp.percentile80 * 1.1,
+          isOutlier: tp.isOutlier,
+          outlierType: tp.outlierType
+        }));
+        
+        // Convert outliers to OutlierData format
+        const workflowOutliers: OutlierData[] = outliers
+          .filter(o => !removedOutliers.has(`${o.timePeriod}-${o.fromTimePoint}-${o.toTimePoint}`))
+          .map(o => ({
+            timePeriod: o.timePeriod,
+            segment: `${o.fromTimePoint} to ${o.toTimePoint}`,
+            value: o.percentile50,
+            deviation: o.outlierDeviation || 0,
+            type: o.outlierType || 'high'
+          }));
+        
+        // Convert TimeBand to ServiceBand format
+        const workflowServiceBands: WorkflowServiceBand[] = timeBands.map(tb => ({
+          id: tb.id,
+          name: tb.name,
+          startTime: tb.startTime,
+          endTime: tb.endTime,
+          travelTimeMultiplier: tb.travelTimeMultiplier,
+          color: tb.color,
+          description: tb.description
+        }));
+        
+        // Save analysis to workflow draft
+        const analysisData = {
+          serviceBands: workflowServiceBands,
+          travelTimeData: workflowTimePointData,
+          outliers: workflowOutliers,
+          userModifications: [] as TimepointsModification[],
+          deletedPeriods: Array.from(deletedPeriods),
+          timePeriodServiceBands
+        };
+        
+        const result = await updateTimepointsAnalysis(analysisData);
+        
+        if (result.success) {
+          setLastAutoSave(new Date());
+          console.log('✅ Auto-save completed successfully');
+        } else {
+          console.error('❌ Auto-save failed:', result.error);
+        }
+      } catch (error) {
+        console.error('❌ Auto-save error:', error);
+      } finally {
+        setIsAutoSaving(false);
+      }
+    };
+    
+    // Perform auto-save on initial load (after data is loaded)
+    const autoSaveTimer = setTimeout(() => {
+      performAutoSave();
+    }, 1000); // Small delay to ensure data is fully loaded
+    
+    return () => clearTimeout(autoSaveTimer);
+  }, []); // Run once on mount
+  
+  // Auto-save when key data changes (with debouncing)
+  useEffect(() => {
+    // Skip if we don't have a draft or data
+    if (!draft || timePointData.length === 0) {
+      return;
+    }
+    
+    const performAutoSave = async () => {
+      if (isAutoSaving) {
+        return;
+      }
+      
+      setIsAutoSaving(true);
+      console.log('🔄 Auto-saving changes to TimePoints analysis...');
+      
+      try {
+        // Create time period to service band mapping
+        const timePeriodServiceBands: { [timePeriod: string]: string } = {};
+        chartData.forEach(item => {
+          if (!item.isDeleted) {
+            timePeriodServiceBands[item.timePeriod] = item.timebandName;
+          }
+        });
+        
+        // Convert local TimePointData to workflow format
+        const workflowTimePointData: WorkflowTimePointData[] = timePointData.map(tp => ({
+          timePeriod: tp.timePeriod,
+          from: tp.fromTimePoint,
+          to: tp.toTimePoint,
+          percentile25: tp.percentile50 * 0.9,
+          percentile50: tp.percentile50,
+          percentile75: tp.percentile80,
+          percentile90: tp.percentile80 * 1.1,
+          isOutlier: tp.isOutlier,
+          outlierType: tp.outlierType
+        }));
+        
+        // Convert outliers to OutlierData format
+        const workflowOutliers: OutlierData[] = outliers
+          .filter(o => !removedOutliers.has(`${o.timePeriod}-${o.fromTimePoint}-${o.toTimePoint}`))
+          .map(o => ({
+            timePeriod: o.timePeriod,
+            segment: `${o.fromTimePoint} to ${o.toTimePoint}`,
+            value: o.percentile50,
+            deviation: o.outlierDeviation || 0,
+            type: o.outlierType || 'high'
+          }));
+        
+        // Convert TimeBand to ServiceBand format
+        const workflowServiceBands: WorkflowServiceBand[] = timeBands.map(tb => ({
+          id: tb.id,
+          name: tb.name,
+          startTime: tb.startTime,
+          endTime: tb.endTime,
+          travelTimeMultiplier: tb.travelTimeMultiplier,
+          color: tb.color,
+          description: tb.description
+        }));
+        
+        // Save analysis to workflow draft
+        const analysisData = {
+          serviceBands: workflowServiceBands,
+          travelTimeData: workflowTimePointData,
+          outliers: workflowOutliers,
+          userModifications: [] as TimepointsModification[],
+          deletedPeriods: Array.from(deletedPeriods),
+          timePeriodServiceBands
+        };
+        
+        const result = await updateTimepointsAnalysis(analysisData);
+        
+        if (result.success) {
+          setLastAutoSave(new Date());
+          console.log('✅ Auto-save completed successfully');
+        } else {
+          console.error('❌ Auto-save failed:', result.error);
+        }
+      } catch (error) {
+        console.error('❌ Auto-save error:', error);
+      } finally {
+        setIsAutoSaving(false);
+      }
+    };
+    
+    // Debounce auto-save to avoid too frequent saves
+    const autoSaveTimer = setTimeout(() => {
+      performAutoSave();
+    }, 2000); // 2 second delay after changes
+    
+    return () => clearTimeout(autoSaveTimer);
+  }, [deletedPeriods, serviceBandDataAssignments, removedOutliers, timeBands]);
 
   const handleGoBack = () => {
     navigate('/upload');
   };
 
-  const handleGenerateSummary = () => {
-    // Mark the TimePoints step as complete
-    workflowStateService.completeStep('timepoints', {
-      timePointData,
-      serviceBands: timeBands,
-      deletedPeriods: Array.from(deletedPeriods)
-    });
+  const handleGenerateSummary = async () => {
+    let workingDraftId = draft?.draftId;
     
-    // Create direct time period to service band mapping for BlockSummarySchedule
+    // If no draft exists but we have data, create one
+    if (!draft && csvData) {
+      console.log('No workflow draft found, creating one from current data...');
+      const createResult = await createDraftFromUpload(
+        fileName || 'Untitled Schedule',
+        'csv',
+        csvData
+      );
+      if (createResult.success && createResult.draftId) {
+        console.log('✅ Created workflow draft:', createResult.draftId);
+        workingDraftId = createResult.draftId;
+      } else {
+        console.error('Failed to create workflow draft:', createResult.error);
+        setSaveError(createResult.error || 'Failed to create draft');
+        return;
+      }
+    }
+    
+    // Check if we have either a draft or just created one
+    if (!workingDraftId) {
+      console.error('No draft available to continue');
+      setSaveError('No data available. Please upload a CSV file first.');
+      return;
+    }
+    
+    // Create direct time period to service band mapping
     const timePeriodServiceBands: { [timePeriod: string]: string } = {};
     chartData.forEach(item => {
       if (!item.isDeleted) {
@@ -424,23 +678,83 @@ const TimePoints: React.FC = () => {
       }
     });
     
-    console.log('🔍 DEBUG: Created service band mapping:', timePeriodServiceBands);
+    // Convert local TimePointData to workflow format
+    const workflowTimePointData: WorkflowTimePointData[] = timePointData.map(tp => ({
+      timePeriod: tp.timePeriod,
+      from: tp.fromTimePoint,
+      to: tp.toTimePoint,
+      percentile25: tp.percentile50 * 0.9,
+      percentile50: tp.percentile50,
+      percentile75: tp.percentile80,
+      percentile90: tp.percentile80 * 1.1,
+      isOutlier: tp.isOutlier,
+      outlierType: tp.outlierType
+    }));
     
-    // Store state data in localStorage for persistence across navigation
-    localStorage.setItem('currentTimePointData', JSON.stringify(timePointData));
-    localStorage.setItem('currentServiceBands', JSON.stringify(timeBands));
+    // Convert outliers to OutlierData format
+    const workflowOutliers: OutlierData[] = outliers
+      .filter(o => !removedOutliers.has(`${o.timePeriod}-${o.fromTimePoint}-${o.toTimePoint}`))
+      .map(o => ({
+        timePeriod: o.timePeriod,
+        segment: `${o.fromTimePoint} to ${o.toTimePoint}`,
+        value: o.percentile50,
+        deviation: o.outlierDeviation || 0,
+        type: o.outlierType || 'high'
+      }));
     
-    // Pass timePointData, service bands, and direct mapping to BlockConfiguration
-    navigate('/block-configuration', {
-      state: {
+    // Convert TimeBand to ServiceBand format
+    const workflowServiceBands: WorkflowServiceBand[] = timeBands.map(tb => ({
+      id: tb.id,
+      name: tb.name,
+      startTime: tb.startTime,
+      endTime: tb.endTime,
+      travelTimeMultiplier: tb.travelTimeMultiplier,
+      color: tb.color,
+      description: tb.description
+    }));
+    
+    // Save analysis to workflow draft
+    const analysisData = {
+      serviceBands: workflowServiceBands,
+      travelTimeData: workflowTimePointData,
+      outliers: workflowOutliers,
+      userModifications: [] as TimepointsModification[],
+      deletedPeriods: Array.from(deletedPeriods),
+      timePeriodServiceBands
+    };
+    
+    const result = await updateTimepointsAnalysis(analysisData);
+    
+    if (result.success) {
+      // Mark the TimePoints step as complete
+      workflowStateService.completeStep('timepoints', {
         timePointData,
         serviceBands: timeBands,
-        deletedPeriods: Array.from(deletedPeriods),
-        timePeriodServiceBands,
-        scheduleId,
-        fileName
-      }
-    });
+        deletedPeriods: Array.from(deletedPeriods)
+      });
+      
+      console.log('🔍 DEBUG: Created service band mapping:', timePeriodServiceBands);
+      
+      // Store state data in localStorage for persistence across navigation
+      localStorage.setItem('currentTimePointData', JSON.stringify(timePointData));
+      localStorage.setItem('currentServiceBands', JSON.stringify(timeBands));
+      
+      // Pass draft ID and analysis data to BlockConfiguration
+      navigate('/block-configuration', {
+        state: {
+          draftId: workingDraftId,
+          timePointData,
+          serviceBands: timeBands,
+          deletedPeriods: Array.from(deletedPeriods),
+          timePeriodServiceBands,
+          scheduleId,
+          fileName
+        }
+      });
+    } else {
+      console.error('Failed to save timepoints analysis:', result.error);
+      setSaveError(result.error || 'Failed to save analysis');
+    }
   };
 
   const handleToggleDetailedTable = () => {
@@ -465,8 +779,8 @@ const TimePoints: React.FC = () => {
   };
 
   const handleSaveDraft = async () => {
-    if (!csvData) {
-      setSaveError('No data available to save');
+    if (!draft) {
+      setSaveError('No draft available to save');
       return;
     }
 
@@ -474,21 +788,62 @@ const TimePoints: React.FC = () => {
     setSaveError(null);
 
     try {
-      const result = await scheduleStorage.saveDraftSchedule(
-        fileName,
-        'csv',
-        csvData,
-        {
-          validation: undefined,
-          summarySchedule: undefined,
-          processingStep: 'processed',
-          autoSaved: false,
-          existingId: currentDraftId || undefined
+      // Create time period to service band mapping
+      const timePeriodServiceBands: { [timePeriod: string]: string } = {};
+      chartData.forEach(item => {
+        if (!item.isDeleted) {
+          timePeriodServiceBands[item.timePeriod] = item.timebandName;
         }
-      );
+      });
+      
+      // Convert local TimePointData to workflow format
+      const workflowTimePointData: WorkflowTimePointData[] = timePointData.map(tp => ({
+        timePeriod: tp.timePeriod,
+        from: tp.fromTimePoint,
+        to: tp.toTimePoint,
+        percentile25: tp.percentile50 * 0.9, // Approximate since we don't have this data
+        percentile50: tp.percentile50,
+        percentile75: tp.percentile80,
+        percentile90: tp.percentile80 * 1.1, // Approximate since we don't have this data
+        isOutlier: tp.isOutlier,
+        outlierType: tp.outlierType
+      }));
+      
+      // Convert outliers to OutlierData format
+      const workflowOutliers: OutlierData[] = outliers
+        .filter(o => !removedOutliers.has(`${o.timePeriod}-${o.fromTimePoint}-${o.toTimePoint}`))
+        .map(o => ({
+          timePeriod: o.timePeriod,
+          segment: `${o.fromTimePoint} to ${o.toTimePoint}`,
+          value: o.percentile50,
+          deviation: o.outlierDeviation || 0,
+          type: o.outlierType || 'high'
+        }));
+      
+      // Convert TimeBand to ServiceBand format
+      const workflowServiceBands: WorkflowServiceBand[] = timeBands.map(tb => ({
+        id: tb.id,
+        name: tb.name,
+        startTime: tb.startTime,
+        endTime: tb.endTime,
+        travelTimeMultiplier: tb.travelTimeMultiplier,
+        color: tb.color,
+        description: tb.description
+      }));
+      
+      // Prepare analysis data from current state
+      const analysisData = {
+        serviceBands: workflowServiceBands,
+        travelTimeData: workflowTimePointData,
+        outliers: workflowOutliers,
+        userModifications: [] as TimepointsModification[],
+        deletedPeriods: Array.from(deletedPeriods),
+        timePeriodServiceBands
+      };
 
-      if (result.success && result.draftId) {
-        setCurrentDraftId(result.draftId);
+      const result = await updateTimepointsAnalysis(analysisData);
+
+      if (result.success) {
         setSaveSuccess(true);
         setTimeout(() => setSaveSuccess(false), 3000);
       } else {
@@ -616,6 +971,10 @@ const TimePoints: React.FC = () => {
   };
 
   // Service period management functions
+  const handleChangePeriodServiceBand = (timePeriod: string, newServiceBandName: string) => {
+    // TODO(human): Update the serviceBandDataAssignments state when user changes service band
+  };
+  
   const handleChangePeriodTimeband = (timePeriod: string, newTimebandIndex: number) => {
     // This would update the timeband assignment for a specific period
     // For now, we'll show a notification that this is a future feature
@@ -671,6 +1030,8 @@ const TimePoints: React.FC = () => {
       timePeriodsOutliersMap.set(row.timePeriod, outlierInfo);
     });
 
+    // TODO(human): Add debug logging for deleted periods
+    
     // Separate deleted and active periods for band calculations
     const activePeriods = Array.from(timePeriodsMap.entries())
       .filter(([timePeriod]) => !deletedPeriods.has(timePeriod))
@@ -719,19 +1080,29 @@ const TimePoints: React.FC = () => {
         color = 'white';
         timebandName = 'Deleted';
       } else {
-        // Determine band based on percentile thresholds
-        let bandIndex = 4; // Default to slowest band
-        const travelTime = period.totalTravelTime;
+        // Use Service Band Data table assignment as the single source of truth
+        const serviceBandAssignment = serviceBandDataAssignments[period.timePeriod];
         
-        for (let i = 0; i < percentileThresholds.length; i++) {
-          if (travelTime < percentileThresholds[i]) {
-            bandIndex = i;
-            break;
+        if (serviceBandAssignment) {
+          // Use the assignment from Service Band Data table
+          timebandName = serviceBandAssignment;
+          const bandIndex = bandNames.indexOf(serviceBandAssignment);
+          color = bandIndex >= 0 ? bandColors[bandIndex] : bandColors[2]; // Default to standard service color
+        } else {
+          // Determine band based on percentile thresholds
+          let bandIndex = 4; // Default to slowest band
+          const travelTime = period.totalTravelTime;
+          
+          for (let i = 0; i < percentileThresholds.length; i++) {
+            if (travelTime < percentileThresholds[i]) {
+              bandIndex = i;
+              break;
+            }
           }
+          
+          color = bandColors[bandIndex];
+          timebandName = bandNames[bandIndex];
         }
-        
-        color = bandColors[bandIndex];
-        timebandName = bandNames[bandIndex];
         
         // Modify color for periods with outliers - darken the color
         if (outlierInfo.hasOutliers) {
@@ -755,7 +1126,8 @@ const TimePoints: React.FC = () => {
         isDeleted: period.isDeleted
       };
     }).sort((a, b) => a.timePeriod.localeCompare(b.timePeriod));
-  }, [timePointData, deletedPeriods]);
+  }, [timePointData, deletedPeriods, serviceBandDataAssignments]);
+
 
   // Custom tooltip for the chart
   const CustomTooltip = ({ active, payload, label }: any) => {
@@ -896,6 +1268,23 @@ const TimePoints: React.FC = () => {
               >
                 Continue to Trip Details
               </Button>
+              {/* Auto-save indicator */}
+              {(isAutoSaving || lastAutoSave) && (
+                <Box sx={{ display: 'flex', alignItems: 'center', ml: 2 }}>
+                  {isAutoSaving ? (
+                    <>
+                      <CircularProgress size={16} sx={{ mr: 0.5 }} />
+                      <Typography variant="caption" color="text.secondary">
+                        Auto-saving...
+                      </Typography>
+                    </>
+                  ) : lastAutoSave ? (
+                    <Typography variant="caption" color="success.main">
+                      ✓ Auto-saved
+                    </Typography>
+                  ) : null}
+                </Box>
+              )}
             </Box>
           </Box>
           <Typography variant="subtitle1" color="text.secondary">

@@ -239,7 +239,7 @@ const DraftScheduleList: React.FC<DraftScheduleListProps> = ({
             {drafts.map((draft, index) => (
               <React.Fragment key={draft.id}>
                 <ListItem
-                  button
+                  component="button"
                   onClick={() => handleDraftClick(draft)}
                   sx={{
                     bgcolor: 'background.paper',

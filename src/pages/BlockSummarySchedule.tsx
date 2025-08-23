@@ -21,7 +21,8 @@ import {
 import {
   ArrowBack as BackIcon,
   Fullscreen as FullscreenIcon,
-  Publish as PublishIcon
+  Publish as PublishIcon,
+  Schedule as ScheduleIcon
 } from '@mui/icons-material';
 import { calculateTripTime } from '../utils/dateHelpers';
 import { scheduleStorage } from '../services/scheduleStorage';
@@ -67,6 +68,8 @@ interface Schedule {
   cycleTimeMinutes?: number;
   // TimePoints data for service band mapping
   timePointData?: TimePointData[];
+  // Service band mapping by time period
+  timePeriodServiceBands?: { [timePeriod: string]: string };
 }
 
 // TimePoint data structure from TimePoints analysis
@@ -205,6 +208,30 @@ const BlockSummarySchedule: React.FC = () => {
   
   // Store original travel times to maintain consistency when recovery changes
   const [originalTravelTimes, setOriginalTravelTimes] = useState<{[tripId: string]: number}>({});
+
+  // Recovery time templates state
+  interface RecoveryTemplate {
+    [serviceBandName: string]: number[];
+  }
+  
+  const [recoveryTemplates, setRecoveryTemplates] = useState<RecoveryTemplate>(() => {
+    // Initialize with default templates
+    const defaultTemplates: RecoveryTemplate = {
+      'Fastest Service': [0, 1, 1, 2, 3],
+      'Fast Service': [0, 1, 2, 2, 4],
+      'Standard Service': [0, 2, 2, 3, 5],
+      'Slow Service': [0, 2, 3, 3, 6],
+      'Slowest Service': [0, 3, 3, 4, 7]
+    };
+    
+    // Try to load from localStorage
+    try {
+      const stored = localStorage.getItem('recoveryTemplates');
+      return stored ? JSON.parse(stored) : defaultTemplates;
+    } catch {
+      return defaultTemplates;
+    }
+  });
 
   // Mark the summary step as completed when the component loads
   useEffect(() => {
@@ -349,6 +376,42 @@ const BlockSummarySchedule: React.FC = () => {
     return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
   };
 
+  // Helper function to determine time period from departure time
+  const getTimePeriodForTime = (timeString: string): string => {
+    const [hours, minutes] = timeString.split(':').map(Number);
+    const totalMinutes = hours * 60 + minutes;
+    
+    // Find the 30-minute period this time falls into
+    const periodStart = Math.floor(totalMinutes / 30) * 30;
+    const periodEnd = periodStart + 29;
+    
+    const startHours = Math.floor(periodStart / 60);
+    const startMins = periodStart % 60;
+    const endHours = Math.floor(periodEnd / 60);
+    const endMins = periodEnd % 60;
+    
+    return `${startHours.toString().padStart(2, '0')}:${startMins.toString().padStart(2, '0')} - ${endHours.toString().padStart(2, '0')}:${endMins.toString().padStart(2, '0')}`;
+  };
+
+  // Helper function to determine service band name based on departure time
+  const determineServiceBandForTime = (departureTime: string, timePeriodServiceBands?: { [timePeriod: string]: string }): string => {
+    const timePeriod = getTimePeriodForTime(departureTime);
+    
+    // First try to use the timePeriodServiceBands mapping if available
+    if (timePeriodServiceBands && timePeriodServiceBands[timePeriod]) {
+      return timePeriodServiceBands[timePeriod];
+    }
+    
+    // Fallback logic based on time of day
+    const [hours] = departureTime.split(':').map(Number);
+    
+    if (hours >= 6 && hours < 9) return 'Fast Service';        // Morning
+    if (hours >= 9 && hours < 15) return 'Fastest Service';    // Mid-day
+    if (hours >= 15 && hours < 18) return 'Slow Service';      // Afternoon
+    if (hours >= 18 && hours < 22) return 'Standard Service';  // Evening
+    return 'Slowest Service';                                   // Night
+  };
+
   // Recovery time editing functions
   const handleRecoveryClick = useCallback((tripId: string, timePointId: string, currentValue: number) => {
     const tripIdentifier = `${tripId}-${timePointId}`;
@@ -385,6 +448,15 @@ const BlockSummarySchedule: React.FC = () => {
     
     // Update the schedule with new recovery time
     setSchedule(prevSchedule => {
+      // Track service band updates for logging
+      const serviceBandUpdates: Array<{
+        tripNumber: number;
+        oldServiceBand: string;
+        newServiceBand: string;
+        oldDepartureTime: string;
+        newDepartureTime: string;
+      }> = [];
+      
       const updatedTrips = prevSchedule.trips.map(trip => {
         if (trip.tripNumber === tripNumber) {
           // Update recovery time for this timepoint
@@ -424,6 +496,8 @@ const BlockSummarySchedule: React.FC = () => {
           // Update all subsequent trips in this block (based on block cycling order)
           for (let i = modifiedTripIndexInBlock + 1; i < blockTrips.length; i++) {
             const subsequentTrip = blockTrips[i];
+            const originalDepartureTime = subsequentTrip.departureTime;
+            const originalServiceBand = subsequentTrip.serviceBand;
             
             // Calculate new start time based on simplified logic:
             // Next trip starts when previous trip departs from final stop
@@ -437,6 +511,33 @@ const BlockSummarySchedule: React.FC = () => {
               addMinutesToTime(updatedPrevTrip.arrivalTimes[finalTimePointId], updatedPrevTrip.recoveryTimes[finalTimePointId] || 0);
             const newStartMinutes = timeStringToMinutes(prevTripFinalDeparture);
             const newDepartureTime = minutesToTime(newStartMinutes);
+            
+            // Re-evaluate service band if departure time changed significantly
+            let newServiceBand = originalServiceBand;
+            if (newDepartureTime !== originalDepartureTime) {
+              const originalTimePeriod = getTimePeriodForTime(originalDepartureTime);
+              const newTimePeriod = getTimePeriodForTime(newDepartureTime);
+              
+              // Only update service band if time period changed
+              if (originalTimePeriod !== newTimePeriod) {
+                newServiceBand = determineServiceBandForTime(newDepartureTime, prevSchedule.timePeriodServiceBands) as ServiceBand;
+                
+                if (newServiceBand !== originalServiceBand) {
+                  serviceBandUpdates.push({
+                    tripNumber: subsequentTrip.tripNumber,
+                    oldServiceBand: originalServiceBand,
+                    newServiceBand,
+                    oldDepartureTime: originalDepartureTime,
+                    newDepartureTime
+                  });
+                  
+                  // TODO: Implement full travel time recalculation when service band changes
+                  // For now, we update the service band but keep the existing travel time intervals
+                  // Ideally, we would recalculate segment-by-segment travel times using the new service band's data
+                  console.log(`⚠️ Service band changed for trip ${subsequentTrip.tripNumber}: ${originalServiceBand} → ${newServiceBand}. Travel times may need manual adjustment.`);
+                }
+              }
+            }
             
             // Calculate the time shift for this trip
             const tripShift = newStartMinutes - timeStringToMinutes(subsequentTrip.departureTime);
@@ -460,11 +561,17 @@ const BlockSummarySchedule: React.FC = () => {
               updatedTrips[tripIndex] = {
                 ...subsequentTrip,
                 departureTime: newDepartureTime,
+                serviceBand: newServiceBand,
                 departureTimes: updatedDepartureTimes,
                 arrivalTimes: updatedArrivalTimes
               };
               
               console.log(`🔄 Updated trip ${subsequentTrip.tripNumber} in block ${blockNumber}: ${subsequentTrip.departureTime} → ${newDepartureTime} (shift: ${tripShift}min)`);
+              
+              // Log service band change if it occurred
+              if (newServiceBand !== originalServiceBand) {
+                console.log(`🎯 Service band updated for trip ${subsequentTrip.tripNumber}: ${originalServiceBand} → ${newServiceBand}`);
+              }
             }
           }
         }
@@ -483,6 +590,14 @@ const BlockSummarySchedule: React.FC = () => {
         ...prevSchedule,
         trips: sortedUpdatedTrips
       };
+      
+      // Log service band update summary
+      if (serviceBandUpdates.length > 0) {
+        console.log(`🎯 Service band updates applied to ${serviceBandUpdates.length} trips:`);
+        serviceBandUpdates.forEach(update => {
+          console.log(`  Trip ${update.tripNumber}: ${update.oldServiceBand} → ${update.newServiceBand} (${update.oldDepartureTime} → ${update.newDepartureTime})`);
+        });
+      }
       
       // Persist to localStorage for consistency
       try {
@@ -580,6 +695,73 @@ const BlockSummarySchedule: React.FC = () => {
         trips: updatedTrips
       };
     });
+  }, []);
+
+  // Recovery template management functions
+  const updateRecoveryTemplate = useCallback((serviceBandName: string, timepointIndex: number, newValue: number) => {
+    setRecoveryTemplates(prev => {
+      const updated = {
+        ...prev,
+        [serviceBandName]: [...prev[serviceBandName]]
+      };
+      updated[serviceBandName][timepointIndex] = newValue;
+      
+      // Save to localStorage
+      try {
+        localStorage.setItem('recoveryTemplates', JSON.stringify(updated));
+      } catch (error) {
+        console.warn('Failed to save recovery templates:', error);
+      }
+      
+      return updated;
+    });
+  }, []);
+
+  const applyRecoveryTemplate = useCallback((serviceBandName: string) => {
+    const template = recoveryTemplates[serviceBandName];
+    if (!template) return;
+
+    setSchedule(prevSchedule => {
+      const updatedTrips = prevSchedule.trips.map(trip => {
+        if (trip.serviceBand !== serviceBandName) return trip;
+
+        const updatedRecoveryTimes = { ...trip.recoveryTimes };
+        
+        // Apply template to each timepoint
+        schedule.timePoints.forEach((timePoint, index) => {
+          if (index < template.length) {
+            updatedRecoveryTimes[timePoint.id] = template[index];
+          }
+        });
+
+        return {
+          ...trip,
+          recoveryTimes: updatedRecoveryTimes
+        };
+      });
+
+      return {
+        ...prevSchedule,
+        trips: updatedTrips
+      };
+    });
+  }, [recoveryTemplates, schedule.timePoints]);
+
+  const resetRecoveryTemplates = useCallback(() => {
+    const defaultTemplates: RecoveryTemplate = {
+      'Fastest Service': [0, 1, 1, 2, 3],
+      'Fast Service': [0, 1, 2, 2, 4],
+      'Standard Service': [0, 2, 2, 3, 5],
+      'Slow Service': [0, 2, 3, 3, 6],
+      'Slowest Service': [0, 3, 3, 4, 7]
+    };
+    
+    setRecoveryTemplates(defaultTemplates);
+    try {
+      localStorage.setItem('recoveryTemplates', JSON.stringify(defaultTemplates));
+    } catch (error) {
+      console.warn('Failed to save recovery templates:', error);
+    }
   }, []);
 
   // New simplified trip row component
@@ -714,8 +896,8 @@ const BlockSummarySchedule: React.FC = () => {
                 </Box>
               )}
               
-              {/* Recovery time display - editable */}
-              {trip.recoveryTimes && trip.recoveryTimes[tp.id] !== undefined && trip.recoveryTimes[tp.id] > 0 && (
+              {/* Recovery time display - editable (always show, including 0min) */}
+              {trip.recoveryTimes && trip.recoveryTimes[tp.id] !== undefined && (
                 <Box sx={{ mt: '1px' }}>
                   {editingRecovery?.tripId === `${trip.tripNumber}-${tp.id}` ? (
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
@@ -736,7 +918,7 @@ const BlockSummarySchedule: React.FC = () => {
                         autoFocus
                         onFocus={(e) => e.target.select()}
                         style={{
-                          width: '30px',
+                          width: '45px',
                           fontSize: '10px',
                           padding: '1px 2px',
                           border: '2px solid #3b82f6',
@@ -770,7 +952,7 @@ const BlockSummarySchedule: React.FC = () => {
                         }
                       }}
                     >
-                      {`${trip.recoveryTimes[tp.id]}min dwell`}
+                      {`${trip.recoveryTimes[tp.id]}min recovery`}
                     </Typography>
                   )}
                 </Box>
@@ -1316,6 +1498,185 @@ const BlockSummarySchedule: React.FC = () => {
                   </TableBody>
                 </Table>
               </TableContainer>
+            </CardContent>
+          </Card>
+
+          {/* Recovery Time Templates by Service Band */}
+          <Card elevation={2} sx={{ mt: 3 }}>
+            <CardContent sx={{ p: 4 }}>
+              <Typography variant="h5" gutterBottom sx={{ 
+                fontWeight: 'bold',
+                color: '#1976d2',
+                mb: 3,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 2
+              }}>
+                <ScheduleIcon sx={{ fontSize: 28 }} />
+                Recovery Time Templates by Service Band
+              </Typography>
+              
+              <Typography variant="body2" sx={{ mb: 3, color: '#666' }}>
+                Standard recovery times used by each service band across timepoints
+              </Typography>
+
+              <TableContainer component={Paper} elevation={1}>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow sx={{ backgroundColor: '#f8fafc' }}>
+                      <TableCell sx={{ 
+                        fontWeight: 'bold',
+                        fontSize: '14px',
+                        color: '#374151',
+                        py: 2
+                      }}>
+                        Service Band
+                      </TableCell>
+                      {schedule.timePoints.map((tp, index) => (
+                        <TableCell key={tp.name} align="center" sx={{ 
+                          fontWeight: 'bold',
+                          fontSize: '12px',
+                          color: '#374151',
+                          py: 2,
+                          minWidth: '90px'
+                        }}>
+                          {tp.name}
+                          <br />
+                          <Typography variant="caption" sx={{ color: '#9ca3af' }}>
+                            {index === 0 ? 'depart' : index === schedule.timePoints.length - 1 ? 'final' : 'stop'}
+                          </Typography>
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {Object.entries(recoveryTemplates).map(([serviceBandName, template]) => {
+                      const serviceBandColors = {
+                        'Fastest Service': '#4CAF50',
+                        'Fast Service': '#8BC34A',
+                        'Standard Service': '#FFC107',
+                        'Slow Service': '#FF9800',
+                        'Slowest Service': '#F44336'
+                      };
+                      const color = serviceBandColors[serviceBandName as keyof typeof serviceBandColors] || '#666';
+                      
+                      return (
+                        <TableRow key={serviceBandName} sx={{ 
+                          '&:nth-of-type(odd)': { backgroundColor: '#fafbfc' },
+                          '&:hover': { backgroundColor: '#f0f9ff' }
+                        }}>
+                          <TableCell sx={{ 
+                            fontWeight: 'bold',
+                            fontSize: '13px',
+                            py: 2,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 1
+                          }}>
+                            <Box sx={{
+                              width: 12,
+                              height: 12,
+                              borderRadius: '50%',
+                              backgroundColor: color
+                            }} />
+                            {serviceBandName}
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              onClick={() => applyRecoveryTemplate(serviceBandName)}
+                              sx={{
+                                ml: 'auto',
+                                fontSize: '10px',
+                                py: '2px',
+                                px: '8px',
+                                minWidth: 'auto'
+                              }}
+                            >
+                              Apply
+                            </Button>
+                          </TableCell>
+                          {schedule.timePoints.map((tp, index) => {
+                            // Ensure template has enough values for all timepoints
+                            const extendedTemplate = [...template];
+                            while (extendedTemplate.length <= index) {
+                              extendedTemplate.push(extendedTemplate[extendedTemplate.length - 1] || 0);
+                            }
+                            
+                            const recoveryTime = extendedTemplate[index];
+                            
+                            return (
+                              <TableCell key={`${serviceBandName}-${tp.name}`} align="center" sx={{ 
+                                py: 2,
+                                fontSize: '13px',
+                                fontFamily: 'monospace',
+                                fontWeight: '600'
+                              }}>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="30"
+                                  value={recoveryTime}
+                                  onChange={(e) => {
+                                    const newValue = Math.max(0, Math.min(30, parseInt(e.target.value) || 0));
+                                    updateRecoveryTemplate(serviceBandName, index, newValue);
+                                  }}
+                                  style={{
+                                    width: '50px',
+                                    height: '32px',
+                                    textAlign: 'center',
+                                    border: '1px solid #d1d5db',
+                                    borderRadius: '4px',
+                                    fontSize: '13px',
+                                    fontFamily: 'monospace',
+                                    fontWeight: '600',
+                                    color: recoveryTime === 0 ? '#6b7280' : '#059669',
+                                    backgroundColor: recoveryTime === 0 ? '#f9fafb' : '#ecfdf5'
+                                  }}
+                                />
+                              </TableCell>
+                            );
+                          })}
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+
+              {/* Template Action Buttons */}
+              <Box sx={{ mt: 3, display: 'flex', gap: 2, justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
+                <Typography variant="body2" sx={{ color: '#666', fontStyle: 'italic' }}>
+                  * Edit recovery times above and click "Apply" to update all trips for that service band
+                </Typography>
+                
+                <Box sx={{ display: 'flex', gap: 1 }}>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={resetRecoveryTemplates}
+                    sx={{ fontSize: '12px' }}
+                  >
+                    Reset to Defaults
+                  </Button>
+                  
+                  <Button
+                    variant="contained"
+                    size="small"
+                    onClick={() => {
+                      Object.keys(recoveryTemplates).forEach(serviceBandName => {
+                        applyRecoveryTemplate(serviceBandName);
+                      });
+                    }}
+                    sx={{ 
+                      fontSize: '12px',
+                      bgcolor: '#059669',
+                      '&:hover': { bgcolor: '#047857' }
+                    }}
+                  >
+                    Apply All Templates
+                  </Button>
+                </Box>
+              </Box>
             </CardContent>
           </Card>
         </Box>

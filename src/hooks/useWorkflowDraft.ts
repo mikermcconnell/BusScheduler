@@ -6,14 +6,13 @@ import { useState, useEffect, useCallback } from 'react';
 import { 
   WorkflowDraftState, 
   WorkflowDraftResult,
-  ServiceBand,
   TimePointData,
   OutlierData,
   TimepointsModification,
   BlockConfiguration,
   ScheduleGenerationMetadata
 } from '../types/workflow';
-import { SummarySchedule } from '../types/schedule';
+import { SummarySchedule, ServiceBand } from '../types/schedule';
 import { ParsedExcelData } from '../utils/excelParser';
 import { ParsedCsvData } from '../utils/csvParser';
 import { workflowDraftService } from '../services/workflowDraftService';

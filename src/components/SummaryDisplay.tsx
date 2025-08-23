@@ -217,7 +217,11 @@ const StatisticsCard: React.FC<StatisticsCardProps> = ({ statistics, showAdvance
         
         <Grid container spacing={3}>
           {/* Trip Counts */}
-          <Grid item xs={12} md={4}>
+          <Grid
+            size={{
+              xs: 12,
+              md: 4
+            }}>
             <Typography variant="subtitle2" sx={{ mb: 1 }}>
               Trip Counts
             </Typography>
@@ -251,7 +255,11 @@ const StatisticsCard: React.FC<StatisticsCardProps> = ({ statistics, showAdvance
           </Grid>
 
           {/* Frequencies */}
-          <Grid item xs={12} md={4}>
+          <Grid
+            size={{
+              xs: 12,
+              md: 4
+            }}>
             <Typography variant="subtitle2" sx={{ mb: 1 }}>
               Average Frequency (min)
             </Typography>
@@ -278,7 +286,11 @@ const StatisticsCard: React.FC<StatisticsCardProps> = ({ statistics, showAdvance
           </Grid>
 
           {/* Operating Hours */}
-          <Grid item xs={12} md={4}>
+          <Grid
+            size={{
+              xs: 12,
+              md: 4
+            }}>
             <Typography variant="subtitle2" sx={{ mb: 1 }}>
               Operating Hours
             </Typography>
@@ -312,7 +324,11 @@ const StatisticsCard: React.FC<StatisticsCardProps> = ({ statistics, showAdvance
               Advanced Statistics
             </Typography>
             <Grid container spacing={2}>
-              <Grid item xs={12} md={6}>
+              <Grid
+                size={{
+                  xs: 12,
+                  md: 6
+                }}>
                 <Typography variant="body2" color="text.secondary" component="span">
                   Total Time Points:{' '}
                 </Typography>
@@ -320,7 +336,11 @@ const StatisticsCard: React.FC<StatisticsCardProps> = ({ statistics, showAdvance
                   {statistics.totalTimePoints}
                 </Typography>
               </Grid>
-              <Grid item xs={12} md={6}>
+              <Grid
+                size={{
+                  xs: 12,
+                  md: 6
+                }}>
                 <Typography variant="body2" color="text.secondary" component="span">
                   Total Travel Time:{' '}
                 </Typography>
@@ -502,7 +522,6 @@ const SummaryDisplay: React.FC<SummaryDisplayProps> = ({
           )}
         </CardContent>
       </Card>
-
       {/* Statistics Card */}
       <Box sx={{ mt: 3 }}>
         <StatisticsCard 
@@ -510,7 +529,6 @@ const SummaryDisplay: React.FC<SummaryDisplayProps> = ({
           showAdvanced={showAdvancedStats} 
         />
       </Box>
-
       {/* Time Bands (if enabled) */}
       {showTimeBands && (
         <Card variant="outlined" sx={{ mt: 3 }}>
@@ -520,7 +538,13 @@ const SummaryDisplay: React.FC<SummaryDisplayProps> = ({
             </Typography>
             <Grid container spacing={2}>
               {timeBands.map((band, index) => (
-                <Grid item xs={12} md={6} lg={4} key={index}>
+                <Grid
+                  key={index}
+                  size={{
+                    xs: 12,
+                    md: 6,
+                    lg: 4
+                  }}>
                   <Paper variant="outlined" sx={{ p: 2 }}>
                     <Typography variant="subtitle2" sx={{ mb: 1 }}>
                       {band.label}
@@ -535,7 +559,6 @@ const SummaryDisplay: React.FC<SummaryDisplayProps> = ({
           </CardContent>
         </Card>
       )}
-
       {/* Schedule Tables */}
       <Card variant="outlined" sx={{ mt: 3 }}>
         {/* Tabs */}
@@ -600,7 +623,6 @@ const SummaryDisplay: React.FC<SummaryDisplayProps> = ({
           />
         </Box>
       </Card>
-
       {/* Trip Duration Analysis Section */}
       {csvData && (
         <Card variant="outlined" sx={{ mt: 3 }}>
@@ -632,10 +654,10 @@ const SummaryDisplay: React.FC<SummaryDisplayProps> = ({
               <Collapse in={showTripDurationAnalysis}>
                 <Box sx={{ mt: 3 }}>
                   <Grid container spacing={3}>
-                    <Grid item xs={12}>
+                    <Grid size={12}>
                       <TripDurationChart analysis={tripDurationAnalysis} />
                     </Grid>
-                    <Grid item xs={12}>
+                    <Grid size={12}>
                       <TripDurationTable analysis={tripDurationAnalysis} />
                     </Grid>
                   </Grid>
@@ -645,7 +667,6 @@ const SummaryDisplay: React.FC<SummaryDisplayProps> = ({
           </CardContent>
         </Card>
       )}
-
       {/* Footer Info */}
       <Typography 
         variant="body2" 

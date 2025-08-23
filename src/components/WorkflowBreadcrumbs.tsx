@@ -165,14 +165,13 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
   const currentWorkflowContext = workflowContext || detectWorkflowContext();
   const currentWorkflow = currentWorkflowContext ? workflows[currentWorkflowContext as keyof typeof workflows] : [];
   
-  // Debug logging for TimePoints page
-  if (location.pathname.includes('timepoints')) {
-    console.log('🔍 WorkflowBreadcrumbs Debug - TimePoints page:');
-    console.log('  - Current path:', location.pathname);
-    console.log('  - Detected workflow context:', currentWorkflowContext);
-    console.log('  - showWorkflow prop:', showWorkflow);
-    console.log('  - Current workflow steps:', currentWorkflow);
-  }
+  // Ensure we always have workflow steps when in a valid workflow context
+  // This fixes the issue where the progress bar doesn't show on first visit to TimePoints
+  const shouldForceWorkflowSteps = currentWorkflowContext === 'schedule-creation' && location.pathname === '/timepoints';
+  const effectiveWorkflow = (currentWorkflow && currentWorkflow.length > 0) || shouldForceWorkflowSteps 
+    ? currentWorkflow 
+    : (shouldForceWorkflowSteps ? workflows['schedule-creation'] : []);
+  
 
   // Initialize or update persistent workflow state
   useEffect(() => {
@@ -187,7 +186,15 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
     } else if (currentPersistentWorkflow) {
       setPersistentWorkflow(currentPersistentWorkflow);
     }
-  }, [currentWorkflowContext]);
+    
+    // SPECIAL CASE: Always initialize workflow for TimePoints page
+    // This ensures the progress bar shows consistently regardless of navigation path
+    if (location.pathname === '/timepoints' && currentWorkflowContext === 'schedule-creation' && !currentPersistentWorkflow) {
+      console.log('🔧 Initializing workflow context for TimePoints page');
+      const newWorkflow = workflowStateService.startWorkflow('schedule-creation');
+      setPersistentWorkflow(newWorkflow);
+    }
+  }, [currentWorkflowContext, location.pathname]);
 
   // Update workflow status based on persistent state and current path
   const updateWorkflowStatus = (steps: WorkflowStep[]): WorkflowStep[] => {
@@ -280,7 +287,19 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
     });
   };
 
-  const workflowSteps = updateWorkflowStatus(currentWorkflow || []);
+  const workflowSteps = updateWorkflowStatus(effectiveWorkflow || []);
+
+  // Debug logging for TimePoints page
+  if (location.pathname.includes('timepoints')) {
+    console.log('🔍 WorkflowBreadcrumbs Debug - TimePoints page:');
+    console.log('  - Current path:', location.pathname);
+    console.log('  - Detected workflow context:', currentWorkflowContext);
+    console.log('  - showWorkflow prop:', showWorkflow);
+    console.log('  - Current workflow steps:', currentWorkflow?.length || 0);
+    console.log('  - Should force workflow steps:', shouldForceWorkflowSteps);
+    console.log('  - Effective workflow steps:', effectiveWorkflow?.length || 0);
+    console.log('  - Final workflow steps:', workflowSteps?.length || 0);
+  }
 
   // Generate breadcrumbs from current path
   const generateBreadcrumbs = (): BreadcrumbItem[] => {

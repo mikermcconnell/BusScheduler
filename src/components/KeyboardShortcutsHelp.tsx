@@ -77,7 +77,6 @@ const KeyboardShortcutsHelp: React.FC<KeyboardShortcutsHelpProps> = ({
           <CloseIcon />
         </IconButton>
       </DialogTitle>
-
       <DialogContent sx={{ pt: 2 }}>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
           Use these keyboard shortcuts to navigate and work more efficiently with the Bus Route Scheduler.
@@ -85,7 +84,12 @@ const KeyboardShortcutsHelp: React.FC<KeyboardShortcutsHelpProps> = ({
 
         <Grid container spacing={3}>
           {Object.entries(shortcutsByCategory).map(([category, shortcuts]) => (
-            <Grid item xs={12} sm={6} key={category}>
+            <Grid
+              key={category}
+              size={{
+                xs: 12,
+                sm: 6
+              }}>
               <Paper
                 variant="outlined"
                 sx={{
@@ -162,7 +166,6 @@ const KeyboardShortcutsHelp: React.FC<KeyboardShortcutsHelpProps> = ({
           </Typography>
         </Box>
       </DialogContent>
-
       <DialogActions sx={{ px: 3, pb: 3 }}>
         <Button
           onClick={onClose}

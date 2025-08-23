@@ -21,6 +21,7 @@ import { scheduleStorage } from '../services/scheduleStorage';
 import { SummarySchedule } from '../types/schedule';
 import { workflowStateService } from '../services/workflowStateService';
 import WorkflowBreadcrumbs from '../components/WorkflowBreadcrumbs';
+import { useWorkflowDraft } from '../hooks/useWorkflowDraft';
 import {
   Box,
   Container,
@@ -477,7 +478,7 @@ const getServiceBandForTime = (
     const endMinutes = endHours * 60 + endMins;
     
     // Check if departure time falls within this period
-    if (totalMinutes >= startMinutes && totalMinutes < endMinutes) {
+    if (totalMinutes >= startMinutes && totalMinutes <= endMinutes) {
       console.log(`✅ DEBUG: Found match - ${departureTime} in period ${timePeriod} = ${serviceBand}`);
       return validateServiceBandName(serviceBand);
     }
@@ -541,11 +542,22 @@ export default function BlockConfiguration() {
 
   // Extract TimePoints data from navigation state
   const {
+    draftId: locationDraftId,
     timePointData = [],
     serviceBands = [],
     deletedPeriods = [],
     timePeriodServiceBands = {}
   } = location.state || {};
+  
+  // Get workflow draft
+  const { 
+    draft, 
+    updateBlockConfiguration,
+    updateTimepointsAnalysis,
+    loading: draftLoading,
+    error: draftError,
+    isSaving: isDraftSaving
+  } = useWorkflowDraft(locationDraftId);
 
   // Click and drag scrolling state
   const tableContainerRef = useRef<HTMLDivElement>(null);
@@ -920,13 +932,37 @@ export default function BlockConfiguration() {
   };
 
   // Generate trips based on block configurations
-  const generateTrips = () => {
+  const generateTrips = async () => {
     console.log('Generate trips button clicked!');
     console.log('Schedule configuration:', {
       blockConfigurations: schedule.blockConfigurations,
       cycleTimeMinutes: schedule.cycleTimeMinutes,
       automateBlockStartTimes: schedule.automateBlockStartTimes
     });
+    
+    // Auto-save TimePoints data before generating schedule
+    if (updateTimepointsAnalysis && timePointData.length > 0) {
+      console.log('💾 Auto-saving TimePoints analysis before schedule generation...');
+      try {
+        const saveResult = await updateTimepointsAnalysis({
+          serviceBands,
+          travelTimeData: timePointData,
+          outliers: [], // We don't have outliers data in this context
+          userModifications: [], // We don't have user modifications in this context
+          deletedPeriods: Array.from(deletedPeriods),
+          timePeriodServiceBands
+        });
+        
+        if (saveResult.success) {
+          console.log('✅ TimePoints analysis auto-saved successfully');
+        } else {
+          console.warn('⚠️ TimePoints auto-save failed:', saveResult.error);
+        }
+      } catch (error) {
+        console.error('❌ Error during TimePoints auto-save:', error);
+        // Continue with schedule generation even if auto-save fails
+      }
+    }
     
     // Safety validation to prevent infinite loops
     if (!schedule.cycleTimeMinutes || schedule.cycleTimeMinutes <= 0) {
@@ -1145,17 +1181,23 @@ export default function BlockConfiguration() {
         
         blockTripCount++;
         
-        // Move to next trip departure time - must start after the current trip arrives at final timepoint
+        // Move to next trip departure time - block cycling logic
+        // Next trip in same block starts when the bus arrives back at the origin
         const finalTimePointId = schedule.timePoints[schedule.timePoints.length - 1].id;
-        const finalArrivalTime = arrivalTimes[finalTimePointId];
+        const finalArrivalTime = arrivalTimes[finalTimePointId]; // Use arrival time at final stop
+        const finalRecoveryTime = recoveryTimes[finalTimePointId]; // Get recovery time at final stop
         
-        // Next trip can't start until current trip arrives at final destination
-        // Add a small buffer (e.g., 2 minutes) for bus turnaround/deadhead time
-        const turnaroundMinutes = 2;
-        const nextDepartureMinutes = timeToMinutes(finalArrivalTime) + turnaroundMinutes;
+        // Next trip starts after: final arrival + recovery time
+        // Note: finalArrivalTime is the actual arrival time without recovery, so we add recovery time
+        const nextDepartureMinutes = timeToMinutes(finalArrivalTime) + finalRecoveryTime;
         currentDepartureTime = minutesToTime(nextDepartureMinutes);
         
-        console.log(`  🔄 Trip ends at ${finalArrivalTime}, next trip starts at ${currentDepartureTime} (${turnaroundMinutes}min turnaround)`);
+        console.log(`  🔄 Trip arrives at final stop at ${finalArrivalTime}, +${finalRecoveryTime}min recovery = next trip starts at ${currentDepartureTime}`);
+        
+        // Debug logging for trip timing validation
+        console.log(`  📊 Trip ${blockTripCount + 1} Block ${blockConfig.blockNumber}: Previous trip ended ${finalArrivalTime}, next starts ${currentDepartureTime}`);
+        console.log(`  ⏰ Block cycling calculation: ${finalArrivalTime} + ${finalRecoveryTime}min recovery = ${currentDepartureTime}`);
+        console.log(`  🚌 Block ${blockConfig.blockNumber} trip count: ${blockTripCount}, total trips so far: ${trips.length}`)
         
       }
       
@@ -1271,6 +1313,23 @@ export default function BlockConfiguration() {
           severity: 'success'
         });
         
+        // Save block configuration to workflow draft if available
+        if (draft && updateBlockConfiguration) {
+          const blockConfigData = {
+            numberOfBuses: schedule.blockConfigurations.length,
+            cycleTimeMinutes: schedule.cycleTimeMinutes,
+            automateBlockStartTimes: schedule.automateBlockStartTimes,
+            blockConfigurations: schedule.blockConfigurations.map(bc => ({
+              blockNumber: bc.blockNumber,
+              startTime: bc.startTime,
+              endTime: bc.endTime
+            }))
+          };
+          
+          await updateBlockConfiguration(blockConfigData);
+          console.log('✅ Block configuration saved to workflow draft');
+        }
+        
         // Save complete schedule to localStorage for persistence
         const completeSchedule = { 
           ...updatedSchedule, 
@@ -1287,10 +1346,11 @@ export default function BlockConfiguration() {
           trips: updatedSchedule.trips
         });
         
-        // Navigate to BlockSummarySchedule page with the generated schedule and TimePoints data
+        // Navigate to BlockSummarySchedule page with the generated schedule and draft ID
         navigate('/block-summary-schedule', { 
           state: { 
-            schedule: completeSchedule
+            schedule: completeSchedule,
+            draftId: draft?.draftId
           } 
         });
       } else {
@@ -1312,7 +1372,8 @@ export default function BlockConfiguration() {
         
         navigate('/block-summary-schedule', { 
           state: { 
-            schedule: completeSchedule
+            schedule: completeSchedule,
+            draftId: draft?.draftId
           } 
         });
       }
@@ -1364,542 +1425,233 @@ export default function BlockConfiguration() {
           Back to Timepoints
         </Button>
       </Box>
-
-
       {/* Configuration Content - No Tabs */}
-        <Grid container spacing={4}>
-          {/* Block Configuration */}
-          <Grid item xs={12}>
-            <Card elevation={2}>
-              <CardContent sx={{ p: 4 }}>
-                <Typography variant="h5" fontWeight="600" gutterBottom sx={{ color: 'rgb(0, 75, 128)', mb: 1 }}>
-                  🚌 Bus Block Configuration
+      <Grid container spacing={4}>
+        {/* Block Configuration */}
+        <Grid size={12}>
+          <Card elevation={2}>
+            <CardContent sx={{ p: 4 }}>
+              <Typography variant="h5" fontWeight="600" gutterBottom sx={{ color: 'rgb(0, 75, 128)', mb: 1 }}>
+                🚌 Bus Block Configuration
+              </Typography>
+              <Typography variant="body1" color="text.secondary" paragraph sx={{ mb: 3, lineHeight: 1.6 }}>
+                Configure individual bus blocks with professional scheduling interface
+              </Typography>
+              
+              {/* Bus Count Control */}
+              <Box sx={{ mb: 3, p: 3, backgroundColor: 'rgb(0, 75, 128)', borderRadius: 2, color: 'white' }}>
+                <Typography variant="h6" sx={{ color: 'white', fontWeight: 600, mb: 2 }}>
+                  Bus Fleet Configuration
                 </Typography>
-                <Typography variant="body1" color="text.secondary" paragraph sx={{ mb: 3, lineHeight: 1.6 }}>
-                  Configure individual bus blocks with professional scheduling interface
-                </Typography>
-                
-                {/* Bus Count Control */}
-                <Box sx={{ mb: 3, p: 3, backgroundColor: 'rgb(0, 75, 128)', borderRadius: 2, color: 'white' }}>
-                  <Typography variant="h6" sx={{ color: 'white', fontWeight: 600, mb: 2 }}>
-                    Bus Fleet Configuration
-                  </Typography>
-                  <Grid container spacing={3} alignItems="flex-start">
-                    <Grid item xs={12} sm={6} md={4} lg={3}>
-                      <Box sx={{ mb: 1 }}>
-                        <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.9)', mb: 1, fontWeight: 500 }}>
-                          Number of Buses
-                        </Typography>
-                        <TextField
-                          type="number"
-                          size="small"
-                          value={schedule.blockConfigurations.length}
-                          onChange={(e) => {
-                            const newCount = Math.max(1, Math.min(10, parseInt(e.target.value) || 1));
-                            updateBlockCount(newCount);
-                          }}
-                          onBlur={() => {
-                            autoSave(); // Immediate save when user finishes input
-                          }}
-                          inputProps={{ min: 1, max: 10 }}
-                          sx={{ 
-                            backgroundColor: 'white', 
-                            borderRadius: 1,
-                            width: '100px',
-                            '& .MuiOutlinedInput-root': {
-                              fontSize: '1rem'
-                            }
-                          }}
-                        />
-                        <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)', display: 'block', mt: 0.5 }}>
-                          Max: 10 buses
-                        </Typography>
-                      </Box>
-                    </Grid>
-                    <Grid item xs={12} sm={6} md={8} lg={9}>
-                      <Box sx={{ 
-                        backgroundColor: 'rgba(255, 255, 255, 0.2)', 
-                        borderRadius: 2, 
-                        px: 3, 
-                        py: 2,
-                        border: '1px solid rgba(255, 255, 255, 0.3)',
-                        mt: 1
-                      }}>
-                        <Typography variant="body1" sx={{ color: 'white', fontWeight: 500 }}>
-                          🚌 {schedule.blockConfigurations.length} bus{schedule.blockConfigurations.length !== 1 ? 'es' : ''} configured • {schedule.cycleTimeMinutes} minute cycle time
-                        </Typography>
-                      </Box>
-                    </Grid>
-                  </Grid>
-                </Box>
-                
-                {/* Cycle Time Control */}
-                <Box sx={{ mb: 3, p: 3, backgroundColor: 'grey.50', borderRadius: 2, border: '1px solid rgba(0, 75, 128, 0.1)' }}>
-                  <Typography variant="h6" sx={{ color: 'rgb(0, 75, 128)', fontWeight: 600, mb: 2 }}>
-                    Service Timing Configuration
-                  </Typography>
-                  <Grid container spacing={3} alignItems="flex-start">
-                    <Grid item xs={12} sm={6} md={4} lg={3}>
-                      <Box sx={{ mb: 1 }}>
-                        <Typography variant="body2" sx={{ color: 'rgb(0, 75, 128)', mb: 1, fontWeight: 500 }}>
-                          Cycle Time (minutes)
-                        </Typography>
-                        <TextField
-                          type="number"
-                          size="small"
-                          value={schedule.cycleTimeMinutes}
-                          onChange={(e) => {
-                            const newCycleTime = parseInt(e.target.value) || 0;
-                            setSchedule(prev => ({
-                              ...prev,
-                              cycleTimeMinutes: newCycleTime,
-                              updatedAt: new Date().toISOString()
-                            }));
-                          }}
-                          onBlur={() => {
-                            autoSave(); // Immediate save when user finishes input
-                          }}
-                          inputProps={{ min: 1 }}
-                          sx={{ 
-                            backgroundColor: 'white', 
-                            borderRadius: 1, 
-                            width: '120px',
-                            '& .MuiOutlinedInput-root': {
-                              fontSize: '1rem'
-                            }
-                          }}
-                        />
-                        <Typography variant="caption" sx={{ color: 'rgba(0, 75, 128, 0.7)', display: 'block', mt: 0.5 }}>
-                          Round-trip time
-                        </Typography>
-                      </Box>
-                    </Grid>
-                    <Grid item xs={12} sm={6} md={8} lg={9}>
-                      <Box sx={{ 
-                        backgroundColor: 'rgba(0, 75, 128, 0.05)', 
-                        borderRadius: 2, 
-                        px: 3, 
-                        py: 2,
-                        border: '1px solid rgba(0, 75, 128, 0.2)',
-                        mt: 1
-                      }}>
-                        <Typography variant="body1" sx={{ color: 'rgb(0, 75, 128)', fontWeight: 500 }}>
-                          ⏱️ Complete round-trip cycle time • All buses follow this pattern
-                        </Typography>
-                      </Box>
-                    </Grid>
-                  </Grid>
-                </Box>
-
-                {/* Frequency Display */}
-                <Box sx={{ mb: 3, p: 2, backgroundColor: 'rgba(0, 75, 128, 0.1)', borderRadius: 2, textAlign: 'center', border: '1px solid rgba(0, 75, 128, 0.3)' }}>
-                  <Typography variant="h6" fontWeight="bold" sx={{ color: 'rgb(0, 75, 128)' }}>
-                    Service Frequency: {Math.round((schedule.cycleTimeMinutes / schedule.blockConfigurations.length) * 10) / 10} minutes
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    A bus arrives every {Math.round((schedule.cycleTimeMinutes / schedule.blockConfigurations.length) * 10) / 10} minutes (Cycle Time ÷ Number of Buses)
-                  </Typography>
-                </Box>
-
-                {/* Automate Block Start Times Toggle */}
-                <Box sx={{ mb: 3, p: 2, backgroundColor: 'rgba(0, 75, 128, 0.05)', borderRadius: 2, border: '1px solid rgba(0, 75, 128, 0.2)' }}>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={schedule.automateBlockStartTimes}
+                <Grid container spacing={3} alignItems="flex-start">
+                  <Grid
+                    size={{
+                      xs: 12,
+                      sm: 6,
+                      md: 4,
+                      lg: 3
+                    }}>
+                    <Box sx={{ mb: 1 }}>
+                      <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.9)', mb: 1, fontWeight: 500 }}>
+                        Number of Buses
+                      </Typography>
+                      <TextField
+                        type="number"
+                        size="small"
+                        value={schedule.blockConfigurations.length}
                         onChange={(e) => {
-                          setSchedule(prev => ({
-                            ...prev,
-                            automateBlockStartTimes: e.target.checked,
-                            updatedAt: new Date().toISOString()
-                          }));
-                          autoSave(); // Immediate save when toggle is changed
+                          const newCount = Math.max(1, Math.min(10, parseInt(e.target.value) || 1));
+                          updateBlockCount(newCount);
                         }}
-                        color="primary"
-                      />
-                    }
-                    label={
-                      <Box>
-                        <Typography variant="body1" fontWeight="bold">
-                          Automate Block Start Times
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          Automatically calculate start times based on frequency (Block 1 remains manual)
-                        </Typography>
-                      </Box>
-                    }
-                  />
-                </Box>
-
-                {/* Bus Block Cards - Modern Professional Design */}
-                <Box 
-                  sx={{ 
-                    display: 'grid',
-                    gridTemplateColumns: { 
-                      xs: '1fr', 
-                      sm: 'repeat(auto-fit, minmax(192px, 1fr))', 
-                      lg: 'repeat(auto-fit, minmax(210px, 1fr))' 
-                    },
-                    gap: 4,
-                    mb: 4,
-                    maxWidth: '100%'
-                  }}
-                >
-                  {schedule.blockConfigurations.map((blockConfig, index) => {
-                    const isAutomated = schedule.automateBlockStartTimes && index > 0;
-                    const cardColor = getProfessionalColor(index);
-                    
-                    // Use solid color background
-                    const solidColor = cardColor;
-                    
-                    return (
-                      <Card
-                        key={blockConfig.blockNumber}
-                        elevation={6}
-                        sx={{
-                          borderRadius: '24px',
-                          backgroundColor: solidColor,
-                          position: 'relative',
-                          overflow: 'visible',
-                          transition: 'all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1)',
-                          cursor: isAutomated ? 'default' : 'pointer',
-                          transform: 'translateY(0)',
-                          '&:hover': {
-                            transform: isAutomated ? 'translateY(0)' : 'translateY(-8px)',
-                            boxShadow: isAutomated 
-                              ? '0 10px 40px rgba(0,0,0,0.15)' 
-                              : '0 20px 60px rgba(0,0,0,0.25)',
-                          },
-                          '&::before': {
-                            content: '""',
-                            position: 'absolute',
-                            top: 0,
-                            left: 0,
-                            right: 0,
-                            bottom: 0,
-                            borderRadius: '24px',
-                            padding: '2px',
-                            background: `linear-gradient(135deg, rgba(255,255,255,0.3), transparent)`,
-                            mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
-                            maskComposite: 'exclude'
+                        onBlur={() => {
+                          autoSave(); // Immediate save when user finishes input
+                        }}
+                        inputProps={{ min: 1, max: 10 }}
+                        sx={{ 
+                          backgroundColor: 'white', 
+                          borderRadius: 1,
+                          width: '100px',
+                          '& .MuiOutlinedInput-root': {
+                            fontSize: '1rem'
                           }
                         }}
-                      >
-                        <CardContent sx={{ p: 0, height: '100%', minHeight: '168px' }}>
-                          {/* Header Section */}
-                          <Box 
-                            sx={{ 
-                              position: 'relative',
-                              background: `linear-gradient(135deg, rgba(255,255,255,0.15), rgba(255,255,255,0.05))`,
-                              borderRadius: '24px 24px 0 0',
-                              p: 3,
-                              pb: 2,
-                              textAlign: 'center'
-                            }}
-                          >
-                            <Typography 
-                              variant="h5" 
-                              sx={{ 
-                                color: 'white',
-                                fontWeight: 800,
-                                textShadow: '0 2px 8px rgba(0,0,0,0.3)',
-                                letterSpacing: '0.5px',
-                                fontSize: '1.4rem',
-                                mb: 1
-                              }}
-                            >
-                              Bus Block {blockConfig.blockNumber}
-                            </Typography>
-                            
-                            {/* Status Indicator */}
-                            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 1, mb: 1 }}>
-                              <Box 
-                                sx={{
-                                  width: 8,
-                                  height: 8,
-                                  borderRadius: '50%',
-                                  backgroundColor: isAutomated ? '#FFD700' : '#00E676',
-                                  boxShadow: `0 0 8px ${isAutomated ? '#FFD700' : '#00E676'}`,
-                                  animation: 'pulse 2s infinite'
-                                }}
-                              />
-                              <Typography 
-                                variant="caption" 
-                                sx={{ 
-                                  color: 'rgba(255,255,255,0.9)',
-                                  fontWeight: 600,
-                                  fontSize: '0.75rem',
-                                  textTransform: 'uppercase',
-                                  letterSpacing: '1px'
-                                }}
-                              >
-                                {isAutomated ? 'Automated' : 'Manual'}
-                              </Typography>
-                            </Box>
-                            
-                            {isAutomated && (
-                              <Chip 
-                                label="AUTO" 
-                                size="small" 
-                                sx={{ 
-                                  position: 'absolute',
-                                  top: 16,
-                                  right: 16,
-                                  bgcolor: '#FFD700', 
-                                  color: '#1a1a1a',
-                                  fontWeight: 800,
-                                  fontSize: '0.65rem',
-                                  letterSpacing: '0.5px',
-                                  boxShadow: '0 2px 8px rgba(255,215,0,0.4)'
-                                }} 
-                              />
-                            )}
-                          </Box>
+                      />
+                      <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)', display: 'block', mt: 0.5 }}>
+                        Max: 10 buses
+                      </Typography>
+                    </Box>
+                  </Grid>
+                  <Grid
+                    size={{
+                      xs: 12,
+                      sm: 6,
+                      md: 8,
+                      lg: 9
+                    }}>
+                    <Box sx={{ 
+                      backgroundColor: 'rgba(255, 255, 255, 0.2)', 
+                      borderRadius: 2, 
+                      px: 3, 
+                      py: 2,
+                      border: '1px solid rgba(255, 255, 255, 0.3)',
+                      mt: 1
+                    }}>
+                      <Typography variant="body1" sx={{ color: 'white', fontWeight: 500 }}>
+                        🚌 {schedule.blockConfigurations.length} bus{schedule.blockConfigurations.length !== 1 ? 'es' : ''} configured • {schedule.cycleTimeMinutes} minute cycle time
+                      </Typography>
+                    </Box>
+                  </Grid>
+                </Grid>
+              </Box>
+              
+              {/* Cycle Time Control */}
+              <Box sx={{ mb: 3, p: 3, backgroundColor: 'grey.50', borderRadius: 2, border: '1px solid rgba(0, 75, 128, 0.1)' }}>
+                <Typography variant="h6" sx={{ color: 'rgb(0, 75, 128)', fontWeight: 600, mb: 2 }}>
+                  Service Timing Configuration
+                </Typography>
+                <Grid container spacing={3} alignItems="flex-start">
+                  <Grid
+                    size={{
+                      xs: 12,
+                      sm: 6,
+                      md: 4,
+                      lg: 3
+                    }}>
+                    <Box sx={{ mb: 1 }}>
+                      <Typography variant="body2" sx={{ color: 'rgb(0, 75, 128)', mb: 1, fontWeight: 500 }}>
+                        Cycle Time (minutes)
+                      </Typography>
+                      <TextField
+                        type="number"
+                        size="small"
+                        value={schedule.cycleTimeMinutes}
+                        onChange={(e) => {
+                          const newCycleTime = parseInt(e.target.value) || 0;
+                          setSchedule(prev => ({
+                            ...prev,
+                            cycleTimeMinutes: newCycleTime,
+                            updatedAt: new Date().toISOString()
+                          }));
+                        }}
+                        onBlur={() => {
+                          autoSave(); // Immediate save when user finishes input
+                        }}
+                        inputProps={{ min: 1 }}
+                        sx={{ 
+                          backgroundColor: 'white', 
+                          borderRadius: 1, 
+                          width: '120px',
+                          '& .MuiOutlinedInput-root': {
+                            fontSize: '1rem'
+                          }
+                        }}
+                      />
+                      <Typography variant="caption" sx={{ color: 'rgba(0, 75, 128, 0.7)', display: 'block', mt: 0.5 }}>
+                        Round-trip time
+                      </Typography>
+                    </Box>
+                  </Grid>
+                  <Grid
+                    size={{
+                      xs: 12,
+                      sm: 6,
+                      md: 8,
+                      lg: 9
+                    }}>
+                    <Box sx={{ 
+                      backgroundColor: 'rgba(0, 75, 128, 0.05)', 
+                      borderRadius: 2, 
+                      px: 3, 
+                      py: 2,
+                      border: '1px solid rgba(0, 75, 128, 0.2)',
+                      mt: 1
+                    }}>
+                      <Typography variant="body1" sx={{ color: 'rgb(0, 75, 128)', fontWeight: 500 }}>
+                        ⏱️ Complete round-trip cycle time • All buses follow this pattern
+                      </Typography>
+                    </Box>
+                  </Grid>
+                </Grid>
+              </Box>
 
-                          {/* Time Configuration Section */}
-                          <Box sx={{ p: 3, pt: 2 }}>
-                            <Grid container spacing={3}>
-                              <Grid item xs={6}>
-                                <Box sx={{ textAlign: 'center' }}>
-                                  <Typography 
-                                    variant="body2" 
-                                    sx={{ 
-                                      color: 'rgba(255,255,255,0.9)',
-                                      fontSize: '0.8rem',
-                                      fontWeight: 700,
-                                      textShadow: '0 1px 2px rgba(0,0,0,0.3)',
-                                      mb: 2,
-                                      letterSpacing: '0.8px',
-                                      textTransform: 'uppercase'
-                                    }}
-                                  >
-                                    Start Time
-                                  </Typography>
-                                  <Paper
-                                    elevation={3}
-                                    sx={{
-                                      borderRadius: '16px',
-                                      overflow: 'hidden',
-                                      background: 'linear-gradient(145deg, #ffffff, #f8f9fa)',
-                                      border: '1px solid rgba(255,255,255,0.8)'
-                                    }}
-                                  >
-                                    <TextField
-                                      type="time"
-                                      size="medium"
-                                      value={blockConfig.startTime}
-                                      onChange={(e) => {
-                                        if (!isAutomated) {
-                                          const newConfigs = [...schedule.blockConfigurations];
-                                          newConfigs[index].startTime = e.target.value;
-                                          setSchedule(prev => ({
-                                            ...prev,
-                                            blockConfigurations: newConfigs,
-                                            updatedAt: new Date().toISOString()
-                                          }));
-                                        }
-                                      }}
-                                      onBlur={() => {
-                                        if (!isAutomated) {
-                                          autoSave(); // Immediate save when user finishes input
-                                        }
-                                      }}
-                                      disabled={isAutomated}
-                                      sx={{ 
-                                        width: '100%',
-                                        '& .MuiInputBase-input': { 
-                                          fontSize: '1.1rem',
-                                          fontWeight: 700,
-                                          color: isAutomated ? '#9e9e9e' : '#1976d2',
-                                          textAlign: 'center',
-                                          padding: '16px 12px',
-                                          letterSpacing: '1px',
-                                          fontFamily: 'monospace'
-                                        },
-                                        '& .MuiOutlinedInput-notchedOutline': {
-                                          border: 'none'
-                                        },
-                                        '& .MuiInputBase-root': {
-                                          borderRadius: '16px'
-                                        }
-                                      }}
-                                    />
-                                  </Paper>
-                                </Box>
-                              </Grid>
-                              
-                              <Grid item xs={6}>
-                                <Box sx={{ textAlign: 'center' }}>
-                                  <Typography 
-                                    variant="body2" 
-                                    sx={{ 
-                                      color: 'rgba(255,255,255,0.9)',
-                                      fontSize: '0.8rem',
-                                      fontWeight: 700,
-                                      textShadow: '0 1px 2px rgba(0,0,0,0.3)',
-                                      mb: 2,
-                                      letterSpacing: '0.8px',
-                                      textTransform: 'uppercase'
-                                    }}
-                                  >
-                                    End Time
-                                  </Typography>
-                                  <Paper
-                                    elevation={3}
-                                    sx={{
-                                      borderRadius: '16px',
-                                      overflow: 'hidden',
-                                      background: 'linear-gradient(145deg, #ffffff, #f8f9fa)',
-                                      border: '1px solid rgba(255,255,255,0.8)'
-                                    }}
-                                  >
-                                    <TextField
-                                      type="time"
-                                      size="medium"
-                                      value={blockConfig.endTime}
-                                      onChange={(e) => {
-                                        const newConfigs = [...schedule.blockConfigurations];
-                                        newConfigs[index].endTime = e.target.value;
-                                        setSchedule(prev => ({
-                                          ...prev,
-                                          blockConfigurations: newConfigs,
-                                          updatedAt: new Date().toISOString()
-                                        }));
-                                      }}
-                                      onBlur={() => {
-                                        autoSave(); // Immediate save when user finishes input
-                                      }}
-                                      sx={{ 
-                                        width: '100%',
-                                        '& .MuiInputBase-input': { 
-                                          fontSize: '1.1rem',
-                                          fontWeight: 700,
-                                          color: '#1976d2',
-                                          textAlign: 'center',
-                                          padding: '16px 12px',
-                                          letterSpacing: '1px',
-                                          fontFamily: 'monospace'
-                                        },
-                                        '& .MuiOutlinedInput-notchedOutline': {
-                                          border: 'none'
-                                        },
-                                        '& .MuiInputBase-root': {
-                                          borderRadius: '16px'
-                                        }
-                                      }}
-                                    />
-                                  </Paper>
-                                </Box>
-                              </Grid>
-                            </Grid>
+              {/* Frequency Display */}
+              <Box sx={{ mb: 3, p: 2, backgroundColor: 'rgba(0, 75, 128, 0.1)', borderRadius: 2, textAlign: 'center', border: '1px solid rgba(0, 75, 128, 0.3)' }}>
+                <Typography variant="h6" fontWeight="bold" sx={{ color: 'rgb(0, 75, 128)' }}>
+                  Service Frequency: {Math.round((schedule.cycleTimeMinutes / schedule.blockConfigurations.length) * 10) / 10} minutes
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  A bus arrives every {Math.round((schedule.cycleTimeMinutes / schedule.blockConfigurations.length) * 10) / 10} minutes (Cycle Time ÷ Number of Buses)
+                </Typography>
+              </Box>
 
-                            {/* Duration Display */}
-                            <Box sx={{ mt: 3, textAlign: 'center' }}>
-                              <Paper 
-                                elevation={2}
-                                sx={{ 
-                                  background: 'linear-gradient(145deg, rgba(255,255,255,0.95), rgba(255,255,255,0.85))', 
-                                  borderRadius: '20px', 
-                                  py: 2.5, 
-                                  px: 3,
-                                  border: '2px solid rgba(255,255,255,0.6)',
-                                  backdropFilter: 'blur(10px)',
-                                  position: 'relative',
-                                  overflow: 'hidden',
-                                  '&::before': {
-                                    content: '""',
-                                    position: 'absolute',
-                                    top: 0,
-                                    left: '-100%',
-                                    width: '100%',
-                                    height: '100%',
-                                    background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent)',
-                                    animation: 'shimmer 3s infinite'
-                                  }
-                                }}
-                              >
-                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
-                                  <ClockIcon sx={{ color: cardColor, fontSize: '1.2rem' }} />
-                                  <Typography 
-                                    variant="h6" 
-                                    sx={{ 
-                                      color: cardColor,
-                                      fontWeight: 800,
-                                      fontSize: '1rem',
-                                      letterSpacing: '0.5px',
-                                      textShadow: 'none'
-                                    }}
-                                  >
-                                    {(() => {
-                                      const startTime = getTimeWithDefault(blockConfig.startTime, '07:00');
-                                      const endTime = getTimeWithDefault(blockConfig.endTime, '22:00');
-                                      const startMin = timeToMinutes(startTime);
-                                      const endMin = timeToMinutes(endTime);
-                                      const duration = Math.max(0, endMin - startMin);
-                                      const hours = Math.floor(duration / 60);
-                                      const minutes = duration % 60;
-                                      return `${hours}h ${minutes.toString().padStart(2, '0')}m`;
-                                    })()}
-                                  </Typography>
-                                </Box>
-                                <Typography 
-                                  variant="caption" 
-                                  sx={{ 
-                                    color: 'rgba(0,0,0,0.6)',
-                                    fontSize: '0.7rem',
-                                    fontWeight: 600,
-                                    textTransform: 'uppercase',
-                                    letterSpacing: '0.5px',
-                                    display: 'block',
-                                    mt: 0.5
-                                  }}
-                                >
-                                  Total Duration
-                                </Typography>
-                              </Paper>
-                            </Box>
-                          </Box>
-                        </CardContent>
-                      </Card>
-                    );
-                  })}
-                  
-                  {/* Add New Block Button - Modern Design */}
-                  {schedule.blockConfigurations.length < 10 && (
-                    <Card
-                      onClick={() => {
-                        const newConfigs = [...schedule.blockConfigurations];
-                        newConfigs.push({
-                          blockNumber: newConfigs.length + 1,
-                          startTime: '07:00',
-                          endTime: newConfigs[0]?.endTime || '22:00' // Default to Block 1's end time
-                        });
+              {/* Automate Block Start Times Toggle */}
+              <Box sx={{ mb: 3, p: 2, backgroundColor: 'rgba(0, 75, 128, 0.05)', borderRadius: 2, border: '1px solid rgba(0, 75, 128, 0.2)' }}>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={schedule.automateBlockStartTimes}
+                      onChange={(e) => {
                         setSchedule(prev => ({
                           ...prev,
-                          blockConfigurations: newConfigs,
+                          automateBlockStartTimes: e.target.checked,
                           updatedAt: new Date().toISOString()
                         }));
-                        autoSave(); // Immediate save when new block is added
+                        autoSave(); // Immediate save when toggle is changed
                       }}
-                      elevation={2}
+                      color="primary"
+                    />
+                  }
+                  label={
+                    <Box>
+                      <Typography variant="body1" fontWeight="bold">
+                        Automate Block Start Times
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        Automatically calculate start times based on frequency (Block 1 remains manual)
+                      </Typography>
+                    </Box>
+                  }
+                />
+              </Box>
+
+              {/* Bus Block Cards - Modern Professional Design */}
+              <Box 
+                sx={{ 
+                  display: 'grid',
+                  gridTemplateColumns: { 
+                    xs: '1fr', 
+                    sm: 'repeat(auto-fit, minmax(192px, 1fr))', 
+                    lg: 'repeat(auto-fit, minmax(210px, 1fr))' 
+                  },
+                  gap: 4,
+                  mb: 4,
+                  maxWidth: '100%'
+                }}
+              >
+                {schedule.blockConfigurations.map((blockConfig, index) => {
+                  const isAutomated = schedule.automateBlockStartTimes && index > 0;
+                  const cardColor = getProfessionalColor(index);
+                  
+                  // Use solid color background
+                  const solidColor = cardColor;
+                  
+                  return (
+                    <Card
+                      key={blockConfig.blockNumber}
+                      elevation={6}
                       sx={{
                         borderRadius: '24px',
-                        minHeight: '168px',
-                        border: '3px dashed rgba(0, 75, 128, 0.3)',
-                        backgroundColor: 'rgba(0, 75, 128, 0.03)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        cursor: 'pointer',
-                        transition: 'all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1)',
+                        backgroundColor: solidColor,
                         position: 'relative',
-                        overflow: 'hidden',
+                        overflow: 'visible',
+                        transition: 'all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1)',
+                        cursor: isAutomated ? 'default' : 'pointer',
+                        transform: 'translateY(0)',
                         '&:hover': {
-                          backgroundColor: 'rgba(0, 75, 128, 0.08)',
-                          borderColor: 'rgba(0, 75, 128, 0.5)',
-                          transform: 'translateY(-4px)',
-                          boxShadow: '0 15px 40px rgba(0, 75, 128, 0.15)'
+                          transform: isAutomated ? 'translateY(0)' : 'translateY(-8px)',
+                          boxShadow: isAutomated 
+                            ? '0 10px 40px rgba(0,0,0,0.15)' 
+                            : '0 20px 60px rgba(0,0,0,0.25)',
                         },
                         '&::before': {
                           content: '""',
@@ -1908,110 +1660,439 @@ export default function BlockConfiguration() {
                           left: 0,
                           right: 0,
                           bottom: 0,
-                          background: 'linear-gradient(45deg, rgba(0, 75, 128, 0.05), rgba(0, 75, 128, 0.02))',
-                          opacity: 0,
-                          transition: 'opacity 0.3s ease',
-                        },
-                        '&:hover::before': {
-                          opacity: 1
+                          borderRadius: '24px',
+                          padding: '2px',
+                          background: `linear-gradient(135deg, rgba(255,255,255,0.3), transparent)`,
+                          mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+                          maskComposite: 'exclude'
                         }
                       }}
                     >
-                      <CardContent sx={{ textAlign: 'center', p: 4 }}>
+                      <CardContent sx={{ p: 0, height: '100%', minHeight: '168px' }}>
+                        {/* Header Section */}
                         <Box 
                           sx={{ 
-                            width: 80, 
-                            height: 80, 
-                            borderRadius: '50%',
-                            backgroundColor: 'rgba(0, 75, 128, 0.1)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            mx: 'auto',
-                            mb: 3,
-                            border: '2px dashed rgba(0, 75, 128, 0.3)',
-                            transition: 'all 0.3s ease',
-                            '&:hover': {
-                              backgroundColor: 'rgba(0, 75, 128, 0.15)',
-                              borderColor: 'rgba(0, 75, 128, 0.5)',
-                              transform: 'scale(1.1)'
-                            }
+                            position: 'relative',
+                            background: `linear-gradient(135deg, rgba(255,255,255,0.15), rgba(255,255,255,0.05))`,
+                            borderRadius: '24px 24px 0 0',
+                            p: 3,
+                            pb: 2,
+                            textAlign: 'center'
                           }}
                         >
-                          <BusIcon sx={{ fontSize: 36, color: 'rgb(0, 75, 128)' }} />
+                          <Typography 
+                            variant="h5" 
+                            sx={{ 
+                              color: 'white',
+                              fontWeight: 800,
+                              textShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                              letterSpacing: '0.5px',
+                              fontSize: '1.4rem',
+                              mb: 1
+                            }}
+                          >
+                            Bus Block {blockConfig.blockNumber}
+                          </Typography>
+                          
+                          {/* Status Indicator */}
+                          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 1, mb: 1 }}>
+                            <Box 
+                              sx={{
+                                width: 8,
+                                height: 8,
+                                borderRadius: '50%',
+                                backgroundColor: isAutomated ? '#FFD700' : '#00E676',
+                                boxShadow: `0 0 8px ${isAutomated ? '#FFD700' : '#00E676'}`,
+                                animation: 'pulse 2s infinite'
+                              }}
+                            />
+                            <Typography 
+                              variant="caption" 
+                              sx={{ 
+                                color: 'rgba(255,255,255,0.9)',
+                                fontWeight: 600,
+                                fontSize: '0.75rem',
+                                textTransform: 'uppercase',
+                                letterSpacing: '1px'
+                              }}
+                            >
+                              {isAutomated ? 'Automated' : 'Manual'}
+                            </Typography>
+                          </Box>
+                          
+                          {isAutomated && (
+                            <Chip 
+                              label="AUTO" 
+                              size="small" 
+                              sx={{ 
+                                position: 'absolute',
+                                top: 16,
+                                right: 16,
+                                bgcolor: '#FFD700', 
+                                color: '#1a1a1a',
+                                fontWeight: 800,
+                                fontSize: '0.65rem',
+                                letterSpacing: '0.5px',
+                                boxShadow: '0 2px 8px rgba(255,215,0,0.4)'
+                              }} 
+                            />
+                          )}
                         </Box>
-                        <Typography 
-                          variant="h5" 
-                          sx={{ 
-                            color: 'rgb(0, 75, 128)', 
-                            fontWeight: 700, 
-                            mb: 1,
-                            letterSpacing: '0.5px'
-                          }}
-                        >
-                          Add New Bus Block
-                        </Typography>
-                        <Typography 
-                          variant="body1" 
-                          sx={{ 
-                            color: 'rgba(0, 75, 128, 0.7)', 
-                            fontWeight: 500,
-                            fontSize: '0.95rem'
-                          }}
-                        >
-                          Click to add Bus Block #{schedule.blockConfigurations.length + 1}
-                        </Typography>
-                        <Typography 
-                          variant="caption" 
-                          sx={{ 
-                            color: 'rgba(0, 75, 128, 0.5)', 
-                            fontWeight: 600,
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.8px',
-                            display: 'block',
-                            mt: 2
-                          }}
-                        >
-                          {10 - schedule.blockConfigurations.length} slots remaining
-                        </Typography>
+
+                        {/* Time Configuration Section */}
+                        <Box sx={{ p: 3, pt: 2 }}>
+                          <Grid container spacing={3}>
+                            <Grid size={6}>
+                              <Box sx={{ textAlign: 'center' }}>
+                                <Typography 
+                                  variant="body2" 
+                                  sx={{ 
+                                    color: 'rgba(255,255,255,0.9)',
+                                    fontSize: '0.8rem',
+                                    fontWeight: 700,
+                                    textShadow: '0 1px 2px rgba(0,0,0,0.3)',
+                                    mb: 2,
+                                    letterSpacing: '0.8px',
+                                    textTransform: 'uppercase'
+                                  }}
+                                >
+                                  Start Time
+                                </Typography>
+                                <Paper
+                                  elevation={3}
+                                  sx={{
+                                    borderRadius: '16px',
+                                    overflow: 'hidden',
+                                    background: 'linear-gradient(145deg, #ffffff, #f8f9fa)',
+                                    border: '1px solid rgba(255,255,255,0.8)'
+                                  }}
+                                >
+                                  <TextField
+                                    type="time"
+                                    size="medium"
+                                    value={blockConfig.startTime}
+                                    onChange={(e) => {
+                                      if (!isAutomated) {
+                                        const newConfigs = [...schedule.blockConfigurations];
+                                        newConfigs[index].startTime = e.target.value;
+                                        setSchedule(prev => ({
+                                          ...prev,
+                                          blockConfigurations: newConfigs,
+                                          updatedAt: new Date().toISOString()
+                                        }));
+                                      }
+                                    }}
+                                    onBlur={() => {
+                                      if (!isAutomated) {
+                                        autoSave(); // Immediate save when user finishes input
+                                      }
+                                    }}
+                                    disabled={isAutomated}
+                                    sx={{ 
+                                      width: '100%',
+                                      '& .MuiInputBase-input': { 
+                                        fontSize: '1.1rem',
+                                        fontWeight: 700,
+                                        color: isAutomated ? '#9e9e9e' : '#1976d2',
+                                        textAlign: 'center',
+                                        padding: '16px 12px',
+                                        letterSpacing: '1px',
+                                        fontFamily: 'monospace'
+                                      },
+                                      '& .MuiOutlinedInput-notchedOutline': {
+                                        border: 'none'
+                                      },
+                                      '& .MuiInputBase-root': {
+                                        borderRadius: '16px'
+                                      }
+                                    }}
+                                  />
+                                </Paper>
+                              </Box>
+                            </Grid>
+                            
+                            <Grid size={6}>
+                              <Box sx={{ textAlign: 'center' }}>
+                                <Typography 
+                                  variant="body2" 
+                                  sx={{ 
+                                    color: 'rgba(255,255,255,0.9)',
+                                    fontSize: '0.8rem',
+                                    fontWeight: 700,
+                                    textShadow: '0 1px 2px rgba(0,0,0,0.3)',
+                                    mb: 2,
+                                    letterSpacing: '0.8px',
+                                    textTransform: 'uppercase'
+                                  }}
+                                >
+                                  End Time
+                                </Typography>
+                                <Paper
+                                  elevation={3}
+                                  sx={{
+                                    borderRadius: '16px',
+                                    overflow: 'hidden',
+                                    background: 'linear-gradient(145deg, #ffffff, #f8f9fa)',
+                                    border: '1px solid rgba(255,255,255,0.8)'
+                                  }}
+                                >
+                                  <TextField
+                                    type="time"
+                                    size="medium"
+                                    value={blockConfig.endTime}
+                                    onChange={(e) => {
+                                      const newConfigs = [...schedule.blockConfigurations];
+                                      newConfigs[index].endTime = e.target.value;
+                                      setSchedule(prev => ({
+                                        ...prev,
+                                        blockConfigurations: newConfigs,
+                                        updatedAt: new Date().toISOString()
+                                      }));
+                                    }}
+                                    onBlur={() => {
+                                      autoSave(); // Immediate save when user finishes input
+                                    }}
+                                    sx={{ 
+                                      width: '100%',
+                                      '& .MuiInputBase-input': { 
+                                        fontSize: '1.1rem',
+                                        fontWeight: 700,
+                                        color: '#1976d2',
+                                        textAlign: 'center',
+                                        padding: '16px 12px',
+                                        letterSpacing: '1px',
+                                        fontFamily: 'monospace'
+                                      },
+                                      '& .MuiOutlinedInput-notchedOutline': {
+                                        border: 'none'
+                                      },
+                                      '& .MuiInputBase-root': {
+                                        borderRadius: '16px'
+                                      }
+                                    }}
+                                  />
+                                </Paper>
+                              </Box>
+                            </Grid>
+                          </Grid>
+
+                          {/* Duration Display */}
+                          <Box sx={{ mt: 3, textAlign: 'center' }}>
+                            <Paper 
+                              elevation={2}
+                              sx={{ 
+                                background: 'linear-gradient(145deg, rgba(255,255,255,0.95), rgba(255,255,255,0.85))', 
+                                borderRadius: '20px', 
+                                py: 2.5, 
+                                px: 3,
+                                border: '2px solid rgba(255,255,255,0.6)',
+                                backdropFilter: 'blur(10px)',
+                                position: 'relative',
+                                overflow: 'hidden',
+                                '&::before': {
+                                  content: '""',
+                                  position: 'absolute',
+                                  top: 0,
+                                  left: '-100%',
+                                  width: '100%',
+                                  height: '100%',
+                                  background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent)',
+                                  animation: 'shimmer 3s infinite'
+                                }
+                              }}
+                            >
+                              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
+                                <ClockIcon sx={{ color: cardColor, fontSize: '1.2rem' }} />
+                                <Typography 
+                                  variant="h6" 
+                                  sx={{ 
+                                    color: cardColor,
+                                    fontWeight: 800,
+                                    fontSize: '1rem',
+                                    letterSpacing: '0.5px',
+                                    textShadow: 'none'
+                                  }}
+                                >
+                                  {(() => {
+                                    const startTime = getTimeWithDefault(blockConfig.startTime, '07:00');
+                                    const endTime = getTimeWithDefault(blockConfig.endTime, '22:00');
+                                    const startMin = timeToMinutes(startTime);
+                                    const endMin = timeToMinutes(endTime);
+                                    const duration = Math.max(0, endMin - startMin);
+                                    const hours = Math.floor(duration / 60);
+                                    const minutes = duration % 60;
+                                    return `${hours}h ${minutes.toString().padStart(2, '0')}m`;
+                                  })()}
+                                </Typography>
+                              </Box>
+                              <Typography 
+                                variant="caption" 
+                                sx={{ 
+                                  color: 'rgba(0,0,0,0.6)',
+                                  fontSize: '0.7rem',
+                                  fontWeight: 600,
+                                  textTransform: 'uppercase',
+                                  letterSpacing: '0.5px',
+                                  display: 'block',
+                                  mt: 0.5
+                                }}
+                              >
+                                Total Duration
+                              </Typography>
+                            </Paper>
+                          </Box>
+                        </Box>
                       </CardContent>
                     </Card>
-                  )}
-                </Box>
-
-                {/* Generate Schedule Button */}
-                <Box sx={{ mt: 4, textAlign: 'center' }}>
-                  <Button
-                    variant="contained"
-                    size="large"
-                    onClick={generateTrips}
-                    startIcon={<CalendarIcon />}
+                  );
+                })}
+                
+                {/* Add New Block Button - Modern Design */}
+                {schedule.blockConfigurations.length < 10 && (
+                  <Card
+                    onClick={() => {
+                      const newConfigs = [...schedule.blockConfigurations];
+                      newConfigs.push({
+                        blockNumber: newConfigs.length + 1,
+                        startTime: '07:00',
+                        endTime: newConfigs[0]?.endTime || '22:00' // Default to Block 1's end time
+                      });
+                      setSchedule(prev => ({
+                        ...prev,
+                        blockConfigurations: newConfigs,
+                        updatedAt: new Date().toISOString()
+                      }));
+                      autoSave(); // Immediate save when new block is added
+                    }}
+                    elevation={2}
                     sx={{
-                      fontSize: '1.2rem',
-                      py: 2.5,
-                      px: 5,
-                      borderRadius: 3,
-                      backgroundColor: 'rgb(0, 75, 128)',
-                      boxShadow: '0 4px 12px rgba(0, 75, 128, 0.3)',
-                      textTransform: 'none',
-                      fontWeight: 600,
+                      borderRadius: '24px',
+                      minHeight: '168px',
+                      border: '3px dashed rgba(0, 75, 128, 0.3)',
+                      backgroundColor: 'rgba(0, 75, 128, 0.03)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      transition: 'all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1)',
+                      position: 'relative',
+                      overflow: 'hidden',
                       '&:hover': {
-                        backgroundColor: 'rgb(20, 85, 138)',
-                        boxShadow: '0 6px 16px rgba(0, 75, 128, 0.4)'
+                        backgroundColor: 'rgba(0, 75, 128, 0.08)',
+                        borderColor: 'rgba(0, 75, 128, 0.5)',
+                        transform: 'translateY(-4px)',
+                        boxShadow: '0 15px 40px rgba(0, 75, 128, 0.15)'
+                      },
+                      '&::before': {
+                        content: '""',
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        background: 'linear-gradient(45deg, rgba(0, 75, 128, 0.05), rgba(0, 75, 128, 0.02))',
+                        opacity: 0,
+                        transition: 'opacity 0.3s ease',
+                      },
+                      '&:hover::before': {
+                        opacity: 1
                       }
                     }}
                   >
-                    Generate Schedule with Block-Based Cycling
-                  </Button>
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
+                    <CardContent sx={{ textAlign: 'center', p: 4 }}>
+                      <Box 
+                        sx={{ 
+                          width: 80, 
+                          height: 80, 
+                          borderRadius: '50%',
+                          backgroundColor: 'rgba(0, 75, 128, 0.1)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          mx: 'auto',
+                          mb: 3,
+                          border: '2px dashed rgba(0, 75, 128, 0.3)',
+                          transition: 'all 0.3s ease',
+                          '&:hover': {
+                            backgroundColor: 'rgba(0, 75, 128, 0.15)',
+                            borderColor: 'rgba(0, 75, 128, 0.5)',
+                            transform: 'scale(1.1)'
+                          }
+                        }}
+                      >
+                        <BusIcon sx={{ fontSize: 36, color: 'rgb(0, 75, 128)' }} />
+                      </Box>
+                      <Typography 
+                        variant="h5" 
+                        sx={{ 
+                          color: 'rgb(0, 75, 128)', 
+                          fontWeight: 700, 
+                          mb: 1,
+                          letterSpacing: '0.5px'
+                        }}
+                      >
+                        Add New Bus Block
+                      </Typography>
+                      <Typography 
+                        variant="body1" 
+                        sx={{ 
+                          color: 'rgba(0, 75, 128, 0.7)', 
+                          fontWeight: 500,
+                          fontSize: '0.95rem'
+                        }}
+                      >
+                        Click to add Bus Block #{schedule.blockConfigurations.length + 1}
+                      </Typography>
+                      <Typography 
+                        variant="caption" 
+                        sx={{ 
+                          color: 'rgba(0, 75, 128, 0.5)', 
+                          fontWeight: 600,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.8px',
+                          display: 'block',
+                          mt: 2
+                        }}
+                      >
+                        {10 - schedule.blockConfigurations.length} slots remaining
+                      </Typography>
+                    </CardContent>
+                  </Card>
+                )}
+              </Box>
 
+              {/* Generate Schedule Button */}
+              <Box sx={{ mt: 4, textAlign: 'center' }}>
+                <Button
+                  variant="contained"
+                  size="large"
+                  onClick={generateTrips}
+                  startIcon={<CalendarIcon />}
+                  sx={{
+                    fontSize: '1.2rem',
+                    py: 2.5,
+                    px: 5,
+                    borderRadius: 3,
+                    backgroundColor: 'rgb(0, 75, 128)',
+                    boxShadow: '0 4px 12px rgba(0, 75, 128, 0.3)',
+                    textTransform: 'none',
+                    fontWeight: 600,
+                    '&:hover': {
+                      backgroundColor: 'rgb(20, 85, 138)',
+                      boxShadow: '0 6px 16px rgba(0, 75, 128, 0.4)'
+                    }
+                  }}
+                >
+                  Generate Schedule with Block-Based Cycling
+                </Button>
+              </Box>
+            </CardContent>
+          </Card>
         </Grid>
 
+      </Grid>
       {/* End of Configuration Content */}
-      
       {/* Save Notification Snackbar */}
       <Snackbar
         open={saveNotification.open}

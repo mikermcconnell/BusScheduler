@@ -83,7 +83,11 @@ const ShiftManagementPage: React.FC = () => {
       {/* Header */}
       <Paper sx={{ p: 2, mb: 2 }}>
         <Grid container alignItems="center" spacing={3}>
-          <Grid item xs={12} md={4}>
+          <Grid
+            size={{
+              xs: 12,
+              md: 4
+            }}>
             <Typography variant="h5" gutterBottom>
               Shift Management
             </Typography>
@@ -92,7 +96,11 @@ const ShiftManagementPage: React.FC = () => {
             </Typography>
           </Grid>
           
-          <Grid item xs={12} md={4}>
+          <Grid
+            size={{
+              xs: 12,
+              md: 4
+            }}>
             <Tabs value={['weekday', 'saturday', 'sunday'].indexOf(activeScheduleType)} 
                   onChange={handleScheduleTypeChange}
                   centered>
@@ -102,7 +110,11 @@ const ShiftManagementPage: React.FC = () => {
             </Tabs>
           </Grid>
           
-          <Grid item xs={12} md={4}>
+          <Grid
+            size={{
+              xs: 12,
+              md: 4
+            }}>
             <Box display="flex" justifyContent="flex-end" gap={2}>
               <Box textAlign="center">
                 <Typography variant="h6">{complianceStats.compliant}/{complianceStats.total}</Typography>
@@ -124,14 +136,12 @@ const ShiftManagementPage: React.FC = () => {
           </Grid>
         </Grid>
       </Paper>
-
       {/* Error Alert */}
       {(error.shifts || error.masterSchedule || error.unionRules) && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => {}}>
           {error.shifts || error.masterSchedule || error.unionRules}
         </Alert>
       )}
-
       {/* Main Content Area */}
       <Paper sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <Tabs value={activeTab} onChange={handleTabChange} sx={{ borderBottom: 1, borderColor: 'divider' }}>
@@ -144,10 +154,18 @@ const ShiftManagementPage: React.FC = () => {
         <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
           {activeTab === 0 && (
             <Grid container spacing={3}>
-              <Grid item xs={12} md={6}>
+              <Grid
+                size={{
+                  xs: 12,
+                  md: 6
+                }}>
                 <MasterScheduleImport />
               </Grid>
-              <Grid item xs={12} md={6}>
+              <Grid
+                size={{
+                  xs: 12,
+                  md: 6
+                }}>
                 <UnionRulesConfiguration />
               </Grid>
             </Grid>
@@ -163,17 +181,16 @@ const ShiftManagementPage: React.FC = () => {
           
           {activeTab === 3 && (
             <Grid container spacing={3}>
-              <Grid item xs={12}>
+              <Grid size={12}>
                 <ShiftSummaryTable />
               </Grid>
-              <Grid item xs={12}>
+              <Grid size={12}>
                 <ShiftExport />
               </Grid>
             </Grid>
           )}
         </Box>
       </Paper>
-
       {/* Success Notification */}
       <Snackbar
         open={showSuccess}

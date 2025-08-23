@@ -38,6 +38,7 @@ import {
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { scheduleStorage } from '../services/scheduleStorage';
+import ContextualActions from './ContextualActions';
 
 const DRAWER_WIDTH = 280;
 const COLLAPSED_WIDTH = 72;
@@ -93,8 +94,26 @@ const SidebarNavigation: React.FC<SidebarNavigationProps> = ({ open, onToggle })
     localStorage.setItem('recentNavItems', JSON.stringify(recentItems));
   }, [recentItems]);
 
+  const [draftCount, setDraftCount] = React.useState(0);
+
+  // Load draft count for navigation badge
+  React.useEffect(() => {
+    const loadDraftCount = async () => {
+      try {
+        const drafts = await scheduleStorage.getAllDraftSchedules();
+        setDraftCount(drafts.length);
+      } catch (error) {
+        console.warn('Failed to load draft count:', error);
+      }
+    };
+    
+    loadDraftCount();
+    const interval = setInterval(loadDraftCount, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
   const navigationGroups: { [key: string]: NavigationItem[] } = {
-    scheduling: [
+    primary: [
       {
         key: 'dashboard',
         label: 'Dashboard',
@@ -103,28 +122,29 @@ const SidebarNavigation: React.FC<SidebarNavigationProps> = ({ open, onToggle })
         description: 'Overview and quick actions'
       },
       {
-        key: 'upload',
-        label: 'Upload Schedule',
-        path: '/upload',
-        icon: <UploadIcon />,
-        description: 'Import Excel/CSV schedule data'
-      },
-      {
         key: 'drafts',
         label: 'Draft Schedules',
         path: '/drafts',
         icon: <DraftsIcon />,
-        description: 'Manage work-in-progress schedules'
+        description: 'Continue working on schedules',
+        badge: draftCount > 0 ? draftCount.toString() : undefined
+      },
+      {
+        key: 'upload',
+        label: 'New Schedule',
+        path: '/upload',
+        icon: <UploadIcon />,
+        description: 'Start creating a new schedule'
       },
       {
         key: 'schedules',
-        label: 'View Schedules',
+        label: 'Browse Schedules',
         path: '/schedules',
         icon: <ViewIcon />,
-        description: 'Browse published schedules'
+        description: 'View published schedules'
       }
     ],
-    configuration: [
+    advanced: [
       {
         key: 'block-configuration',
         label: 'Block Configuration',
@@ -148,7 +168,7 @@ const SidebarNavigation: React.FC<SidebarNavigationProps> = ({ open, onToggle })
         description: 'Configure route settings'
       }
     ],
-    system: [
+    settings: [
       {
         key: 'settings',
         label: 'Settings',
@@ -208,18 +228,18 @@ const SidebarNavigation: React.FC<SidebarNavigationProps> = ({ open, onToggle })
 
   const getGroupLabel = (groupKey: string) => {
     const labels = {
-      scheduling: 'Scheduling',
-      configuration: 'Configuration', 
-      system: 'System'
+      primary: 'Main Navigation',
+      advanced: 'Advanced Tools', 
+      settings: 'System'
     };
     return labels[groupKey as keyof typeof labels] || groupKey;
   };
 
   const getGroupIcon = (groupKey: string) => {
     const icons = {
-      scheduling: <DashboardIcon />,
-      configuration: <ConfigIcon />,
-      system: <SettingsIcon />
+      primary: <DashboardIcon />,
+      advanced: <ConfigIcon />,
+      settings: <SettingsIcon />
     };
     return icons[groupKey as keyof typeof icons] || <DashboardIcon />;
   };
@@ -438,8 +458,8 @@ const SidebarNavigation: React.FC<SidebarNavigationProps> = ({ open, onToggle })
                                   sx={{
                                     height: 20,
                                     fontSize: '0.625rem',
-                                    backgroundColor: 'warning.light',
-                                    color: 'warning.contrastText'
+                                    backgroundColor: 'secondary.main',
+                                    color: 'secondary.contrastText'
                                   }}
                                 />
                               )}

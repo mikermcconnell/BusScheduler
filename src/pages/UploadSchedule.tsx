@@ -64,7 +64,7 @@ const UploadSchedule: React.FC = () => {
     draft, 
     loading: draftLoading, 
     error: draftError,
-    isSaving 
+    isSaving: isDraftSaving 
   } = useWorkflowDraft();
   const [extractedData, setExtractedData] = useState<ParsedExcelData | null>(null);
   const [csvData, setCsvData] = useState<ParsedCsvData | null>(null);
@@ -326,7 +326,7 @@ const UploadSchedule: React.FC = () => {
     };
   }, [extractedData, csvData, validation, summarySchedule, autoSaveDraft]);
 
-  const handleFileUploaded = useCallback((
+  const handleFileUploaded = useCallback(async (
     data: { extractedData?: ParsedExcelData; csvData?: ParsedCsvData; fileType: 'excel' | 'csv' }, 
     fileName: string, 
     validation: ValidationResult, 
@@ -343,6 +343,33 @@ const UploadSchedule: React.FC = () => {
     setFileType(data.fileType);
     setValidation(validation);
     
+    // Create a workflow draft with the uploaded data
+    const uploadedData = data.extractedData || data.csvData;
+    if (uploadedData) {
+      const result = await createDraftFromUpload(fileName, data.fileType, uploadedData);
+      if (result.success && result.draftId) {
+        setCurrentDraftId(result.draftId);
+        console.log('✅ Created workflow draft:', result.draftId);
+        
+        // For CSV files, automatically redirect to TimePoints page
+        if (data.fileType === 'csv') {
+          setTimeout(() => {
+            navigate('/timepoints', {
+              state: {
+                draftId: result.draftId,
+                csvData: data.csvData,
+                fileName,
+                fromUpload: true
+              }
+            });
+          }, 1000);
+          return;
+        }
+      } else {
+        console.error('Failed to create workflow draft:', result.error);
+      }
+    }
+    
     // Mark the upload step as complete in the workflow
     workflowStateService.completeStep('upload', {
       fileName,
@@ -356,7 +383,7 @@ const UploadSchedule: React.FC = () => {
     setProcessError(null);
     setSummarySchedule(null);
     setCalculationResults(null);
-  }, []);
+  }, [createDraftFromUpload, navigate]);
 
   const handleUploadError = useCallback((error: string) => {
     setUploadError(error);
@@ -417,32 +444,6 @@ const UploadSchedule: React.FC = () => {
       setSummarySchedule(summary);
       setCalculationResults(calculations);
       setActiveStep(2); // Move to results step
-
-      // For CSV files, automatically save and redirect to timepoints page
-      if (fileType === 'csv') {
-        // Save the schedule automatically
-        const saveResult = scheduleStorage.saveSchedule(
-          summary, 
-          fileType,
-          uploadedFileName || undefined,
-          csvData
-        );
-        
-        if (saveResult.success) {
-          setSavedScheduleId(saveResult.scheduleId!);
-          // Redirect to timepoints page after brief delay
-          setTimeout(() => {
-            navigate('/drafts/timepoints', {
-              state: {
-                csvData,
-                dayType: selectedDayType,
-                savedScheduleId: saveResult.scheduleId
-              }
-            });
-          }, 1000);
-          return; // Exit early for CSV auto-redirect
-        }
-      }
 
     } catch (error) {
       setProcessError(error instanceof Error ? error.message : 'Processing failed');
@@ -521,10 +522,13 @@ const UploadSchedule: React.FC = () => {
       <Typography variant="subtitle1" color="text.secondary" sx={{ mb: 4 }}>
         Import your bus schedule data from Excel or CSV files and generate formatted summaries
       </Typography>
-
       {/* Draft Management */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid item xs={12} md={8}>
+        <Grid
+          size={{
+            xs: 12,
+            md: 8
+          }}>
           <Card>
             <CardContent>
               <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
@@ -582,7 +586,11 @@ const UploadSchedule: React.FC = () => {
           </Card>
         </Grid>
         
-        <Grid item xs={12} md={4}>
+        <Grid
+          size={{
+            xs: 12,
+            md: 4
+          }}>
           <Card>
             <CardContent>
               <Typography variant="h6" gutterBottom>
@@ -610,7 +618,6 @@ const UploadSchedule: React.FC = () => {
           </Card>
         </Grid>
       </Grid>
-
       {/* Draft Schedule List */}
       {showDrafts && (
         <Box sx={{ mb: 4 }}>
@@ -626,7 +633,6 @@ const UploadSchedule: React.FC = () => {
           />
         </Box>
       )}
-
       {/* Progress Stepper */}
       <Card sx={{ mb: 4 }}>
         <CardContent>
@@ -651,7 +657,6 @@ const UploadSchedule: React.FC = () => {
           )}
         </CardContent>
       </Card>
-
       {/* Step 1: File Upload */}
       {activeStep === 0 && (
         <>
@@ -700,7 +705,6 @@ const UploadSchedule: React.FC = () => {
           />
         </>
       )}
-
       {/* Day Type Selection for CSV files */}
       {activeStep === 1 && fileType === 'csv' && csvData && validation && (
         <Card sx={{ mb: 4 }}>
@@ -733,12 +737,15 @@ const UploadSchedule: React.FC = () => {
           </CardContent>
         </Card>
       )}
-
       {/* Step 2: Process Data */}
       {activeStep === 1 && (extractedData || csvData) && validation && (
         <>
           <Grid container spacing={3} sx={{ mb: 4 }}>
-            <Grid item xs={12} md={4}>
+            <Grid
+              size={{
+                xs: 12,
+                md: 4
+              }}>
               <Card>
                 <CardContent>
                   <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
@@ -755,7 +762,11 @@ const UploadSchedule: React.FC = () => {
               </Card>
             </Grid>
             
-            <Grid item xs={12} md={4}>
+            <Grid
+              size={{
+                xs: 12,
+                md: 4
+              }}>
               <Card>
                 <CardContent>
                   <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
@@ -780,7 +791,11 @@ const UploadSchedule: React.FC = () => {
               </Card>
             </Grid>
             
-            <Grid item xs={12} md={4}>
+            <Grid
+              size={{
+                xs: 12,
+                md: 4
+              }}>
               <Card>
                 <CardContent>
                   <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
@@ -851,7 +866,6 @@ const UploadSchedule: React.FC = () => {
           </Card>
         </>
       )}
-
       {/* Step 3: View Results */}
       {activeStep === 2 && summarySchedule && calculationResults && (
         <>
@@ -921,7 +935,6 @@ const UploadSchedule: React.FC = () => {
           />
         </>
       )}
-
       {/* Error Displays */}
       {uploadError && (
         <Alert severity="error" sx={{ mt: 3 }}>
@@ -930,7 +943,6 @@ const UploadSchedule: React.FC = () => {
           </Typography>
         </Alert>
       )}
-
       {processError && (
         <Alert severity="error" sx={{ mt: 3 }}>
           <Typography variant="body2">
@@ -938,7 +950,6 @@ const UploadSchedule: React.FC = () => {
           </Typography>
         </Alert>
       )}
-
       {/* Detailed Information Accordion - Available when data is uploaded */}
       {(extractedData || csvData) && validation && activeStep >= 1 && (
         <Box sx={{ mt: 4 }}>

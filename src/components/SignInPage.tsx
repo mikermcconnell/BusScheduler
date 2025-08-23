@@ -78,7 +78,11 @@ export const SignInPage: React.FC = () => {
       <Container maxWidth="lg">
         <Grid container spacing={4} alignItems="center">
           {/* Left side - App info */}
-          <Grid item xs={12} md={6}>
+          <Grid
+            size={{
+              xs: 12,
+              md: 6
+            }}>
             <Box sx={{ color: 'white', mb: 4 }}>
               <Box display="flex" alignItems="center" mb={3}>
                 <ScheduleIcon sx={{ fontSize: 48, mr: 2 }} />
@@ -100,7 +104,7 @@ export const SignInPage: React.FC = () => {
               {/* Features */}
               <Grid container spacing={3}>
                 {features.map((feature, index) => (
-                  <Grid item xs={12} key={index}>
+                  <Grid key={index} size={12}>
                     <Box display="flex" alignItems="center">
                       <Box sx={{ mr: 2 }}>
                         {feature.icon}
@@ -121,7 +125,11 @@ export const SignInPage: React.FC = () => {
           </Grid>
 
           {/* Right side - Sign in */}
-          <Grid item xs={12} md={6}>
+          <Grid
+            size={{
+              xs: 12,
+              md: 6
+            }}>
             <Card sx={{ maxWidth: 400, mx: 'auto' }}>
               <CardContent sx={{ p: 4 }}>
                 <Box textAlign="center" mb={3}>

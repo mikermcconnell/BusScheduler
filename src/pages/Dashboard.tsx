@@ -58,11 +58,16 @@ const Dashboard: React.FC = () => {
       <Typography variant="subtitle1" color="text.secondary" sx={{ mb: 4 }}>
         Welcome to the Bus Route Scheduler. Manage your bus schedules and routes efficiently.
       </Typography>
-
       {/* Statistics Cards */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
         {stats.map((stat) => (
-          <Grid item xs={12} sm={6} md={3} key={stat.label}>
+          <Grid
+            key={stat.label}
+            size={{
+              xs: 12,
+              sm: 6,
+              md: 3
+            }}>
             <Paper
               sx={{
                 p: 3,
@@ -81,14 +86,18 @@ const Dashboard: React.FC = () => {
           </Grid>
         ))}
       </Grid>
-
       {/* Quick Actions */}
       <Typography variant="h5" component="h2" gutterBottom>
         Quick Actions
       </Typography>
       <Grid container spacing={3}>
         {quickActions.map((action) => (
-          <Grid item xs={12} md={4} key={action.title}>
+          <Grid
+            key={action.title}
+            size={{
+              xs: 12,
+              md: 4
+            }}>
             <Card
               sx={{
                 height: '100%',
@@ -132,7 +141,6 @@ const Dashboard: React.FC = () => {
           </Grid>
         ))}
       </Grid>
-
       {/* Recent Activity */}
       <Box sx={{ mt: 4 }}>
         <Typography variant="h5" component="h2" gutterBottom>

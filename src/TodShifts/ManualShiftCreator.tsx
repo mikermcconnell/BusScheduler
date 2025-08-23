@@ -137,7 +137,11 @@ const ManualShiftCreator: React.FC<Props> = ({ onShiftCreated }) => {
         
         <Grid container spacing={3}>
           {/* Basic Information */}
-          <Grid item xs={12} md={3}>
+          <Grid
+            size={{
+              xs: 12,
+              md: 3
+            }}>
             <TextField
               fullWidth
               label="Shift Code"
@@ -149,7 +153,11 @@ const ManualShiftCreator: React.FC<Props> = ({ onShiftCreated }) => {
             />
           </Grid>
           
-          <Grid item xs={12} md={3}>
+          <Grid
+            size={{
+              xs: 12,
+              md: 3
+            }}>
             <FormControl fullWidth>
               <InputLabel>Zone</InputLabel>
               <Select
@@ -164,7 +172,11 @@ const ManualShiftCreator: React.FC<Props> = ({ onShiftCreated }) => {
             </FormControl>
           </Grid>
           
-          <Grid item xs={12} md={3}>
+          <Grid
+            size={{
+              xs: 12,
+              md: 3
+            }}>
             <TimePicker
               label="Start Time"
               value={dayjs(`2024-01-01 ${shift.startTime}`)}
@@ -173,7 +185,11 @@ const ManualShiftCreator: React.FC<Props> = ({ onShiftCreated }) => {
             />
           </Grid>
           
-          <Grid item xs={12} md={3}>
+          <Grid
+            size={{
+              xs: 12,
+              md: 3
+            }}>
             <TimePicker
               label="End Time"
               value={dayjs(`2024-01-01 ${shift.endTime}`)}
@@ -183,13 +199,17 @@ const ManualShiftCreator: React.FC<Props> = ({ onShiftCreated }) => {
           </Grid>
 
           {/* Break Configuration */}
-          <Grid item xs={12}>
+          <Grid size={12}>
             <Typography variant="subtitle1" gutterBottom>
               Break Configuration
             </Typography>
           </Grid>
           
-          <Grid item xs={12} md={3}>
+          <Grid
+            size={{
+              xs: 12,
+              md: 3
+            }}>
             <TextField
               fullWidth
               type="number"
@@ -200,7 +220,11 @@ const ManualShiftCreator: React.FC<Props> = ({ onShiftCreated }) => {
             />
           </Grid>
           
-          <Grid item xs={12} md={3}>
+          <Grid
+            size={{
+              xs: 12,
+              md: 3
+            }}>
             <TimePicker
               label="Break Start"
               value={shift.breakStart ? dayjs(`2024-01-01 ${shift.breakStart}`) : null}
@@ -209,7 +233,11 @@ const ManualShiftCreator: React.FC<Props> = ({ onShiftCreated }) => {
             />
           </Grid>
           
-          <Grid item xs={12} md={3}>
+          <Grid
+            size={{
+              xs: 12,
+              md: 3
+            }}>
             <TimePicker
               label="Break End"
               value={shift.breakEnd ? dayjs(`2024-01-01 ${shift.breakEnd}`) : null}
@@ -218,7 +246,11 @@ const ManualShiftCreator: React.FC<Props> = ({ onShiftCreated }) => {
             />
           </Grid>
           
-          <Grid item xs={12} md={3}>
+          <Grid
+            size={{
+              xs: 12,
+              md: 3
+            }}>
             <FormControlLabel
               control={
                 <Checkbox
@@ -233,13 +265,17 @@ const ManualShiftCreator: React.FC<Props> = ({ onShiftCreated }) => {
           {/* Meal Break (for shifts over 6 hours) */}
           {calculateTotalHours() > 6 && (
             <>
-              <Grid item xs={12}>
+              <Grid size={12}>
                 <Typography variant="subtitle1" gutterBottom>
                   Meal Break (Required for shifts over 6 hours)
                 </Typography>
               </Grid>
               
-              <Grid item xs={12} md={4}>
+              <Grid
+                size={{
+                  xs: 12,
+                  md: 4
+                }}>
                 <TimePicker
                   label="Meal Break Start"
                   value={shift.mealBreakStart ? dayjs(`2024-01-01 ${shift.mealBreakStart}`) : null}
@@ -248,7 +284,11 @@ const ManualShiftCreator: React.FC<Props> = ({ onShiftCreated }) => {
                 />
               </Grid>
               
-              <Grid item xs={12} md={4}>
+              <Grid
+                size={{
+                  xs: 12,
+                  md: 4
+                }}>
                 <TimePicker
                   label="Meal Break End"
                   value={shift.mealBreakEnd ? dayjs(`2024-01-01 ${shift.mealBreakEnd}`) : null}
@@ -260,7 +300,7 @@ const ManualShiftCreator: React.FC<Props> = ({ onShiftCreated }) => {
           )}
 
           {/* Validation Results */}
-          <Grid item xs={12}>
+          <Grid size={12}>
             <Box sx={{ mt: 2 }}>
               <Typography variant="subtitle1" gutterBottom>
                 Union Compliance Check
@@ -309,7 +349,7 @@ const ManualShiftCreator: React.FC<Props> = ({ onShiftCreated }) => {
           </Grid>
 
           {/* Summary and Actions */}
-          <Grid item xs={12}>
+          <Grid size={12}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 2 }}>
               <Box>
                 <Typography variant="h6">

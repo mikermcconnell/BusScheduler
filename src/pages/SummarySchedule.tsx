@@ -148,10 +148,13 @@ const SummarySchedule: React.FC = () => {
           </Button>
         </Box>
       </Box>
-
       {/* Schedule Overview */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid item xs={12} md={3}>
+        <Grid
+          size={{
+            xs: 12,
+            md: 3
+          }}>
           <Card>
             <CardContent sx={{ textAlign: 'center' }}>
               <ScheduleIcon sx={{ fontSize: 40, color: 'primary.main', mb: 1 }} />
@@ -166,7 +169,11 @@ const SummarySchedule: React.FC = () => {
             </CardContent>
           </Card>
         </Grid>
-        <Grid item xs={12} md={3}>
+        <Grid
+          size={{
+            xs: 12,
+            md: 3
+          }}>
           <Card>
             <CardContent sx={{ textAlign: 'center' }}>
               <Typography variant="h6" color="success.main">
@@ -178,7 +185,11 @@ const SummarySchedule: React.FC = () => {
             </CardContent>
           </Card>
         </Grid>
-        <Grid item xs={12} md={3}>
+        <Grid
+          size={{
+            xs: 12,
+            md: 3
+          }}>
           <Card>
             <CardContent sx={{ textAlign: 'center' }}>
               <Typography variant="h6">
@@ -190,7 +201,11 @@ const SummarySchedule: React.FC = () => {
             </CardContent>
           </Card>
         </Grid>
-        <Grid item xs={12} md={3}>
+        <Grid
+          size={{
+            xs: 12,
+            md: 3
+          }}>
           <Card>
             <CardContent sx={{ textAlign: 'center' }}>
               <Typography variant="h6">
@@ -203,7 +218,6 @@ const SummarySchedule: React.FC = () => {
           </Card>
         </Grid>
       </Grid>
-
       <Card>
         <CardContent>
           <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>

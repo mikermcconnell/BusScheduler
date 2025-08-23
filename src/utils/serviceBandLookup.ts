@@ -16,12 +16,12 @@ export const getServiceBandForTime = (
     // Handle time ranges that cross midnight
     if (startMinutes <= endMinutes) {
       // Normal range (e.g., 06:00 - 22:00)
-      if (timeMinutes >= startMinutes && timeMinutes < endMinutes) {
+      if (timeMinutes >= startMinutes && timeMinutes <= endMinutes) {
         return band;
       }
     } else {
       // Range crosses midnight (e.g., 22:00 - 06:00)
-      if (timeMinutes >= startMinutes || timeMinutes < endMinutes) {
+      if (timeMinutes >= startMinutes || timeMinutes <= endMinutes) {
         return band;
       }
     }

@@ -2,7 +2,7 @@
  * Unified workflow state management types
  */
 
-import { SummarySchedule, ValidationResult, TimePoint } from './schedule';
+import { SummarySchedule, TimePoint, ServiceBand, ScheduleValidationResult } from './schedule';
 import { ParsedExcelData } from '../utils/excelParser';
 import { ParsedCsvData } from '../utils/csvParser';
 
@@ -12,12 +12,8 @@ export interface BlockConfiguration {
   endTime: string;
 }
 
-export interface ServiceBand {
-  id: string;
-  name: string;
-  color: string;
-  segmentTimes: number[];
-}
+// ServiceBand type is already defined in schedule.ts, using that definition
+// The workflow system references ServiceBand from schedule.ts
 
 export interface TimePointData {
   timePeriod: string;
@@ -50,7 +46,7 @@ export interface TimepointsModification {
 export interface ScheduleGenerationMetadata {
   generationMethod: 'block-based' | 'frequency-based';
   parameters: Record<string, any>;
-  validationResults: ValidationResult[];
+  validationResults: ScheduleValidationResult[];
   performanceMetrics: {
     generationTimeMs: number;
     tripCount: number;

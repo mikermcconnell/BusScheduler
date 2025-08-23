@@ -7,13 +7,12 @@ import {
   WorkflowDraftState, 
   TimepointsModification, 
   BlockConfiguration,
-  ServiceBand,
   TimePointData,
   OutlierData,
   ScheduleGenerationMetadata,
   WorkflowDraftResult
 } from '../types/workflow';
-import { SummarySchedule } from '../types/schedule';
+import { SummarySchedule, ServiceBand, ScheduleValidationResult } from '../types/schedule';
 import { ParsedExcelData } from '../utils/excelParser';
 import { ParsedCsvData } from '../utils/csvParser';
 import { scheduleStorage } from './scheduleStorage';
@@ -348,12 +347,23 @@ class WorkflowDraftService {
           
           // Add existing summary schedule if present
           if (oldDraft.summarySchedule) {
+            // Convert ValidationResult to ScheduleValidationResult
+            const validationResult: ScheduleValidationResult = oldDraft.validation ? {
+              isValid: oldDraft.validation.isValid,
+              errors: oldDraft.validation.errors.map(e => e.message),
+              warnings: oldDraft.validation.warnings.map(w => w.message)
+            } : {
+              isValid: true,
+              errors: [],
+              warnings: []
+            };
+            
             workflowDraft.summarySchedule = {
               schedule: oldDraft.summarySchedule,
               metadata: {
                 generationMethod: 'block-based',
                 parameters: {},
-                validationResults: oldDraft.validation ? [oldDraft.validation] : [],
+                validationResults: [validationResult],
                 performanceMetrics: {
                   generationTimeMs: 0,
                   tripCount: 0,

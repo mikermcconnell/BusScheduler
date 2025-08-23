@@ -236,7 +236,11 @@ export const GoogleDriveSettings: React.FC = () => {
                 </Typography>
                 <Grid container spacing={2}>
                   {backupInfo.schedules && (
-                    <Grid item xs={12} sm={6}>
+                    <Grid
+                      size={{
+                        xs: 12,
+                        sm: 6
+                      }}>
                       <Box display="flex" alignItems="center" mb={1}>
                         <CheckCircle color="success" sx={{ mr: 1, fontSize: 16 }} />
                         <Typography variant="body2" fontWeight="medium">
@@ -252,7 +256,11 @@ export const GoogleDriveSettings: React.FC = () => {
                     </Grid>
                   )}
                   {backupInfo.drafts && (
-                    <Grid item xs={12} sm={6}>
+                    <Grid
+                      size={{
+                        xs: 12,
+                        sm: 6
+                      }}>
                       <Box display="flex" alignItems="center" mb={1}>
                         <CheckCircle color="success" sx={{ mr: 1, fontSize: 16 }} />
                         <Typography variant="body2" fontWeight="medium">

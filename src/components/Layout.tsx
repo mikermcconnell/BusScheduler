@@ -47,9 +47,27 @@ const Layout: React.FC = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   
-  const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // Initialize sidebar state with persistence and auto-open behavior
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    if (isMobile) return false; // Mobile: closed by default
+    return true; // Desktop: always open on startup
+  });
   
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    const saved = localStorage.getItem('sidebarCollapsed');
+    return saved ? JSON.parse(saved) : false; // Default to expanded
+  });
+  
+  // Handle responsive sidebar behavior
+  React.useEffect(() => {
+    setSidebarOpen(!isMobile); // Auto-open on desktop, close on mobile
+  }, [isMobile]);
+
+  // Persist collapsed state
+  React.useEffect(() => {
+    localStorage.setItem('sidebarCollapsed', JSON.stringify(sidebarCollapsed));
+  }, [sidebarCollapsed]);
+
   // Keyboard shortcuts
   const { helpVisible, setHelpVisible } = useKeyboardShortcuts({
     enabled: true,
