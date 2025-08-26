@@ -239,9 +239,13 @@ const BlockSummarySchedule: React.FC = () => {
     blockNumber?: number;
     startTime?: string;
     isEarlyTrip?: boolean;  // Flag for early trip (before first existing trip)
+    isMidRouteTrip?: boolean; // Flag for trip inserted between existing trips
+    afterTripNumber?: number; // The trip number this new trip should come after
+    beforeTripNumber?: number; // The trip number this new trip should come before
   } | null>(null);
   const [newTripBlockNumber, setNewTripBlockNumber] = useState<string>('');
   const [newTripStartTime, setNewTripStartTime] = useState<string>('');
+  const [newTripEndTime, setNewTripEndTime] = useState<string>(''); // For mid-route trips
   
   // Service band editing state
   const [serviceBandDialog, setServiceBandDialog] = useState<{
@@ -1092,6 +1096,40 @@ const BlockSummarySchedule: React.FC = () => {
     });
   }, [schedule.trips, schedule.cycleTimeMinutes]);
   
+  // Handle adding mid-route trip (between existing trips)
+  const handleAddMidRouteTripOpen = useCallback((afterTripNumber: number, beforeTripNumber: number) => {
+    const afterTrip = schedule.trips.find(t => t.tripNumber === afterTripNumber);
+    const beforeTrip = schedule.trips.find(t => t.tripNumber === beforeTripNumber);
+    
+    if (!afterTrip || !beforeTrip) return;
+    
+    // Find next available block number
+    const usedBlocks = new Set(schedule.trips.map(t => t.blockNumber));
+    let suggestedBlock = 1;
+    while (usedBlocks.has(suggestedBlock)) {
+      suggestedBlock++;
+    }
+    
+    // Calculate suggested start time (midpoint between trips)
+    const afterEndTime = afterTrip.departureTimes[schedule.timePoints[schedule.timePoints.length - 1]?.id] || afterTrip.departureTime;
+    const beforeStartTime = beforeTrip.departureTime;
+    
+    const afterMinutes = timeStringToMinutes(afterEndTime);
+    const beforeMinutes = timeStringToMinutes(beforeStartTime);
+    const midMinutes = Math.floor((afterMinutes + beforeMinutes) / 2);
+    
+    setNewTripBlockNumber(suggestedBlock.toString());
+    setNewTripStartTime(minutesToTime(afterMinutes + 5)); // Start 5 minutes after previous trip ends
+    setNewTripEndTime(minutesToTime(beforeMinutes - 5)); // End 5 minutes before next trip starts
+    
+    setAddTripDialog({
+      open: true,
+      isMidRouteTrip: true,
+      afterTripNumber,
+      beforeTripNumber
+    });
+  }, [schedule.trips, schedule.timePoints]);
+  
   // Handle service band click
   const handleServiceBandClick = useCallback((tripNumber: number, currentBand: ServiceBand) => {
     setServiceBandDialog({
@@ -1150,7 +1188,7 @@ const BlockSummarySchedule: React.FC = () => {
         Math.max(max, trip.tripNumber), 0);
       const newTripNumber = maxTripNumber + 1;
       
-      // For early trips, calculate the end time to match the first existing trip
+      // Calculate end time based on trip type
       let calculatedEndTime: string | null = null;
       if (addTripDialog.isEarlyTrip) {
         const blockTrips = prevSchedule.trips.filter(t => t.blockNumber === blockNumber)
@@ -1161,6 +1199,9 @@ const BlockSummarySchedule: React.FC = () => {
           // The early trip should end (depart from last stop) when the first trip starts
           calculatedEndTime = firstTrip.departureTime;
         }
+      } else if (addTripDialog.isMidRouteTrip && newTripEndTime) {
+        // For mid-route trips, use the user-specified end time
+        calculatedEndTime = newTripEndTime;
       }
 
       // Determine service band based on start time
@@ -1194,7 +1235,7 @@ const BlockSummarySchedule: React.FC = () => {
       };
 
       // Generate times for each timepoint
-      if (addTripDialog.isEarlyTrip && calculatedEndTime) {
+      if ((addTripDialog.isEarlyTrip || addTripDialog.isMidRouteTrip) && calculatedEndTime) {
         // For early trips, work backward from the end time
         const totalTripTime = timeStringToMinutes(calculatedEndTime) - timeStringToMinutes(newTripStartTime);
         const numTimepoints = prevSchedule.timePoints.length;
@@ -1285,12 +1326,14 @@ const BlockSummarySchedule: React.FC = () => {
     setAddTripDialog(null);
     setNewTripBlockNumber('');
     setNewTripStartTime('');
-  }, [addTripDialog, newTripBlockNumber, newTripStartTime, determineServiceBandForTime]);
+    setNewTripEndTime('');
+  }, [addTripDialog, newTripBlockNumber, newTripStartTime, newTripEndTime, determineServiceBandForTime]);
 
   const handleAddTripCancel = useCallback(() => {
     setAddTripDialog(null);
     setNewTripBlockNumber('');
     setNewTripStartTime('');
+    setNewTripEndTime('');
   }, []);
 
   // Calculate summary statistics for the schedule
@@ -1806,7 +1849,7 @@ const BlockSummarySchedule: React.FC = () => {
                   </Box>
                 </>
               ) : (
-                // Show restoration hint for inactive timepoints
+                // Show restoration hint and recovery time for inactive timepoints
                 <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: '100%', height: '40px', gap: '2px' }}>
                   <Typography sx={{ 
                     fontSize: '10px',
@@ -1815,13 +1858,41 @@ const BlockSummarySchedule: React.FC = () => {
                   }}>
                     ---
                   </Typography>
+                  {/* Show recovery time if it exists in original recovery times */}
+                  {trip.originalRecoveryTimes && trip.originalRecoveryTimes[tp.id] !== undefined && (
+                    <Typography 
+                      component="div"
+                      onClick={(e) => {
+                        e.stopPropagation(); // Prevent triggering the restore dialog
+                        onRecoveryClick(trip.tripNumber.toString(), tp.id, trip.originalRecoveryTimes?.[tp.id] || 0);
+                      }}
+                      sx={{ 
+                        fontSize: '11px',
+                        color: '#60a5fa',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        padding: '1px 4px',
+                        borderRadius: '2px',
+                        backgroundColor: 'rgba(96, 165, 250, 0.1)',
+                        border: '1px solid rgba(96, 165, 250, 0.3)',
+                        display: 'inline-block',
+                        transition: 'all 0.15s ease-in-out',
+                        '&:hover': {
+                          backgroundColor: 'rgba(96, 165, 250, 0.2)',
+                          transform: 'scale(1.05)'
+                        }
+                      }}
+                    >
+                      R: {trip.originalRecoveryTimes[tp.id]}min
+                    </Typography>
+                  )}
                   <Typography sx={{ 
                     fontSize: '8px',
                     color: '#6b7280',
                     fontStyle: 'italic',
                     textAlign: 'center'
                   }}>
-                    Click to restore
+                    Click box to restore
                   </Typography>
                 </Box>
               )}
@@ -2548,7 +2619,7 @@ const BlockSummarySchedule: React.FC = () => {
                             padding: '12px'
                           }}
                         >
-                          + Add Early Trip
+                          +
                         </TableCell>
                       </TableRow>
                     )}
@@ -2562,22 +2633,55 @@ const BlockSummarySchedule: React.FC = () => {
                     
                     {visibleTrips.map((trip, idx) => {
                       const originalIdx = sortedTrips.length > 50 ? visibleRange.start + idx : idx;
+                      const nextTrip = visibleTrips[idx + 1];
+                      
                       return (
-                        <TripRow
-                          key={trip.tripNumber}
-                          trip={trip}
-                          idx={originalIdx}
-                          timePoints={schedule.timePoints}
-                          onRecoveryClick={handleRecoveryClick}
-                          onServiceBandClick={handleServiceBandClick}
-                          onTripEnd={handleTripEnd}
-                          onTripRestore={handleTripRestore}
-                          editingRecovery={editingRecovery}
-                          tempRecoveryValue={tempRecoveryValue}
-                          onRecoveryChange={setTempRecoveryValue}
-                          onRecoverySubmit={handleRecoverySubmit}
-                          onRecoveryKeyDown={handleRecoveryKeyDown}
-                        />
+                        <React.Fragment key={trip.tripNumber}>
+                          <TripRow
+                            trip={trip}
+                            idx={originalIdx}
+                            timePoints={schedule.timePoints}
+                            onRecoveryClick={handleRecoveryClick}
+                            onServiceBandClick={handleServiceBandClick}
+                            onTripEnd={handleTripEnd}
+                            onTripRestore={handleTripRestore}
+                            editingRecovery={editingRecovery}
+                            tempRecoveryValue={tempRecoveryValue}
+                            onRecoveryChange={setTempRecoveryValue}
+                            onRecoverySubmit={handleRecoverySubmit}
+                            onRecoveryKeyDown={handleRecoveryKeyDown}
+                          />
+                          {/* Add trip button between trips */}
+                          {nextTrip && (
+                            <TableRow
+                              sx={{
+                                height: '24px',
+                                backgroundColor: 'transparent',
+                                cursor: 'pointer',
+                                opacity: 0,
+                                transition: 'opacity 0.2s ease-in-out',
+                                '&:hover': {
+                                  opacity: 1,
+                                  backgroundColor: '#f0f9ff'
+                                }
+                              }}
+                              onClick={() => handleAddMidRouteTripOpen(trip.tripNumber, nextTrip.tripNumber)}
+                            >
+                              <TableCell 
+                                colSpan={3 + schedule.timePoints.length + 3}
+                                sx={{ 
+                                  textAlign: 'center',
+                                  fontSize: '16px',
+                                  fontWeight: 'bold',
+                                  color: '#3b82f6',
+                                  padding: '4px'
+                                }}
+                              >
+                                +
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </React.Fragment>
                       );
                     })}
                     
@@ -3340,19 +3444,28 @@ const BlockSummarySchedule: React.FC = () => {
           fontWeight: 'bold',
           color: '#1976d2'
         }}>
-          {addTripDialog?.isEarlyTrip ? 'Add Early Trip' : 'Add New Trip'}
+          {addTripDialog?.isEarlyTrip ? 'Add Early Trip' : 
+           addTripDialog?.isMidRouteTrip ? 'Add Mid-Route Trip' : 'Add New Trip'}
         </DialogTitle>
         <DialogContent>
+          {addTripDialog?.isMidRouteTrip && (
+            <Typography variant="body2" sx={{ mb: 2, mt: 2, color: '#666' }}>
+              Note: This trip requires a new block as existing blocks are occupied.
+              The trip will be inserted between Trip {addTripDialog.afterTripNumber} and Trip {addTripDialog.beforeTripNumber}.
+            </Typography>
+          )}
+          
           <TextField
             label="Block Number"
             type="number"
             value={newTripBlockNumber}
             onChange={(e) => handleBlockNumberChange(e.target.value)}
             fullWidth
-            sx={{ mb: 2, mt: 2 }}
+            sx={{ mb: 2, mt: addTripDialog?.isMidRouteTrip ? 0 : 2 }}
             InputProps={{
               inputProps: { min: 1, max: 99 }
             }}
+            helperText={addTripDialog?.isMidRouteTrip ? "A new block is required for this mid-route trip" : ""}
           />
           
           <TextField
@@ -3361,10 +3474,25 @@ const BlockSummarySchedule: React.FC = () => {
             value={newTripStartTime}
             onChange={(e) => setNewTripStartTime(e.target.value)}
             fullWidth
+            sx={{ mb: addTripDialog?.isMidRouteTrip ? 2 : 0 }}
             InputLabelProps={{
               shrink: true,
             }}
           />
+          
+          {addTripDialog?.isMidRouteTrip && (
+            <TextField
+              label="End Time (Departure from Last Stop)"
+              type="time"
+              value={newTripEndTime}
+              onChange={(e) => setNewTripEndTime(e.target.value)}
+              fullWidth
+              InputLabelProps={{
+                shrink: true
+              }}
+              helperText="When should this trip depart from the last stop?"
+            />
+          )}
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
           <Button 
