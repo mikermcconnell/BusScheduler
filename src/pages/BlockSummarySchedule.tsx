@@ -1,7 +1,6 @@
 import React, { useState, useRef, useCallback, useMemo, memo, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
-  Container,
   Typography,
   Box,
   Button,
@@ -16,13 +15,21 @@ import {
   TableRow,
   Paper,
   useTheme,
-  Tooltip
+  Tooltip,
+  TextField,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Menu,
+  MenuItem
 } from '@mui/material';
 import {
   ArrowBack as BackIcon,
   Fullscreen as FullscreenIcon,
   Publish as PublishIcon,
-  Schedule as ScheduleIcon
+  Schedule as ScheduleIcon,
+  Add as AddIcon
 } from '@mui/icons-material';
 import { calculateTripTime } from '../utils/dateHelpers';
 import { scheduleStorage } from '../services/scheduleStorage';
@@ -55,6 +62,10 @@ interface Trip {
   recoveryTimes: { [timePointId: string]: number };
   serviceBandInfo?: ServiceBandInfo;
   recoveryMinutes: number;
+  tripEndIndex?: number; // Index of the timepoint where trip ends (all subsequent points are inactive)
+  originalArrivalTimes?: { [timePointId: string]: string }; // Preserved original times for restoration
+  originalDepartureTimes?: { [timePointId: string]: string }; // Preserved original times for restoration
+  originalRecoveryTimes?: { [timePointId: string]: number }; // Preserved original recovery times for restoration
 }
 
 interface Schedule {
@@ -206,6 +217,31 @@ const BlockSummarySchedule: React.FC = () => {
   const [editingRecovery, setEditingRecovery] = useState<{tripId: string, timePointId: string} | null>(null);
   const [tempRecoveryValue, setTempRecoveryValue] = useState<string>('');
   
+  // Trip end functionality state
+  const [tripEndDialog, setTripEndDialog] = useState<{
+    open: boolean;
+    tripNumber: number;
+    timePointId: string;
+    timePointIndex: number;
+  } | null>(null);
+
+  // Trip restoration functionality state
+  const [tripRestoreDialog, setTripRestoreDialog] = useState<{
+    open: boolean;
+    tripNumber: number;
+    timePointId: string;
+    timePointIndex: number;
+  } | null>(null);
+
+  // Add trip functionality state
+  const [addTripDialog, setAddTripDialog] = useState<{
+    open: boolean;
+    blockNumber?: number;
+    startTime?: string;
+  } | null>(null);
+  const [newTripBlockNumber, setNewTripBlockNumber] = useState<string>('');
+  const [newTripStartTime, setNewTripStartTime] = useState<string>('');
+  
   // Store original travel times to maintain consistency when recovery changes
   const [originalTravelTimes, setOriginalTravelTimes] = useState<{[tripId: string]: number}>({});
 
@@ -232,6 +268,19 @@ const BlockSummarySchedule: React.FC = () => {
       return defaultTemplates;
     }
   });
+
+  // Target recovery percentage state
+  const [targetRecoveryPercentage, setTargetRecoveryPercentage] = useState<number>(() => {
+    try {
+      const stored = localStorage.getItem('targetRecoveryPercentage');
+      return stored ? parseFloat(stored) : 15; // Default to 15%
+    } catch {
+      return 15;
+    }
+  });
+
+  // Master recovery times state for "Apply to All Templates" functionality
+  const [masterRecoveryTimes, setMasterRecoveryTimes] = useState<number[]>([0, 1, 1, 2, 3]);
 
   // Mark the summary step as completed when the component loads
   useEffect(() => {
@@ -297,6 +346,23 @@ const BlockSummarySchedule: React.FC = () => {
     };
   });
 
+  // Initialize master recovery times based on schedule timepoints
+  useEffect(() => {
+    if (schedule.timePoints && schedule.timePoints.length > 0) {
+      const defaultTimes: number[] = [];
+      for (let i = 0; i < schedule.timePoints.length; i++) {
+        if (i === 0) {
+          defaultTimes.push(0); // First timepoint (departure) - no recovery
+        } else if (i === schedule.timePoints.length - 1) {
+          defaultTimes.push(3); // Last timepoint - end-of-route recovery
+        } else {
+          defaultTimes.push(1); // Middle timepoints - minimal recovery
+        }
+      }
+      setMasterRecoveryTimes(defaultTimes);
+    }
+  }, [schedule.timePoints]);
+
   // Process trips to add service bands based on TimePoints data
   useEffect(() => {
     if (schedule.trips.length > 0) {
@@ -356,7 +422,15 @@ const BlockSummarySchedule: React.FC = () => {
 
   // Helper function to convert time string to minutes
   const timeStringToMinutes = (timeString: string): number => {
+    if (!timeString || timeString.trim() === '' || timeString.includes('NaN')) {
+      console.warn(`Invalid time string provided: "${timeString}"`);
+      return NaN;
+    }
     const [hours, minutes] = timeString.split(':').map(Number);
+    if (isNaN(hours) || isNaN(minutes)) {
+      console.warn(`Could not parse time string: "${timeString}"`);
+      return NaN;
+    }
     return hours * 60 + minutes;
   };
 
@@ -371,6 +445,10 @@ const BlockSummarySchedule: React.FC = () => {
 
   // Helper function to convert minutes to time string
   const minutesToTime = (minutes: number): string => {
+    if (typeof minutes !== 'number' || isNaN(minutes)) {
+      console.warn(`Invalid minutes value provided: ${minutes}`);
+      return '00:00';
+    }
     const hours = Math.floor(minutes / 60) % 24;
     const mins = minutes % 60;
     return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
@@ -624,6 +702,476 @@ const BlockSummarySchedule: React.FC = () => {
     setTempRecoveryValue('');
   }, []);
 
+  // Trip end and restoration functionality handlers
+  const handleTimePointClick = useCallback((tripNumber: number, timePointId: string, timePointIndex: number, event: React.MouseEvent, isInactive: boolean = false) => {
+    event.stopPropagation();
+    
+    if (isInactive) {
+      // This is a black/inactive timepoint - show restoration dialog
+      setTripRestoreDialog({
+        open: true,
+        tripNumber,
+        timePointId,
+        timePointIndex
+      });
+    } else if (timePointIndex > 0) {
+      // This is an active timepoint and not the first one - show trip end dialog
+      setTripEndDialog({
+        open: true,
+        tripNumber,
+        timePointId,
+        timePointIndex
+      });
+    }
+  }, []);
+
+  const handleTripEndConfirm = useCallback(() => {
+    if (!tripEndDialog) return;
+
+    const { tripNumber, timePointIndex } = tripEndDialog;
+
+    setSchedule(prevSchedule => {
+      // Find the target trip to get its block number
+      const targetTrip = prevSchedule.trips.find(t => t.tripNumber === tripNumber);
+      if (!targetTrip) return prevSchedule;
+
+      const targetBlockNumber = targetTrip.blockNumber;
+
+      // Find all trips for this block, sorted by departure time
+      const blockTrips = prevSchedule.trips
+        .filter(t => t.blockNumber === targetBlockNumber)
+        .sort((a, b) => a.departureTime.localeCompare(b.departureTime));
+
+      // Find the index of the target trip within its block
+      const targetTripIndexInBlock = blockTrips.findIndex(t => t.tripNumber === tripNumber);
+
+      const updatedTrips = prevSchedule.trips.filter(trip => {
+        // If this is a different block, keep the trip
+        if (trip.blockNumber !== targetBlockNumber) {
+          return true;
+        }
+
+        // For trips in the same block
+        const tripIndexInBlock = blockTrips.findIndex(t => t.tripNumber === trip.tripNumber);
+        
+        // Keep trips that come before the target trip in the block
+        if (tripIndexInBlock < targetTripIndexInBlock) {
+          return true;
+        }
+        
+        // For the target trip, modify it to end at the specified timepoint
+        if (trip.tripNumber === tripNumber) {
+          const updatedTrip = { ...trip };
+          
+          // Set the trip end index
+          updatedTrip.tripEndIndex = timePointIndex;
+          
+          // Preserve original times before clearing them (for restoration)
+          if (!updatedTrip.originalArrivalTimes) {
+            updatedTrip.originalArrivalTimes = { ...trip.arrivalTimes };
+            updatedTrip.originalDepartureTimes = { ...trip.departureTimes };
+            updatedTrip.originalRecoveryTimes = { ...trip.recoveryTimes };
+          }
+          
+          // Clear all arrival and departure times for timepoints after the end point
+          const updatedArrivalTimes = { ...trip.arrivalTimes };
+          const updatedDepartureTimes = { ...trip.departureTimes };
+          const updatedRecoveryTimes = { ...trip.recoveryTimes };
+          
+          prevSchedule.timePoints.forEach((tp, index) => {
+            if (index === timePointIndex) {
+              // At the end point: keep arrival, remove departure and set recovery to 0
+              delete updatedDepartureTimes[tp.id];
+              updatedRecoveryTimes[tp.id] = 0;
+            } else if (index > timePointIndex) {
+              // After the end point: remove everything
+              delete updatedArrivalTimes[tp.id];
+              delete updatedDepartureTimes[tp.id];
+              updatedRecoveryTimes[tp.id] = 0;
+            }
+          });
+          
+          updatedTrip.arrivalTimes = updatedArrivalTimes;
+          updatedTrip.departureTimes = updatedDepartureTimes;
+          updatedTrip.recoveryTimes = updatedRecoveryTimes;
+          
+          // Update the trips array with the modified trip
+          const tripIndex = prevSchedule.trips.findIndex(t => t.tripNumber === tripNumber);
+          const newTripsArray = [...prevSchedule.trips];
+          newTripsArray[tripIndex] = updatedTrip;
+          return true; // Keep this trip (but it will be modified)
+        }
+        
+        // Remove all subsequent trips in the same block (tripIndexInBlock > targetTripIndexInBlock)
+        return false;
+      }).map(trip => {
+        // Apply the modification to the target trip
+        if (trip.tripNumber === tripNumber) {
+          const updatedTrip = { ...trip };
+          
+          // Set the trip end index
+          updatedTrip.tripEndIndex = timePointIndex;
+          
+          // Preserve original times before clearing them (for restoration)
+          if (!updatedTrip.originalArrivalTimes) {
+            updatedTrip.originalArrivalTimes = { ...trip.arrivalTimes };
+            updatedTrip.originalDepartureTimes = { ...trip.departureTimes };
+            updatedTrip.originalRecoveryTimes = { ...trip.recoveryTimes };
+          }
+          
+          // Clear all arrival and departure times for timepoints after the end point
+          const updatedArrivalTimes = { ...trip.arrivalTimes };
+          const updatedDepartureTimes = { ...trip.departureTimes };
+          const updatedRecoveryTimes = { ...trip.recoveryTimes };
+          
+          prevSchedule.timePoints.forEach((tp, index) => {
+            if (index === timePointIndex) {
+              // At the end point: keep arrival, remove departure and set recovery to 0
+              delete updatedDepartureTimes[tp.id];
+              updatedRecoveryTimes[tp.id] = 0;
+            } else if (index > timePointIndex) {
+              // After the end point: remove everything
+              delete updatedArrivalTimes[tp.id];
+              delete updatedDepartureTimes[tp.id];
+              updatedRecoveryTimes[tp.id] = 0;
+            }
+          });
+          
+          updatedTrip.arrivalTimes = updatedArrivalTimes;
+          updatedTrip.departureTimes = updatedDepartureTimes;
+          updatedTrip.recoveryTimes = updatedRecoveryTimes;
+          
+          return updatedTrip;
+        }
+        return trip;
+      });
+
+      const updatedSchedule = {
+        ...prevSchedule,
+        trips: updatedTrips
+      };
+
+      // Count how many trips were removed
+      const removedTripsCount = prevSchedule.trips.length - updatedTrips.length;
+      
+      // Persist to localStorage
+      try {
+        localStorage.setItem('currentSummarySchedule', JSON.stringify(updatedSchedule));
+        console.log(`✅ Trip ${tripNumber} (Block ${targetBlockNumber}) ended at timepoint index ${timePointIndex}`);
+        if (removedTripsCount > 0) {
+          console.log(`🚫 Removed ${removedTripsCount} subsequent trips for Block ${targetBlockNumber}`);
+        }
+      } catch (error) {
+        console.warn('Failed to persist schedule updates:', error);
+      }
+
+      return updatedSchedule;
+    });
+
+    setTripEndDialog(null);
+  }, [tripEndDialog]);
+
+  const handleTripEndCancel = useCallback(() => {
+    setTripEndDialog(null);
+  }, []);
+
+  // Trip restoration functionality handlers
+  const handleTripRestoreConfirm = useCallback(() => {
+    if (!tripRestoreDialog) return;
+
+    const { tripNumber } = tripRestoreDialog;
+
+    setSchedule(prevSchedule => {
+      // Find the target trip to get its block number
+      const targetTrip = prevSchedule.trips.find(t => t.tripNumber === tripNumber);
+      if (!targetTrip) return prevSchedule;
+
+      const targetBlockNumber = targetTrip.blockNumber;
+
+      // Restore the trip by removing tripEndIndex and restoring original times
+      const updatedTrips = prevSchedule.trips.map(trip => {
+        if (trip.tripNumber === tripNumber) {
+          // Create a new trip object without the tripEndIndex and original backups
+          const { 
+            tripEndIndex, 
+            originalArrivalTimes, 
+            originalDepartureTimes, 
+            originalRecoveryTimes,
+            ...restoredTripBase 
+          } = trip;
+          
+          // Restore the original times if they were preserved
+          const restoredTrip = {
+            ...restoredTripBase,
+            arrivalTimes: originalArrivalTimes || trip.arrivalTimes,
+            departureTimes: originalDepartureTimes || trip.departureTimes,
+            recoveryTimes: originalRecoveryTimes || trip.recoveryTimes
+          };
+          
+          console.log(`Restoring trip ${tripNumber} - removing tripEndIndex, restoring original times`);
+          console.log('Original arrival times:', originalArrivalTimes);
+          console.log('Original departure times:', originalDepartureTimes);
+          console.log('Original recovery times:', originalRecoveryTimes);
+          
+          return restoredTrip;
+        }
+        return trip;
+      });
+
+      // TODO: Block-level trip restoration
+      // To fully restore block-level trips that were removed, we would need to:
+      // 1. Store removed trip data before deletion
+      // 2. Regenerate subsequent trips in the block based on cycle times
+      // 3. Maintain proper service band logic for new trips
+      // For now, the current implementation only restores the individual trip
+      
+      const updatedSchedule = {
+        ...prevSchedule,
+        trips: updatedTrips
+      };
+
+      // Persist to localStorage
+      try {
+        localStorage.setItem('currentSummarySchedule', JSON.stringify(updatedSchedule));
+        console.log(`✅ Trip ${tripNumber} (Block ${targetBlockNumber}) fully restored with original schedule times`);
+        console.log(`ℹ️ Note: Block-level trip restoration (regenerating removed subsequent trips) is not yet implemented`);
+      } catch (error) {
+        console.warn('Failed to persist schedule updates:', error);
+      }
+
+      return updatedSchedule;
+    });
+
+    setTripRestoreDialog(null);
+  }, [tripRestoreDialog]);
+
+  const handleTripRestoreCancel = useCallback(() => {
+    setTripRestoreDialog(null);
+  }, []);
+
+  // Helper function to get the next start time for a specific block
+  const getNextStartTimeForBlock = useCallback((blockNumber: number): string => {
+    // Find all trips for this block
+    const blockTrips = schedule.trips.filter(t => t.blockNumber === blockNumber)
+      .sort((a, b) => timeStringToMinutes(a.departureTime) - timeStringToMinutes(b.departureTime));
+    
+    if (blockTrips.length === 0) {
+      // No trips for this block yet, return default
+      return '06:00';
+    }
+    
+    // Get the last trip for this block
+    const lastBlockTrip = blockTrips[blockTrips.length - 1];
+    
+    // Get the departure time from the last timepoint (end of route)
+    const lastTimePointId = schedule.timePoints[schedule.timePoints.length - 1]?.id;
+    const lastDepartureTime = lastBlockTrip.departureTimes[lastTimePointId];
+    
+    if (lastDepartureTime) {
+      // The next trip starts when the previous one departs from the last stop
+      return lastDepartureTime;
+    } else {
+      // Fallback: estimate based on trip start + cycle time
+      const cycleTime = schedule.cycleTimeMinutes || 30;
+      const nextTime = timeStringToMinutes(lastBlockTrip.departureTime) + cycleTime;
+      return minutesToTime(nextTime);
+    }
+  }, [schedule.trips, schedule.timePoints, schedule.cycleTimeMinutes]);
+
+  // Add trip functionality handlers  
+  const handleAddTripOpen = useCallback(() => {
+    // Find the most recently used block number by finding the last trip overall
+    const lastTrip = schedule.trips.reduce((latest, trip) => {
+      if (!latest) return trip;
+      const latestTime = timeStringToMinutes(latest.departureTime);
+      const tripTime = timeStringToMinutes(trip.departureTime);
+      return tripTime > latestTime ? trip : latest;
+    }, null as Trip | null);
+
+    const defaultBlockNumber = lastTrip ? lastTrip.blockNumber : 1;
+    
+    // Set block number first
+    setNewTripBlockNumber(defaultBlockNumber.toString());
+    
+    // Get the appropriate start time for this block
+    const suggestedTime = getNextStartTimeForBlock(defaultBlockNumber);
+    setNewTripStartTime(suggestedTime);
+
+    setAddTripDialog({
+      open: true
+    });
+  }, [schedule.trips, getNextStartTimeForBlock]);
+
+  // Handle block number change in dialog
+  const handleBlockNumberChange = useCallback((value: string) => {
+    setNewTripBlockNumber(value);
+    
+    // Update start time based on the new block number
+    const blockNumber = parseInt(value);
+    if (!isNaN(blockNumber)) {
+      const suggestedTime = getNextStartTimeForBlock(blockNumber);
+      setNewTripStartTime(suggestedTime);
+    }
+  }, [getNextStartTimeForBlock]);
+
+  const handleAddTripConfirm = useCallback(() => {
+    if (!addTripDialog || !newTripBlockNumber || !newTripStartTime) return;
+
+    const blockNumber = parseInt(newTripBlockNumber);
+    if (isNaN(blockNumber)) {
+      console.error('Invalid block number');
+      return;
+    }
+
+    setSchedule(prevSchedule => {
+      // Generate new trip number
+      const maxTripNumber = prevSchedule.trips.reduce((max, trip) => 
+        Math.max(max, trip.tripNumber), 0);
+      const newTripNumber = maxTripNumber + 1;
+
+      // Determine service band based on start time
+      let serviceBand = determineServiceBandForTime(newTripStartTime, prevSchedule.timePeriodServiceBands) as ServiceBand;
+      
+      // If no service band data exists for this time, use the previous trip's service band
+      const timePeriod = getTimePeriodForTime(newTripStartTime);
+      if (!prevSchedule.timePeriodServiceBands || !prevSchedule.timePeriodServiceBands[timePeriod]) {
+        // Find the previous trip in the same block
+        const blockTrips = prevSchedule.trips
+          .filter(t => t.blockNumber === blockNumber)
+          .sort((a, b) => timeStringToMinutes(a.departureTime) - timeStringToMinutes(b.departureTime));
+        
+        if (blockTrips.length > 0) {
+          const previousTrip = blockTrips[blockTrips.length - 1];
+          serviceBand = previousTrip.serviceBand || serviceBand;
+          console.log(`No service band data for ${timePeriod}, using previous trip's service band: ${serviceBand}`);
+        }
+      }
+
+      // Create new trip with generated times based on service band
+      const newTrip: Trip = {
+        tripNumber: newTripNumber,
+        blockNumber: blockNumber,
+        departureTime: newTripStartTime,
+        serviceBand: serviceBand,
+        arrivalTimes: {},
+        departureTimes: {},
+        recoveryTimes: {},
+        recoveryMinutes: 0
+      };
+
+      // Generate times for each timepoint
+      let currentTime = timeStringToMinutes(newTripStartTime);
+      
+      prevSchedule.timePoints.forEach((tp, index) => {
+        if (index === 0) {
+          // First timepoint - only departure
+          newTrip.departureTimes[tp.id] = newTripStartTime;
+          newTrip.recoveryTimes[tp.id] = 0;
+        } else {
+          // Add default 6-minute travel time
+          currentTime += 6;
+          newTrip.arrivalTimes[tp.id] = minutesToTime(currentTime);
+          
+          // Add recovery time (1 min for middle stops, 3 for last stop)
+          const recoveryTime = index === prevSchedule.timePoints.length - 1 ? 3 : 1;
+          newTrip.recoveryTimes[tp.id] = recoveryTime;
+          newTrip.departureTimes[tp.id] = minutesToTime(currentTime + recoveryTime);
+          currentTime += recoveryTime;
+        }
+      });
+
+      const updatedTrips = [...prevSchedule.trips, newTrip];
+      
+      // Sort trips by departure time
+      updatedTrips.sort((a, b) => 
+        timeStringToMinutes(a.departureTime) - timeStringToMinutes(b.departureTime)
+      );
+
+      const updatedSchedule = {
+        ...prevSchedule,
+        trips: updatedTrips
+      };
+
+      // Persist to localStorage
+      try {
+        localStorage.setItem('currentSummarySchedule', JSON.stringify(updatedSchedule));
+        console.log(`✅ Added trip ${newTripNumber} for Block ${blockNumber} at ${newTripStartTime}`);
+      } catch (error) {
+        console.warn('Failed to persist schedule updates:', error);
+      }
+
+      return updatedSchedule;
+    });
+
+    setAddTripDialog(null);
+    setNewTripBlockNumber('');
+    setNewTripStartTime('');
+  }, [addTripDialog, newTripBlockNumber, newTripStartTime, determineServiceBandForTime]);
+
+  const handleAddTripCancel = useCallback(() => {
+    setAddTripDialog(null);
+    setNewTripBlockNumber('');
+    setNewTripStartTime('');
+  }, []);
+
+  // Calculate summary statistics for the schedule
+  const calculateSummaryStats = useCallback(() => {
+    let totalTravelMinutes = 0;
+    let totalTripMinutes = 0;
+    let totalRecoveryMinutes = 0;
+    let validTripCount = 0;
+
+    schedule.trips.forEach(trip => {
+      // Only count active trips (not ended mid-route)
+      const isActiveTripFullRoute = trip.tripEndIndex === undefined;
+      
+      if (isActiveTripFullRoute || trip.tripEndIndex !== undefined) {
+        // Calculate trip time (first to last active timepoint)
+        const firstTimepointId = schedule.timePoints[0]?.id;
+        const lastActiveIndex = trip.tripEndIndex !== undefined ? trip.tripEndIndex : schedule.timePoints.length - 1;
+        const lastActiveTimepointId = schedule.timePoints[lastActiveIndex]?.id;
+        
+        const firstDepartureTime = firstTimepointId ? (trip.departureTimes[firstTimepointId] || trip.arrivalTimes[firstTimepointId]) : '';
+        const lastArrivalTime = lastActiveTimepointId ? trip.arrivalTimes[lastActiveTimepointId] : '';
+        
+        if (firstDepartureTime && lastArrivalTime) {
+          const tripMinutes = timeStringToMinutes(lastArrivalTime) - timeStringToMinutes(firstDepartureTime);
+          totalTripMinutes += tripMinutes;
+          validTripCount++;
+
+          // Calculate travel time (trip time minus recovery time)
+          let tripRecoveryMinutes = 0;
+          schedule.timePoints.forEach((tp, index) => {
+            if (trip.tripEndIndex === undefined || index <= trip.tripEndIndex) {
+              if (trip.recoveryTimes && trip.recoveryTimes[tp.id] !== undefined) {
+                tripRecoveryMinutes += trip.recoveryTimes[tp.id];
+              }
+            }
+          });
+          
+          totalRecoveryMinutes += tripRecoveryMinutes;
+          totalTravelMinutes += (tripMinutes - tripRecoveryMinutes);
+        }
+      }
+    });
+
+    const averageRecoveryPercent = totalTripMinutes > 0 ? (totalRecoveryMinutes / totalTripMinutes) * 100 : 0;
+
+    return {
+      totalTravelTime: formatMinutesToHours(totalTravelMinutes),
+      totalTripTime: formatMinutesToHours(totalTripMinutes),
+      averageRecoveryPercent: averageRecoveryPercent.toFixed(1),
+      tripCount: validTripCount
+    };
+  }, [schedule.trips, schedule.timePoints]);
+
+  // Helper function to format minutes to hours:minutes
+  const formatMinutesToHours = (minutes: number): string => {
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    return `${hours}:${remainingMinutes.toString().padStart(2, '0')}`;
+  };
+
   // Function to update subsequent trip times when recovery changes
   const updateSubsequentTripTimes = useCallback((trip: Trip, changedTimePointId: string, recoveryDifference: number, timePoints: TimePoint[]) => {
     if (recoveryDifference === 0) return trip;
@@ -722,22 +1270,97 @@ const BlockSummarySchedule: React.FC = () => {
     if (!template) return;
 
     setSchedule(prevSchedule => {
-      const updatedTrips = prevSchedule.trips.map(trip => {
+      let updatedTrips = [...prevSchedule.trips];
+      
+      // First pass: Update recovery times and recalculate times for trips in this service band
+      updatedTrips = updatedTrips.map(trip => {
         if (trip.serviceBand !== serviceBandName) return trip;
 
         const updatedRecoveryTimes = { ...trip.recoveryTimes };
+        let currentTrip = { ...trip };
         
-        // Apply template to each timepoint
-        schedule.timePoints.forEach((timePoint, index) => {
+        // Apply template to each timepoint and recalculate times
+        prevSchedule.timePoints.forEach((timePoint, index) => {
           if (index < template.length) {
-            updatedRecoveryTimes[timePoint.id] = template[index];
+            const oldRecoveryTime = currentTrip.recoveryTimes[timePoint.id] || 0;
+            const newRecoveryTime = template[index];
+            const recoveryDifference = newRecoveryTime - oldRecoveryTime;
+            
+            // Update recovery time
+            updatedRecoveryTimes[timePoint.id] = newRecoveryTime;
+            
+            // If there's a difference, update subsequent times in this trip
+            if (recoveryDifference !== 0) {
+              currentTrip = updateSubsequentTripTimes(currentTrip, timePoint.id, recoveryDifference, prevSchedule.timePoints);
+            }
           }
         });
 
         return {
-          ...trip,
+          ...currentTrip,
           recoveryTimes: updatedRecoveryTimes
         };
+      });
+
+      // Second pass: Cascade changes to subsequent trips in the same blocks
+      const affectedBlocks = new Set<number>();
+      updatedTrips.forEach(trip => {
+        if (trip.serviceBand === serviceBandName) {
+          affectedBlocks.add(trip.blockNumber);
+        }
+      });
+
+      // For each affected block, recalculate subsequent trip times
+      affectedBlocks.forEach(blockNumber => {
+        const blockTrips = updatedTrips
+          .filter(t => t.blockNumber === blockNumber)
+          .sort((a, b) => a.departureTime.localeCompare(b.departureTime));
+        
+        // Find the first trip that was modified
+        let firstModifiedIndex = blockTrips.findIndex(t => t.serviceBand === serviceBandName);
+        
+        if (firstModifiedIndex >= 0) {
+          // Update all trips after the first modified one
+          for (let i = firstModifiedIndex + 1; i < blockTrips.length; i++) {
+            const prevTrip = blockTrips[i - 1];
+            const currentTripIndex = updatedTrips.findIndex(t => t.tripNumber === blockTrips[i].tripNumber);
+            
+            if (currentTripIndex >= 0) {
+              const finalTimePointId = prevSchedule.timePoints[prevSchedule.timePoints.length - 1]?.id;
+              
+              // Calculate new start time based on when previous trip departs from final stop
+              const prevTripFinalDeparture = prevTrip.departureTimes[finalTimePointId] || 
+                addMinutesToTime(prevTrip.arrivalTimes[finalTimePointId], prevTrip.recoveryTimes[finalTimePointId] || 0);
+              
+              const timeDifference = timeStringToMinutes(prevTripFinalDeparture) - timeStringToMinutes(updatedTrips[currentTripIndex].departureTime);
+              
+              if (timeDifference !== 0) {
+                // Update all times in this trip
+                const updatedArrivalTimes = { ...updatedTrips[currentTripIndex].arrivalTimes };
+                const updatedDepartureTimes = { ...updatedTrips[currentTripIndex].departureTimes };
+                
+                prevSchedule.timePoints.forEach(tp => {
+                  if (updatedArrivalTimes[tp.id]) {
+                    updatedArrivalTimes[tp.id] = addMinutesToTime(updatedArrivalTimes[tp.id], timeDifference);
+                  }
+                  if (updatedDepartureTimes[tp.id]) {
+                    updatedDepartureTimes[tp.id] = addMinutesToTime(updatedDepartureTimes[tp.id], timeDifference);
+                  }
+                });
+                
+                updatedTrips[currentTripIndex] = {
+                  ...updatedTrips[currentTripIndex],
+                  departureTime: prevTripFinalDeparture,
+                  arrivalTimes: updatedArrivalTimes,
+                  departureTimes: updatedDepartureTimes
+                };
+                
+                // Update the reference in blockTrips for the next iteration
+                blockTrips[i] = updatedTrips[currentTripIndex];
+              }
+            }
+          }
+        }
       });
 
       return {
@@ -745,6 +1368,14 @@ const BlockSummarySchedule: React.FC = () => {
         trips: updatedTrips
       };
     });
+    
+    // Save to localStorage after applying template
+    setTimeout(() => {
+      const updatedSchedule = schedule;
+      if (updatedSchedule) {
+        localStorage.setItem('summarySchedule', JSON.stringify(updatedSchedule));
+      }
+    }, 100);
   }, [recoveryTemplates, schedule.timePoints]);
 
   const resetRecoveryTemplates = useCallback(() => {
@@ -764,15 +1395,89 @@ const BlockSummarySchedule: React.FC = () => {
     }
   }, []);
 
+  // Apply target recovery percentage to all service bands
+  const applyTargetRecoveryPercentage = useCallback((percentage: number) => {
+    // Simple calculation: percentage of total travel time for each service band, rounded up
+    const newTemplates: RecoveryTemplate = {};
+    
+    // Calculate for each service band
+    Object.keys(recoveryTemplates).forEach(serviceBandName => {
+      // Find the service band info to get total travel time
+      const serviceBandInfo = schedule.serviceBands.find(sb => sb.name === serviceBandName);
+      const totalTravelTime = serviceBandInfo ? serviceBandInfo.totalMinutes : 0;
+      
+      // Calculate total recovery time as percentage of travel time, rounded up
+      const totalRecoveryTime = Math.ceil((totalTravelTime * percentage) / 100);
+      
+      // Distribute recovery time evenly across timepoints (excluding first departure point)
+      const template: number[] = [];
+      const numRecoveryPoints = schedule.timePoints.length - 1; // Exclude first timepoint
+      
+      for (let i = 0; i < schedule.timePoints.length; i++) {
+        if (i === 0) {
+          // First timepoint (departure) - no recovery
+          template.push(0);
+        } else {
+          // Distribute total recovery evenly across remaining timepoints
+          const recoveryPerPoint = Math.floor(totalRecoveryTime / numRecoveryPoints);
+          const remainder = totalRecoveryTime % numRecoveryPoints;
+          
+          // Give remainder to the last timepoint (end of route gets extra recovery)
+          const isLastPoint = i === schedule.timePoints.length - 1;
+          const recoveryTime = recoveryPerPoint + (isLastPoint ? remainder : 0);
+          
+          template.push(Math.max(0, recoveryTime)); // Ensure non-negative
+        }
+      }
+      
+      newTemplates[serviceBandName] = template;
+    });
+
+    setRecoveryTemplates(newTemplates);
+    try {
+      localStorage.setItem('recoveryTemplates', JSON.stringify(newTemplates));
+      localStorage.setItem('targetRecoveryPercentage', percentage.toString());
+    } catch (error) {
+      console.warn('Failed to save recovery templates:', error);
+    }
+  }, [recoveryTemplates, schedule.serviceBands, schedule.timePoints]);
+
+  // Apply master recovery times to all service band templates
+  const applyMasterRecoveryTimes = useCallback(() => {
+    const newTemplates: RecoveryTemplate = {};
+    
+    // Copy master recovery times to all service bands
+    Object.keys(recoveryTemplates).forEach(serviceBandName => {
+      newTemplates[serviceBandName] = [...masterRecoveryTimes];
+    });
+
+    setRecoveryTemplates(newTemplates);
+    try {
+      localStorage.setItem('recoveryTemplates', JSON.stringify(newTemplates));
+    } catch (error) {
+      console.warn('Failed to save recovery templates:', error);
+    }
+  }, [masterRecoveryTimes, recoveryTemplates]);
+
+  // Update master recovery time at specific index
+  const updateMasterRecoveryTime = useCallback((index: number, value: number) => {
+    setMasterRecoveryTimes(prev => {
+      const updated = [...prev];
+      updated[index] = value;
+      return updated;
+    });
+  }, []);
+
   // New simplified trip row component
   const TripRow = memo(({ trip, idx }: { trip: Trip; idx: number }) => {
     const serviceBandColor = getServiceBandColor(trip.serviceBand);
     
-    // Calculate trip time from first to last timepoint departure
+    // Calculate trip time from first to last active timepoint departure
     const firstTimepointId = schedule.timePoints[0]?.id;
-    const lastTimepointId = schedule.timePoints[schedule.timePoints.length - 1]?.id;
+    const lastActiveIndex = trip.tripEndIndex !== undefined ? trip.tripEndIndex : schedule.timePoints.length - 1;
+    const lastActiveTimepointId = schedule.timePoints[lastActiveIndex]?.id;
     const firstDepartureTime = firstTimepointId ? (trip.departureTimes[firstTimepointId] || trip.arrivalTimes[firstTimepointId]) : '';
-    const lastDepartureTime = lastTimepointId ? (trip.departureTimes[lastTimepointId] || trip.arrivalTimes[lastTimepointId]) : '';
+    const lastDepartureTime = lastActiveTimepointId ? (trip.departureTimes[lastActiveTimepointId] || trip.arrivalTimes[lastActiveTimepointId]) : '';
     const tripTime = calculateTripTime(firstDepartureTime || '', lastDepartureTime || '');
     
     return (
@@ -839,43 +1544,79 @@ const BlockSummarySchedule: React.FC = () => {
         </TableCell>
         
         {/* Time Points */}
-        {schedule.timePoints.map((tp, tpIndex) => (
-          <TableCell 
-            key={tp.id}
-            sx={{ 
-              p: '12px', 
-              fontSize: '13px', 
-              textAlign: 'center',
-              fontFamily: 'monospace',
-              fontWeight: '500',
-              color: '#334155',
-              borderRight: '1px solid #f1f5f9',
-              minWidth: '80px'
-            }}
-          >
+        {schedule.timePoints.map((tp, tpIndex) => {
+          const isActive = trip.tripEndIndex === undefined || tpIndex <= trip.tripEndIndex;
+          const isInactive = !isActive;
+          const isClickable = (tpIndex > 0 && isActive) || isInactive; // Can end active trips or restore inactive ones
+          
+          return (
+            <TableCell 
+              key={tp.id}
+              onClick={isClickable ? (e) => handleTimePointClick(trip.tripNumber, tp.id, tpIndex, e, isInactive) : undefined}
+              sx={{ 
+                p: '12px', 
+                fontSize: '13px', 
+                textAlign: 'center',
+                fontFamily: 'monospace',
+                fontWeight: '500',
+                color: isActive ? '#334155' : '#9ca3af',
+                backgroundColor: isActive ? 'transparent' : '#1f2937', // Black background for inactive
+                borderRight: '1px solid #f1f5f9',
+                minWidth: '80px',
+                cursor: isClickable ? 'pointer' : 'default',
+                '&:hover': isClickable ? {
+                  backgroundColor: isActive ? '#f0f9ff' : '#374151', // Different hover colors
+                  transform: 'scale(1.02)',
+                  color: isActive ? '#334155' : '#ffffff' // White text on hover for inactive
+                } : {}
+              }}
+            >
             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
-              {/* Arrival time (or departure for first timepoint) */}
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px', width: '100%' }}>
-                <Typography component="div" sx={{ 
-                  fontSize: '11px',
-                  color: '#94a3b8',
-                  fontWeight: '400',
-                  minWidth: '20px',
-                  textAlign: 'right'
-                }}>
-                  {tpIndex === 0 ? 'dep:' : 'arr:'}
-                </Typography>
-                <Typography component="div" sx={{ 
-                  fontSize: '12px',
-                  fontWeight: '600',
-                  color: tpIndex === 0 ? '#3b82f6' : '#1e293b'
-                }}>
-                  {tpIndex === 0 ? (trip.departureTimes[tp.id] || trip.arrivalTimes[tp.id] || '-') : (trip.arrivalTimes[tp.id] || '-')}
-                </Typography>
-              </Box>
+              {isActive ? (
+                <>
+                  {/* Arrival time (or departure for first timepoint) */}
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px', width: '100%' }}>
+                    <Typography component="div" sx={{ 
+                      fontSize: '11px',
+                      color: '#94a3b8',
+                      fontWeight: '400',
+                      minWidth: '20px',
+                      textAlign: 'right'
+                    }}>
+                      {tpIndex === 0 ? 'dep:' : 'arr:'}
+                    </Typography>
+                    <Typography component="div" sx={{ 
+                      fontSize: '12px',
+                      fontWeight: '600',
+                      color: tpIndex === 0 ? '#3b82f6' : '#1e293b'
+                    }}>
+                      {tpIndex === 0 ? (trip.departureTimes[tp.id] || trip.arrivalTimes[tp.id] || '-') : (trip.arrivalTimes[tp.id] || '-')}
+                    </Typography>
+                  </Box>
+                </>
+              ) : (
+                // Show restoration hint for inactive timepoints
+                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: '100%', height: '40px', gap: '2px' }}>
+                  <Typography sx={{ 
+                    fontSize: '10px',
+                    color: '#9ca3af',
+                    fontStyle: 'italic'
+                  }}>
+                    ---
+                  </Typography>
+                  <Typography sx={{ 
+                    fontSize: '8px',
+                    color: '#6b7280',
+                    fontStyle: 'italic',
+                    textAlign: 'center'
+                  }}>
+                    Click to restore
+                  </Typography>
+                </Box>
+              )}
               
               {/* Departure time (if different from arrival due to recovery, but not for first timepoint) */}
-              {tpIndex > 0 && trip.recoveryTimes && trip.recoveryTimes[tp.id] > 0 && (
+              {isActive && tpIndex > 0 && trip.recoveryTimes && trip.recoveryTimes[tp.id] > 0 && (
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px', width: '100%' }}>
                   <Typography component="div" sx={{ 
                     fontSize: '11px',
@@ -897,7 +1638,7 @@ const BlockSummarySchedule: React.FC = () => {
               )}
               
               {/* Recovery time display - editable (always show, including 0min) */}
-              {trip.recoveryTimes && trip.recoveryTimes[tp.id] !== undefined && (
+              {isActive && trip.recoveryTimes && trip.recoveryTimes[tp.id] !== undefined && (
                 <Box sx={{ mt: '1px' }}>
                   {editingRecovery?.tripId === `${trip.tripNumber}-${tp.id}` ? (
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
@@ -935,31 +1676,33 @@ const BlockSummarySchedule: React.FC = () => {
                       component="div" 
                       onClick={() => handleRecoveryClick(trip.tripNumber.toString(), tp.id, trip.recoveryTimes[tp.id] || 0)}
                       sx={{ 
-                        fontSize: '10px',
-                        color: '#10b981',
-                        fontWeight: '500',
+                        fontSize: '11px',
+                        color: '#0ea5e9',
+                        fontWeight: '600',
                         cursor: 'pointer',
-                        padding: '1px 4px',
-                        borderRadius: '2px',
-                        backgroundColor: '#f0fdf4',
-                        border: '1px solid #86efac',
+                        padding: '2px 6px',
+                        borderRadius: '3px',
+                        backgroundColor: '#f0f9ff',
+                        border: '1px solid #7dd3fc',
+                        display: 'inline-block',
                         transition: 'all 0.15s ease-in-out',
                         '&:hover': {
-                          backgroundColor: '#dcfce7',
-                          color: '#059669',
-                          borderColor: '#10b981',
+                          backgroundColor: '#e0f2fe',
+                          color: '#0284c7',
+                          borderColor: '#38bdf8',
                           transform: 'scale(1.05)'
                         }
                       }}
                     >
-                      {`${trip.recoveryTimes[tp.id]}min recovery`}
+                      {`R: ${trip.recoveryTimes[tp.id]}min`}
                     </Typography>
                   )}
                 </Box>
               )}
             </Box>
           </TableCell>
-        ))}
+          );
+        })}
         
         {/* Trip Time */}
         <TableCell sx={{ 
@@ -1017,7 +1760,7 @@ const BlockSummarySchedule: React.FC = () => {
             // Fallback: use service band info if original not available
             const serviceBandInfo = trip.serviceBandInfo;
             if (serviceBandInfo) {
-              const totalTravelTime = serviceBandInfo.totalMinutes || 0;
+              const totalTravelTime = Math.round(serviceBandInfo.totalMinutes || 0);
               return totalTravelTime > 0 ? `${totalTravelTime}min` : '0min';
             }
             
@@ -1069,14 +1812,14 @@ const BlockSummarySchedule: React.FC = () => {
               );
             }
             
-            const percentage = (totalRecoveryTime / travelTime) * 100;
-            const percentageText = `${percentage.toFixed(1)}%`;
+            const percentage = Math.round((totalRecoveryTime / travelTime) * 100);
+            const percentageText = `${percentage}%`;
             
             // Color coding based on percentage ranges and tooltip messages
             // < 10%: Red (not enough recovery time)
             // 10-15%: Yellow-green (okay recovery time) 
-            // 15%: Green (great recovery time)
-            // > 15%: Red (too much recovery time)
+            // 15-18%: Green (good recovery time)
+            // > 18%: Red (too much recovery time)
             
             let color, backgroundColor, tooltipText;
             if (percentage < 10) {
@@ -1087,10 +1830,10 @@ const BlockSummarySchedule: React.FC = () => {
               color = '#ca8a04';      // Yellow-green text
               backgroundColor = '#fefce8'; // Light yellow background
               tooltipText = 'Okay recovery time';
-            } else if (percentage === 15) {
+            } else if (percentage >= 15 && percentage <= 18) {
               color = '#059669';      // Green text
               backgroundColor = '#ecfdf5'; // Light green background
-              tooltipText = 'Great recovery time';
+              tooltipText = 'Good recovery time';
             } else {
               color = '#dc2626';      // Red text (too much)
               backgroundColor = '#fef2f2'; // Light red background
@@ -1244,7 +1987,7 @@ const BlockSummarySchedule: React.FC = () => {
 
   if (schedule.trips.length === 0) {
     return (
-      <Container maxWidth={false} sx={{ px: 3 }}>
+      <Box sx={{ pr: 3, width: '100%' }}>
           <Box sx={{ py: 4 }}>
             <Card>
               <CardContent sx={{ textAlign: 'center', py: 8 }}>
@@ -1264,13 +2007,13 @@ const BlockSummarySchedule: React.FC = () => {
               </CardContent>
             </Card>
           </Box>
-        </Container>
+        </Box>
     );
   }
 
   return (
     <>
-      <Container maxWidth={false} sx={{ px: 3 }}>
+      <Box sx={{ pr: 3, width: '100%' }}>
         <Box sx={{ py: 4 }}>
           <Card elevation={2}>
             <CardContent sx={{ p: 4 }}>
@@ -1326,6 +2069,105 @@ const BlockSummarySchedule: React.FC = () => {
                   </Button>
                 </Box>
               </Box>
+
+              {/* Schedule Summary Section */}
+              <Card elevation={2} sx={{ mt: 3, mb: 3 }}>
+                <CardContent sx={{ p: 3 }}>
+                  <Typography variant="h6" gutterBottom sx={{ 
+                    fontWeight: 'bold',
+                    color: '#1976d2',
+                    mb: 3,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 2
+                  }}>
+                    📊 Schedule Summary
+                  </Typography>
+                  
+                  {(() => {
+                    const summaryStats = calculateSummaryStats();
+                    return (
+                      <Box sx={{ display: 'flex', gap: 4, flexWrap: 'wrap', justifyContent: 'space-around' }}>
+                        <Box sx={{ 
+                          textAlign: 'center',
+                          minWidth: '120px',
+                          p: 2,
+                          borderRadius: 2,
+                          backgroundColor: '#f0f9ff',
+                          border: '1px solid #bae6fd'
+                        }}>
+                          <Typography variant="h4" sx={{ fontWeight: 'bold', color: '#0369a1', fontFamily: 'monospace' }}>
+                            {summaryStats.totalTravelTime}
+                          </Typography>
+                          <Typography variant="body2" sx={{ color: '#0284c7', fontWeight: 'medium' }}>
+                            Total Travel Time
+                          </Typography>
+                          <Typography variant="caption" sx={{ color: '#6b7280' }}>
+                            (excluding recovery)
+                          </Typography>
+                        </Box>
+
+                        <Box sx={{ 
+                          textAlign: 'center',
+                          minWidth: '120px',
+                          p: 2,
+                          borderRadius: 2,
+                          backgroundColor: '#f0fdf4',
+                          border: '1px solid #bbf7d0'
+                        }}>
+                          <Typography variant="h4" sx={{ fontWeight: 'bold', color: '#15803d', fontFamily: 'monospace' }}>
+                            {summaryStats.totalTripTime}
+                          </Typography>
+                          <Typography variant="body2" sx={{ color: '#16a34a', fontWeight: 'medium' }}>
+                            Total Trip Time
+                          </Typography>
+                          <Typography variant="caption" sx={{ color: '#6b7280' }}>
+                            (including recovery)
+                          </Typography>
+                        </Box>
+
+                        <Box sx={{ 
+                          textAlign: 'center',
+                          minWidth: '120px',
+                          p: 2,
+                          borderRadius: 2,
+                          backgroundColor: '#fefbf4',
+                          border: '1px solid #fed7aa'
+                        }}>
+                          <Typography variant="h4" sx={{ fontWeight: 'bold', color: '#ea580c', fontFamily: 'monospace' }}>
+                            {summaryStats.averageRecoveryPercent}%
+                          </Typography>
+                          <Typography variant="body2" sx={{ color: '#dc2626', fontWeight: 'medium' }}>
+                            Average Recovery %
+                          </Typography>
+                          <Typography variant="caption" sx={{ color: '#6b7280' }}>
+                            across all trips
+                          </Typography>
+                        </Box>
+
+                        <Box sx={{ 
+                          textAlign: 'center',
+                          minWidth: '120px',
+                          p: 2,
+                          borderRadius: 2,
+                          backgroundColor: '#faf5ff',
+                          border: '1px solid #d8b4fe'
+                        }}>
+                          <Typography variant="h4" sx={{ fontWeight: 'bold', color: '#9333ea', fontFamily: 'monospace' }}>
+                            {summaryStats.tripCount}
+                          </Typography>
+                          <Typography variant="body2" sx={{ color: '#a855f7', fontWeight: 'medium' }}>
+                            Total Trips
+                          </Typography>
+                          <Typography variant="caption" sx={{ color: '#6b7280' }}>
+                            active in schedule
+                          </Typography>
+                        </Box>
+                      </Box>
+                    );
+                  })()}
+                </CardContent>
+              </Card>
               
               <TableContainer 
                 component={Paper} 
@@ -1489,6 +2331,37 @@ const BlockSummarySchedule: React.FC = () => {
                       );
                     })}
                     
+                    {/* Add Trip Row - Shows after last trip */}
+                    {visibleTrips.length > 0 && visibleRange.end >= sortedTrips.length && (
+                      <TableRow
+                        sx={{
+                          height: '48px',
+                          backgroundColor: '#f0f9ff',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease-in-out',
+                          '&:hover': {
+                            backgroundColor: '#e0f2fe',
+                            transform: 'translateY(-1px)',
+                            boxShadow: '0 2px 8px rgba(59, 130, 246, 0.15)'
+                          }
+                        }}
+                        onClick={handleAddTripOpen}
+                      >
+                        <TableCell 
+                          colSpan={3 + schedule.timePoints.length + 3}
+                          sx={{ 
+                            textAlign: 'center',
+                            fontSize: '20px',
+                            fontWeight: 'bold',
+                            color: '#3b82f6',
+                            padding: '12px'
+                          }}
+                        >
+                          +
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    
                     {/* Add spacer for remaining items */}
                     {sortedTrips.length > 50 && visibleRange.end < sortedTrips.length && (
                       <TableRow sx={{ height: `${(sortedTrips.length - visibleRange.end) * 48}px` }}>
@@ -1520,6 +2393,55 @@ const BlockSummarySchedule: React.FC = () => {
                 Standard recovery times used by each service band across timepoints
               </Typography>
 
+              {/* Target Recovery Percentage Input */}
+              <Paper elevation={1} sx={{ p: 2, mb: 3, backgroundColor: '#fafbfc' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#374151' }}>
+                    Target Recovery Percentage:
+                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <input
+                      type="number"
+                      min="5"
+                      max="50"
+                      step="5"
+                      value={targetRecoveryPercentage}
+                      onChange={(e) => {
+                        const value = Math.max(5, Math.min(50, parseInt(e.target.value) || 15));
+                        setTargetRecoveryPercentage(value);
+                      }}
+                      style={{
+                        width: '70px',
+                        height: '36px',
+                        textAlign: 'center',
+                        border: '2px solid #cbd5e1',
+                        borderRadius: '6px',
+                        fontSize: '14px',
+                        fontWeight: 'bold',
+                        color: '#1e40af'
+                      }}
+                    />
+                    <Typography variant="body2" sx={{ color: '#6b7280' }}>%</Typography>
+                  </Box>
+                  <Button
+                    variant="contained"
+                    size="small"
+                    onClick={() => applyTargetRecoveryPercentage(targetRecoveryPercentage)}
+                    sx={{
+                      backgroundColor: '#3b82f6',
+                      '&:hover': { backgroundColor: '#2563eb' },
+                      fontSize: '12px',
+                      px: 2
+                    }}
+                  >
+                    Apply to All Bands
+                  </Button>
+                  <Typography variant="caption" sx={{ color: '#6b7280', ml: 'auto' }}>
+                    * Automatically distributes recovery time based on travel time percentage
+                  </Typography>
+                </Box>
+              </Paper>
+
               <TableContainer component={Paper} elevation={1}>
                 <Table size="small">
                   <TableHead>
@@ -1547,9 +2469,134 @@ const BlockSummarySchedule: React.FC = () => {
                           </Typography>
                         </TableCell>
                       ))}
+                      <TableCell align="center" sx={{ 
+                        fontWeight: 'bold',
+                        fontSize: '12px',
+                        color: '#374151',
+                        py: 2,
+                        minWidth: '90px',
+                        backgroundColor: '#e5f3ff'
+                      }}>
+                        Total Recovery
+                        <br />
+                        <Typography variant="caption" sx={{ color: '#9ca3af' }}>
+                          (minutes)
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="center" sx={{ 
+                        fontWeight: 'bold',
+                        fontSize: '12px',
+                        color: '#374151',
+                        py: 2,
+                        minWidth: '90px',
+                        backgroundColor: '#fff3e0'
+                      }}>
+                        Travel Time
+                        <br />
+                        <Typography variant="caption" sx={{ color: '#9ca3af' }}>
+                          (minutes)
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="center" sx={{ 
+                        fontWeight: 'bold',
+                        fontSize: '12px',
+                        color: '#374151',
+                        py: 2,
+                        minWidth: '90px',
+                        backgroundColor: '#f3e8ff'
+                      }}>
+                        Percent Recovery
+                        <br />
+                        <Typography variant="caption" sx={{ color: '#9ca3af' }}>
+                          (recovery/travel)
+                        </Typography>
+                      </TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
+                    {/* Master Recovery Time Input Row */}
+                    <TableRow sx={{ 
+                      backgroundColor: '#f0f9ff',
+                      borderBottom: '2px solid #3b82f6'
+                    }}>
+                      <TableCell sx={{ 
+                        fontWeight: 'bold',
+                        fontSize: '14px',
+                        py: 2,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1,
+                        color: '#1e40af'
+                      }}>
+                        <Box sx={{
+                          width: 12,
+                          height: 12,
+                          borderRadius: '50%',
+                          backgroundColor: '#3b82f6'
+                        }} />
+                        Master Template
+                      </TableCell>
+                      {schedule.timePoints.map((tp, index) => (
+                        <TableCell key={`master-${tp.name}`} align="center" sx={{ py: 2 }}>
+                          <TextField
+                            size="small"
+                            type="number"
+                            value={masterRecoveryTimes[index] || 0}
+                            onChange={(e) => updateMasterRecoveryTime(index, parseInt(e.target.value) || 0)}
+                            inputProps={{ 
+                              min: 0, 
+                              max: 99,
+                              style: { 
+                                textAlign: 'center',
+                                fontSize: '13px',
+                                fontWeight: '600'
+                              }
+                            }}
+                            sx={{
+                              width: '60px',
+                              '& .MuiOutlinedInput-root': {
+                                backgroundColor: 'white',
+                                '&:hover .MuiOutlinedInput-notchedOutline': {
+                                  borderColor: '#3b82f6'
+                                },
+                                '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                                  borderColor: '#3b82f6'
+                                }
+                              }
+                            }}
+                          />
+                        </TableCell>
+                      ))}
+                      <TableCell align="center" sx={{ py: 2 }}>
+                        <Typography sx={{ 
+                          fontSize: '13px',
+                          fontWeight: '600',
+                          color: '#3b82f6'
+                        }}>
+                          {masterRecoveryTimes.reduce((sum, time) => sum + (time || 0), 0)} min
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="center" sx={{ py: 2 }}>
+                        -
+                      </TableCell>
+                      <TableCell align="center" sx={{ py: 2 }}>
+                        <Button
+                          variant="contained"
+                          size="small"
+                          onClick={applyMasterRecoveryTimes}
+                          sx={{
+                            backgroundColor: '#3b82f6',
+                            '&:hover': { backgroundColor: '#2563eb' },
+                            fontSize: '11px',
+                            fontWeight: 'bold',
+                            px: 2
+                          }}
+                        >
+                          Apply to All Templates
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                    
                     {Object.entries(recoveryTemplates).map(([serviceBandName, template]) => {
                       const serviceBandColors = {
                         'Fastest Service': '#4CAF50',
@@ -1636,6 +2683,64 @@ const BlockSummarySchedule: React.FC = () => {
                               </TableCell>
                             );
                           })}
+                          <TableCell align="center" sx={{ 
+                            py: 2,
+                            fontSize: '14px',
+                            fontFamily: 'monospace',
+                            fontWeight: 'bold',
+                            backgroundColor: '#f0f9ff',
+                            color: '#0369a1'
+                          }}>
+                            {(() => {
+                              // Calculate total recovery for this service band
+                              const extendedTemplate = [...template];
+                              while (extendedTemplate.length < schedule.timePoints.length) {
+                                extendedTemplate.push(extendedTemplate[extendedTemplate.length - 1] || 0);
+                              }
+                              const total = extendedTemplate.slice(0, schedule.timePoints.length).reduce((sum, val) => sum + val, 0);
+                              return total;
+                            })()}
+                          </TableCell>
+                          <TableCell align="center" sx={{ 
+                            py: 2,
+                            fontSize: '14px',
+                            fontFamily: 'monospace',
+                            fontWeight: 'bold',
+                            backgroundColor: '#fff8e1',
+                            color: '#f57c00'
+                          }}>
+                            {(() => {
+                              // Find the service band info to get travel time
+                              const serviceBandInfo = schedule.serviceBands.find(sb => sb.name === serviceBandName);
+                              return serviceBandInfo ? Math.round(serviceBandInfo.totalMinutes) : 0;
+                            })()}
+                          </TableCell>
+                          <TableCell align="center" sx={{ 
+                            py: 2,
+                            fontSize: '14px',
+                            fontFamily: 'monospace',
+                            fontWeight: 'bold',
+                            backgroundColor: '#faf5ff',
+                            color: '#7c3aed'
+                          }}>
+                            {(() => {
+                              // Calculate percent recovery: total recovery / travel time * 100
+                              const serviceBandInfo = schedule.serviceBands.find(sb => sb.name === serviceBandName);
+                              const travelTime = serviceBandInfo ? serviceBandInfo.totalMinutes : 0;
+                              
+                              if (travelTime === 0) return '0%';
+                              
+                              // Calculate total recovery for this service band
+                              const extendedTemplate = [...template];
+                              while (extendedTemplate.length < schedule.timePoints.length) {
+                                extendedTemplate.push(extendedTemplate[extendedTemplate.length - 1] || 0);
+                              }
+                              const totalRecovery = extendedTemplate.slice(0, schedule.timePoints.length).reduce((sum, val) => sum + val, 0);
+                              
+                              const percentage = Math.round((totalRecovery / travelTime) * 100);
+                              return `${percentage}%`;
+                            })()}
+                          </TableCell>
                         </TableRow>
                       );
                     })}
@@ -1673,14 +2778,14 @@ const BlockSummarySchedule: React.FC = () => {
                       '&:hover': { bgcolor: '#047857' }
                     }}
                   >
-                    Apply All Templates
+                    Apply to Schedule
                   </Button>
                 </Box>
               </Box>
             </CardContent>
           </Card>
         </Box>
-      </Container>
+      </Box>
 
       {/* Simplified full screen overlay instead of Material-UI Dialog */}
       {isFullscreen && (
@@ -1881,6 +2986,145 @@ const BlockSummarySchedule: React.FC = () => {
           </Box>
         </Box>
       )}
+
+      {/* Trip End Confirmation Dialog */}
+      <Dialog
+        open={tripEndDialog?.open || false}
+        onClose={handleTripEndCancel}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ 
+          fontWeight: 'bold',
+          color: '#1976d2'
+        }}>
+          End Trip {tripEndDialog?.tripNumber}
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ mb: 2 }}>
+            End trip at this timepoint?
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            • Removes subsequent stops for this trip<br/>
+            • Removes later trips in Block {schedule.trips.find(t => t.tripNumber === tripEndDialog?.tripNumber)?.blockNumber}
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button 
+            onClick={handleTripEndCancel}
+            variant="outlined"
+            size="small"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleTripEndConfirm}
+            variant="contained"
+            color="primary"
+            size="small"
+          >
+            End Trip
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Trip Restoration Confirmation Dialog */}
+      <Dialog
+        open={tripRestoreDialog?.open || false}
+        onClose={handleTripRestoreCancel}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ 
+          fontWeight: 'bold',
+          color: '#059669'
+        }}>
+          Restore Trip {tripRestoreDialog?.tripNumber}
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ mb: 2 }}>
+            Restore trip from this timepoint?
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            • Restores subsequent stops<br/>
+            • Uses original schedule times
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button 
+            onClick={handleTripRestoreCancel}
+            variant="outlined"
+            size="small"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleTripRestoreConfirm}
+            variant="contained"
+            color="success"
+            size="small"
+          >
+            Restore
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Add Trip Dialog */}
+      <Dialog
+        open={addTripDialog?.open || false}
+        onClose={handleAddTripCancel}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ 
+          fontWeight: 'bold',
+          color: '#1976d2'
+        }}>
+          Add New Trip
+        </DialogTitle>
+        <DialogContent>
+          <TextField
+            label="Block Number"
+            type="number"
+            value={newTripBlockNumber}
+            onChange={(e) => handleBlockNumberChange(e.target.value)}
+            fullWidth
+            sx={{ mb: 2, mt: 2 }}
+            InputProps={{
+              inputProps: { min: 1, max: 99 }
+            }}
+          />
+          
+          <TextField
+            label="Start Time"
+            type="time"
+            value={newTripStartTime}
+            onChange={(e) => setNewTripStartTime(e.target.value)}
+            fullWidth
+            InputLabelProps={{
+              shrink: true,
+            }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button 
+            onClick={handleAddTripCancel}
+            variant="outlined"
+            size="small"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleAddTripConfirm}
+            variant="contained"
+            color="primary"
+            disabled={!newTripBlockNumber || !newTripStartTime}
+            size="small"
+          >
+            Add
+          </Button>
+        </DialogActions>
+      </Dialog>
     </>
   );
 };
