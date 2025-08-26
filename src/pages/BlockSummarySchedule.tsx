@@ -238,9 +238,17 @@ const BlockSummarySchedule: React.FC = () => {
     open: boolean;
     blockNumber?: number;
     startTime?: string;
+    isEarlyTrip?: boolean;  // Flag for early trip (before first existing trip)
   } | null>(null);
   const [newTripBlockNumber, setNewTripBlockNumber] = useState<string>('');
   const [newTripStartTime, setNewTripStartTime] = useState<string>('');
+  
+  // Service band editing state
+  const [serviceBandDialog, setServiceBandDialog] = useState<{
+    open: boolean;
+    tripNumber: number;
+    currentBand: ServiceBand;
+  } | null>(null);
   
   // Store original travel times to maintain consistency when recovery changes
   const [originalTravelTimes, setOriginalTravelTimes] = useState<{[tripId: string]: number}>({});
@@ -1009,10 +1017,96 @@ const BlockSummarySchedule: React.FC = () => {
     // Update start time based on the new block number
     const blockNumber = parseInt(value);
     if (!isNaN(blockNumber)) {
-      const suggestedTime = getNextStartTimeForBlock(blockNumber);
-      setNewTripStartTime(suggestedTime);
+      if (addTripDialog?.isEarlyTrip) {
+        // For early trips, calculate backward from first trip
+        const blockTrips = schedule.trips.filter(t => t.blockNumber === blockNumber)
+          .sort((a, b) => timeStringToMinutes(a.departureTime) - timeStringToMinutes(b.departureTime));
+        
+        if (blockTrips.length > 0) {
+          const firstTrip = blockTrips[0];
+          const cycleTime = schedule.cycleTimeMinutes || 30;
+          const suggestedTime = minutesToTime(timeStringToMinutes(firstTrip.departureTime) - cycleTime);
+          setNewTripStartTime(suggestedTime);
+        } else {
+          setNewTripStartTime('05:30'); // Default early start
+        }
+      } else {
+        const suggestedTime = getNextStartTimeForBlock(blockNumber);
+        setNewTripStartTime(suggestedTime);
+      }
     }
-  }, [getNextStartTimeForBlock]);
+  }, [getNextStartTimeForBlock, addTripDialog, schedule.trips, schedule.cycleTimeMinutes]);
+  
+  // Handle adding early trip (before first existing trip)
+  const handleAddEarlyTripOpen = useCallback(() => {
+    // Find the earliest trip
+    const earliestTrip = schedule.trips.reduce((earliest, trip) => {
+      if (!earliest) return trip;
+      const earliestTime = timeStringToMinutes(earliest.departureTime);
+      const tripTime = timeStringToMinutes(trip.departureTime);
+      return tripTime < earliestTime ? trip : earliest;
+    }, null as Trip | null);
+
+    if (earliestTrip) {
+      const blockNumber = earliestTrip.blockNumber;
+      const cycleTime = schedule.cycleTimeMinutes || 30;
+      const suggestedTime = minutesToTime(timeStringToMinutes(earliestTrip.departureTime) - cycleTime);
+      
+      setNewTripBlockNumber(blockNumber.toString());
+      setNewTripStartTime(suggestedTime);
+    } else {
+      setNewTripBlockNumber('1');
+      setNewTripStartTime('05:30');
+    }
+
+    setAddTripDialog({
+      open: true,
+      isEarlyTrip: true
+    });
+  }, [schedule.trips, schedule.cycleTimeMinutes]);
+  
+  // Handle service band click
+  const handleServiceBandClick = useCallback((tripNumber: number, currentBand: ServiceBand) => {
+    setServiceBandDialog({
+      open: true,
+      tripNumber,
+      currentBand
+    });
+  }, []);
+  
+  // Handle service band change
+  const handleServiceBandChange = useCallback((newBand: ServiceBand) => {
+    if (!serviceBandDialog) return;
+    
+    setSchedule(prevSchedule => {
+      const updatedTrips = prevSchedule.trips.map(trip => {
+        if (trip.tripNumber === serviceBandDialog.tripNumber) {
+          console.log(`Manually changed service band for trip ${trip.tripNumber} from ${trip.serviceBand} to ${newBand}`);
+          return {
+            ...trip,
+            serviceBand: newBand
+          };
+        }
+        return trip;
+      });
+      
+      const updatedSchedule = {
+        ...prevSchedule,
+        trips: updatedTrips
+      };
+      
+      // Persist to localStorage
+      try {
+        localStorage.setItem('currentSummarySchedule', JSON.stringify(updatedSchedule));
+      } catch (error) {
+        console.warn('Failed to persist schedule updates:', error);
+      }
+      
+      return updatedSchedule;
+    });
+    
+    setServiceBandDialog(null);
+  }, [serviceBandDialog]);
 
   const handleAddTripConfirm = useCallback(() => {
     if (!addTripDialog || !newTripBlockNumber || !newTripStartTime) return;
@@ -1028,6 +1122,19 @@ const BlockSummarySchedule: React.FC = () => {
       const maxTripNumber = prevSchedule.trips.reduce((max, trip) => 
         Math.max(max, trip.tripNumber), 0);
       const newTripNumber = maxTripNumber + 1;
+      
+      // For early trips, calculate the end time to match the first existing trip
+      let calculatedEndTime: string | null = null;
+      if (addTripDialog.isEarlyTrip) {
+        const blockTrips = prevSchedule.trips.filter(t => t.blockNumber === blockNumber)
+          .sort((a, b) => timeStringToMinutes(a.departureTime) - timeStringToMinutes(b.departureTime));
+        
+        if (blockTrips.length > 0) {
+          const firstTrip = blockTrips[0];
+          // The early trip should end (depart from last stop) when the first trip starts
+          calculatedEndTime = firstTrip.departureTime;
+        }
+      }
 
       // Determine service band based on start time
       let serviceBand = determineServiceBandForTime(newTripStartTime, prevSchedule.timePeriodServiceBands) as ServiceBand;
@@ -1060,25 +1167,61 @@ const BlockSummarySchedule: React.FC = () => {
       };
 
       // Generate times for each timepoint
-      let currentTime = timeStringToMinutes(newTripStartTime);
-      
-      prevSchedule.timePoints.forEach((tp, index) => {
-        if (index === 0) {
-          // First timepoint - only departure
-          newTrip.departureTimes[tp.id] = newTripStartTime;
-          newTrip.recoveryTimes[tp.id] = 0;
-        } else {
-          // Add default 6-minute travel time
-          currentTime += 6;
-          newTrip.arrivalTimes[tp.id] = minutesToTime(currentTime);
-          
-          // Add recovery time (1 min for middle stops, 3 for last stop)
-          const recoveryTime = index === prevSchedule.timePoints.length - 1 ? 3 : 1;
-          newTrip.recoveryTimes[tp.id] = recoveryTime;
-          newTrip.departureTimes[tp.id] = minutesToTime(currentTime + recoveryTime);
-          currentTime += recoveryTime;
-        }
-      });
+      if (addTripDialog.isEarlyTrip && calculatedEndTime) {
+        // For early trips, work backward from the end time
+        const totalTripTime = timeStringToMinutes(calculatedEndTime) - timeStringToMinutes(newTripStartTime);
+        const numTimepoints = prevSchedule.timePoints.length;
+        
+        // Estimate travel time between stops (total time minus estimated recovery)
+        const estimatedTotalRecovery = 0 + (1 * (numTimepoints - 2)) + 3; // 0 at start, 1 at middle, 3 at end
+        const travelTimePerSegment = Math.floor((totalTripTime - estimatedTotalRecovery) / (numTimepoints - 1));
+        
+        let currentTime = timeStringToMinutes(newTripStartTime);
+        prevSchedule.timePoints.forEach((tp, index) => {
+          if (index === 0) {
+            // First timepoint - only departure
+            newTrip.departureTimes[tp.id] = newTripStartTime;
+            newTrip.recoveryTimes[tp.id] = 0;
+          } else {
+            // Add travel time
+            currentTime += travelTimePerSegment;
+            newTrip.arrivalTimes[tp.id] = minutesToTime(currentTime);
+            
+            // Add recovery time
+            const recoveryTime = index === prevSchedule.timePoints.length - 1 ? 3 : 1;
+            newTrip.recoveryTimes[tp.id] = recoveryTime;
+            
+            // For last stop of early trip, ensure departure matches first trip's start
+            if (index === prevSchedule.timePoints.length - 1) {
+              newTrip.departureTimes[tp.id] = calculatedEndTime;
+            } else {
+              newTrip.departureTimes[tp.id] = minutesToTime(currentTime + recoveryTime);
+            }
+            currentTime += recoveryTime;
+          }
+        });
+      } else {
+        // Normal trip generation
+        let currentTime = timeStringToMinutes(newTripStartTime);
+        
+        prevSchedule.timePoints.forEach((tp, index) => {
+          if (index === 0) {
+            // First timepoint - only departure
+            newTrip.departureTimes[tp.id] = newTripStartTime;
+            newTrip.recoveryTimes[tp.id] = 0;
+          } else {
+            // Add default 6-minute travel time
+            currentTime += 6;
+            newTrip.arrivalTimes[tp.id] = minutesToTime(currentTime);
+            
+            // Add recovery time (1 min for middle stops, 3 for last stop)
+            const recoveryTime = index === prevSchedule.timePoints.length - 1 ? 3 : 1;
+            newTrip.recoveryTimes[tp.id] = recoveryTime;
+            newTrip.departureTimes[tp.id] = minutesToTime(currentTime + recoveryTime);
+            currentTime += recoveryTime;
+          }
+        });
+      }
 
       const updatedTrips = [...prevSchedule.trips, newTrip];
       
@@ -1533,12 +1676,18 @@ const BlockSummarySchedule: React.FC = () => {
           <Chip 
             label={trip.serviceBand}
             size="small"
+            onClick={() => handleServiceBandClick(trip.tripNumber, trip.serviceBand)}
             sx={{
               backgroundColor: `${serviceBandColor}20`,
               color: serviceBandColor,
               border: `1px solid ${serviceBandColor}40`,
               fontWeight: '600',
-              fontSize: '0.75rem'
+              fontSize: '0.75rem',
+              cursor: 'pointer',
+              '&:hover': {
+                backgroundColor: `${serviceBandColor}30`,
+                transform: 'scale(1.05)'
+              }
             }}
           />
         </TableCell>
@@ -2313,6 +2462,36 @@ const BlockSummarySchedule: React.FC = () => {
                     </TableRow>
                   </TableHead>
                   <TableBody>
+                    {/* Add Early Trip Row - Shows before first trip */}
+                    {visibleRange.start === 0 && (
+                      <TableRow
+                        sx={{
+                          height: '48px',
+                          backgroundColor: '#f0f9ff',
+                          cursor: 'pointer',
+                          '&:hover': {
+                            backgroundColor: '#e0f2fe',
+                            transform: 'translateY(-1px)',
+                            boxShadow: '0 2px 8px rgba(59, 130, 246, 0.15)'
+                          }
+                        }}
+                        onClick={handleAddEarlyTripOpen}
+                      >
+                        <TableCell 
+                          colSpan={3 + schedule.timePoints.length + 3}
+                          sx={{ 
+                            textAlign: 'center',
+                            fontSize: '20px',
+                            fontWeight: 'bold',
+                            color: '#3b82f6',
+                            padding: '12px'
+                          }}
+                        >
+                          + Add Early Trip
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    
                     {/* Add spacer for virtualization offset */}
                     {sortedTrips.length > 50 && visibleRange.start > 0 && (
                       <TableRow sx={{ height: `${visibleRange.start * 48}px` }}>
@@ -3080,7 +3259,7 @@ const BlockSummarySchedule: React.FC = () => {
           fontWeight: 'bold',
           color: '#1976d2'
         }}>
-          Add New Trip
+          {addTripDialog?.isEarlyTrip ? 'Add Early Trip' : 'Add New Trip'}
         </DialogTitle>
         <DialogContent>
           <TextField
@@ -3122,6 +3301,76 @@ const BlockSummarySchedule: React.FC = () => {
             size="small"
           >
             Add
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Service Band Selection Dialog */}
+      <Dialog
+        open={serviceBandDialog?.open || false}
+        onClose={() => setServiceBandDialog(null)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ 
+          fontWeight: 'bold',
+          color: '#1976d2'
+        }}>
+          Change Service Band
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ mb: 2, color: '#666' }}>
+            Select a new service band for Trip {serviceBandDialog?.tripNumber}
+          </Typography>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            {(['Fastest Service', 'Fast Service', 'Standard Service', 'Slow Service', 'Slowest Service'] as ServiceBand[]).map((band) => {
+              const bandColor = getServiceBandColor(band);
+              const isSelected = band === serviceBandDialog?.currentBand;
+              
+              return (
+                <Button
+                  key={band}
+                  variant={isSelected ? 'contained' : 'outlined'}
+                  onClick={() => handleServiceBandChange(band)}
+                  sx={{
+                    justifyContent: 'flex-start',
+                    padding: '12px 16px',
+                    backgroundColor: isSelected ? `${bandColor}20` : 'transparent',
+                    borderColor: bandColor,
+                    color: bandColor,
+                    '&:hover': {
+                      backgroundColor: `${bandColor}30`,
+                      borderColor: bandColor
+                    }
+                  }}
+                >
+                  <Box
+                    sx={{
+                      width: 12,
+                      height: 12,
+                      borderRadius: '50%',
+                      backgroundColor: bandColor,
+                      mr: 2
+                    }}
+                  />
+                  {band}
+                  {isSelected && (
+                    <Typography variant="caption" sx={{ ml: 'auto', opacity: 0.7 }}>
+                      (Current)
+                    </Typography>
+                  )}
+                </Button>
+              );
+            })}
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button 
+            onClick={() => setServiceBandDialog(null)}
+            variant="outlined"
+            size="small"
+          >
+            Cancel
           </Button>
         </DialogActions>
       </Dialog>
