@@ -64,9 +64,10 @@ interface RecentItem {
 interface SidebarNavigationProps {
   open: boolean;
   onToggle: () => void;
+  collapsed?: boolean;
 }
 
-const SidebarNavigation: React.FC<SidebarNavigationProps> = ({ open, onToggle }) => {
+const SidebarNavigation: React.FC<SidebarNavigationProps> = ({ open, onToggle, collapsed = false }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const theme = useTheme();
@@ -75,7 +76,6 @@ const SidebarNavigation: React.FC<SidebarNavigationProps> = ({ open, onToggle })
   const [expandedGroups, setExpandedGroups] = useState<string[]>(['scheduling']);
   const [searchQuery, setSearchQuery] = useState('');
   const [recentItems, setRecentItems] = useState<RecentItem[]>([]);
-  const [collapsed, setCollapsed] = useState(false);
 
   // Load recent items from localStorage
   useEffect(() => {
@@ -270,7 +270,7 @@ const SidebarNavigation: React.FC<SidebarNavigationProps> = ({ open, onToggle })
           </Typography>
         )}
         <IconButton 
-          onClick={() => setCollapsed(!collapsed)}
+          onClick={onToggle}
           size="small"
           sx={{ ml: collapsed ? 0 : 'auto' }}
         >

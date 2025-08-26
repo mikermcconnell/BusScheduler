@@ -586,6 +586,40 @@ const segmentTime = tripServiceBand.segmentTimes[index - 1];
 - **Time-Sensitive**: Reflects real traffic patterns throughout the day
 - **Consistent Calculation**: Same logic used for both trip generation and display
 
+## Schedule Summary Statistics
+
+### Overview
+The Schedule Summary displays comprehensive statistics about the generated bus schedule, providing transit operators with key performance metrics at a glance.
+
+### Statistics Display Order
+1. **Total Trip Time** - Complete journey time including all recovery/dwell time at stops
+2. **Total Travel Time** - Pure movement time excluding recovery periods  
+3. **Total Recovery Time** - Cumulative dwell time at all stops
+4. **Average Recovery Percent** - Recovery time as percentage of travel time
+5. **Total Trips** - Number of active trips in the schedule
+
+### Calculation Methods
+
+#### Column-Based Summation
+All totals are calculated by summing the actual displayed column values from the schedule table:
+- **Total Trip Time** = Sum of all Trip Time column values (first departure to last departure)
+- **Total Travel Time** = Sum of all Travel Time column values (trip time minus recovery)
+- **Total Recovery Time** = Sum of all Recovery Time column values
+
+#### Average Recovery Percent Formula
+```
+Average Recovery % = (Total Recovery Time ÷ Total Travel Time) × 100
+```
+This metric shows what percentage of recovery time is added on top of base travel time. For example:
+- 25% means 15 minutes of recovery for every 60 minutes of travel
+- 50% means 30 minutes of recovery for every 60 minutes of travel
+
+### Visual Design
+- **Color-coded cards** with distinct backgrounds for easy identification
+- **Monospace fonts** for time values ensuring proper alignment
+- **Descriptive captions** explaining each metric's meaning
+- **Professional Material-UI styling** matching transit industry standards
+
 ## Production Readiness Status: ✅ COMPLETE
 - All core features implemented and tested
 - Security vulnerabilities addressed with comprehensive mitigations
@@ -593,8 +627,10 @@ const segmentTime = tripServiceBand.segmentTimes[index - 1];
 - Type-safe TypeScript throughout
 - Export functionality matching Excel format standards
 - Error handling and validation comprehensive
+- Schedule summary statistics with accurate column-based calculations
 
-**Last Updated**: August 22, 2025  
+**Last Updated**: August 26, 2025  
 **Security Level**: Production Ready with comprehensive protections  
 **MVP Status**: Complete and ready for deployment with advanced Bus Block Configuration system and trip-specific service band logic  
-**Migration Status**: Fully migrated to React 19, Material-UI v7, TypeScript 5.9, and React Router v7
+**Migration Status**: Fully migrated to React 19, Material-UI v7, TypeScript 5.9, and React Router v7  
+**Recent Enhancements**: Schedule summary statistics with proper column summation and recovery percentage calculations

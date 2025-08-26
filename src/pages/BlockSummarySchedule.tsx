@@ -1347,42 +1347,48 @@ const BlockSummarySchedule: React.FC = () => {
     let totalRecoveryMinutes = 0;
     let validTripCount = 0;
 
+    // Safety check for schedule.trips
+    if (!schedule.trips || !Array.isArray(schedule.trips)) {
+      return {
+        totalTravelTime: '0:00',
+        totalTripTime: '0:00',
+        totalRecoveryTime: '0:00',
+        averageRecoveryPercent: '0.0',
+        tripCount: 0
+      };
+    }
+
     schedule.trips.forEach(trip => {
       // Only count active trips (not ended mid-route)
       const isActiveTripFullRoute = trip.tripEndIndex === undefined;
       
       if (isActiveTripFullRoute || trip.tripEndIndex !== undefined) {
-        // Calculate trip time (first to last active timepoint)
         const firstTimepointId = schedule.timePoints[0]?.id;
         const lastActiveIndex = trip.tripEndIndex !== undefined ? trip.tripEndIndex : schedule.timePoints.length - 1;
         const lastActiveTimepointId = schedule.timePoints[lastActiveIndex]?.id;
         
         const firstDepartureTime = firstTimepointId ? (trip.departureTimes[firstTimepointId] || trip.arrivalTimes[firstTimepointId]) : '';
-        const lastArrivalTime = lastActiveTimepointId ? trip.arrivalTimes[lastActiveTimepointId] : '';
-        const lastDepartureTime = lastActiveTimepointId ? trip.departureTimes[lastActiveTimepointId] : '';
+        const lastDepartureTime = lastActiveTimepointId ? (trip.departureTimes[lastActiveTimepointId] || trip.arrivalTimes[lastActiveTimepointId]) : '';
         
-        if (firstDepartureTime && lastArrivalTime) {
-          // Trip time is from first departure to last arrival (travel time only)
-          const travelMinutes = timeStringToMinutes(lastArrivalTime) - timeStringToMinutes(firstDepartureTime);
-          // Total trip time includes the final recovery/dwell at the last stop
-          const tripMinutes = lastDepartureTime ? 
-            timeStringToMinutes(lastDepartureTime) - timeStringToMinutes(firstDepartureTime) : 
-            travelMinutes;
+        if (firstDepartureTime && lastDepartureTime) {
+          // Calculate Trip Time (column value) - from first departure to last departure
+          const tripMinutes = timeStringToMinutes(lastDepartureTime) - timeStringToMinutes(firstDepartureTime);
           totalTripMinutes += tripMinutes;
           validTripCount++;
 
-          // Calculate total recovery time for this trip
+          // Calculate Recovery Time (column value) - sum of all recovery times for this trip
           let tripRecoveryMinutes = 0;
-          schedule.timePoints.forEach((tp, index) => {
-            if (trip.tripEndIndex === undefined || index <= trip.tripEndIndex) {
-              if (trip.recoveryTimes && trip.recoveryTimes[tp.id] !== undefined) {
-                tripRecoveryMinutes += trip.recoveryTimes[tp.id];
+          if (trip.recoveryTimes) {
+            schedule.timePoints.forEach((tp, index) => {
+              if (trip.tripEndIndex === undefined || index <= trip.tripEndIndex) {
+                tripRecoveryMinutes += trip.recoveryTimes[tp.id] || 0;
               }
-            }
-          });
-          
+            });
+          }
           totalRecoveryMinutes += tripRecoveryMinutes;
-          // Travel time is the time spent actually moving (without recovery)
+          
+          // Calculate Travel Time (column value) - Trip Time minus Recovery Time
+          const travelMinutes = tripMinutes - tripRecoveryMinutes;
           totalTravelMinutes += travelMinutes;
         }
       }
@@ -1394,6 +1400,7 @@ const BlockSummarySchedule: React.FC = () => {
     return {
       totalTravelTime: formatMinutesToHours(totalTravelMinutes),
       totalTripTime: formatMinutesToHours(totalTripMinutes),
+      totalRecoveryTime: formatMinutesToHours(totalRecoveryMinutes),
       averageRecoveryPercent: averageRecoveryPercent.toFixed(1),
       tripCount: validTripCount
     };
@@ -2386,6 +2393,25 @@ const BlockSummarySchedule: React.FC = () => {
                           minWidth: '120px',
                           p: 2,
                           borderRadius: 2,
+                          backgroundColor: '#f0fdf4',
+                          border: '1px solid #bbf7d0'
+                        }}>
+                          <Typography variant="h4" sx={{ fontWeight: 'bold', color: '#15803d', fontFamily: 'monospace' }}>
+                            {summaryStats.totalTripTime}
+                          </Typography>
+                          <Typography variant="body2" sx={{ color: '#16a34a', fontWeight: 'medium' }}>
+                            Total Trip Time
+                          </Typography>
+                          <Typography variant="caption" sx={{ color: '#6b7280' }}>
+                            (including recovery)
+                          </Typography>
+                        </Box>
+
+                        <Box sx={{ 
+                          textAlign: 'center',
+                          minWidth: '120px',
+                          p: 2,
+                          borderRadius: 2,
                           backgroundColor: '#f0f9ff',
                           border: '1px solid #bae6fd'
                         }}>
@@ -2405,17 +2431,17 @@ const BlockSummarySchedule: React.FC = () => {
                           minWidth: '120px',
                           p: 2,
                           borderRadius: 2,
-                          backgroundColor: '#f0fdf4',
-                          border: '1px solid #bbf7d0'
+                          backgroundColor: '#fdf2f8',
+                          border: '1px solid #f9a8d4'
                         }}>
-                          <Typography variant="h4" sx={{ fontWeight: 'bold', color: '#15803d', fontFamily: 'monospace' }}>
-                            {summaryStats.totalTripTime}
+                          <Typography variant="h4" sx={{ fontWeight: 'bold', color: '#be185d', fontFamily: 'monospace' }}>
+                            {summaryStats.totalRecoveryTime}
                           </Typography>
-                          <Typography variant="body2" sx={{ color: '#16a34a', fontWeight: 'medium' }}>
-                            Total Trip Time
+                          <Typography variant="body2" sx={{ color: '#db2777', fontWeight: 'medium' }}>
+                            Total Recovery Time
                           </Typography>
                           <Typography variant="caption" sx={{ color: '#6b7280' }}>
-                            (including recovery)
+                            dwell time at stops
                           </Typography>
                         </Box>
 

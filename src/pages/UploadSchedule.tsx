@@ -665,37 +665,9 @@ const UploadSchedule: React.FC = () => {
               <Typography variant="h6" gutterBottom>
                 File Requirements
               </Typography>
-              <Box sx={{ mb: 3 }}>
-                <Typography variant="subtitle2" color="primary" gutterBottom>
-                  Excel Files (.xlsx, .xls)
-                </Typography>
-                <List dense>
-                  {excelRequirements.map((requirement, index) => (
-                    <ListItem key={index}>
-                      <ListItemIcon>
-                        <InfoIcon color="primary" />
-                      </ListItemIcon>
-                      <ListItemText primary={requirement} />
-                    </ListItem>
-                  ))}
-                </List>
-              </Box>
-              
-              <Box>
-                <Typography variant="subtitle2" color="secondary" gutterBottom>
-                  CSV Files (.csv) - Transify Segment Travel Time Export
-                </Typography>
-                <List dense>
-                  {csvRequirements.map((requirement, index) => (
-                    <ListItem key={index}>
-                      <ListItemIcon>
-                        <InfoIcon color="secondary" />
-                      </ListItemIcon>
-                      <ListItemText primary={requirement} />
-                    </ListItem>
-                  ))}
-                </List>
-              </Box>
+              <Typography variant="body1">
+                CSV transify segment travel time import
+              </Typography>
             </CardContent>
           </Card>
 

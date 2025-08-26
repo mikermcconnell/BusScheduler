@@ -5,7 +5,6 @@
 
 import React from 'react';
 import {
-  Container,
   Typography,
   Box,
   Grid,
@@ -17,7 +16,7 @@ import GoogleDriveSettings from '../components/GoogleDriveSettings';
 
 const Settings: React.FC = () => {
   return (
-    <Container maxWidth="lg">
+    <Box sx={{ pr: 3, width: '100%' }}>
       <Box mb={4}>
         <Box display="flex" alignItems="center" mb={2}>
           <SettingsIcon sx={{ mr: 2, fontSize: 32, color: 'primary.main' }} />
@@ -80,7 +79,7 @@ const Settings: React.FC = () => {
           </Paper>
         </Grid>
       </Grid>
-    </Container>
+    </Box>
   );
 };
 

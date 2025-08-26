@@ -1,6 +1,5 @@
 import React from 'react';
 import {
-  Container,
   Typography,
   Alert,
   Box,
@@ -10,7 +9,7 @@ import { Construction, AccessTime } from '@mui/icons-material';
 
 const TodShifts: React.FC = () => {
   return (
-    <Container maxWidth="lg" sx={{ py: 3 }}>
+    <Box sx={{ py: 3, pr: 3, width: '100%' }}>
       <Box display="flex" alignItems="center" gap={2} mb={3}>
         <Construction color="warning" />
         <Typography variant="h4">
@@ -51,7 +50,7 @@ const TodShifts: React.FC = () => {
         This page serves as a placeholder for the upcoming Tod Shifts functionality. 
         Check back for updates or contact the development team for more information about the release timeline.
       </Typography>
-    </Container>
+    </Box>
   );
 };
 

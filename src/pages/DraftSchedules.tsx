@@ -22,7 +22,7 @@ const DraftSchedulesMain: React.FC = () => {
   };
 
   return (
-    <Box>
+    <Box sx={{ pr: 3, width: '100%' }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
         <Box>
           <Typography variant="h4" component="h1" gutterBottom>
@@ -42,7 +42,7 @@ const DraftSchedulesMain: React.FC = () => {
         </Button>
       </Box>
 
-      <Card>
+      <Card sx={{ width: '100%' }}>
         <CardContent>
           <Box display="flex" alignItems="center" gap={1} mb={3}>
             <DraftIcon color="primary" />
@@ -54,7 +54,7 @@ const DraftSchedulesMain: React.FC = () => {
           <DraftScheduleList
             onRestoreDraft={handleRestoreDraft}
             onDraftDeleted={handleDraftDeleted}
-            maxHeight={600}
+            maxHeight={800}
           />
         </CardContent>
       </Card>

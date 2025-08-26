@@ -45,7 +45,12 @@
       "Bash(node:*)",
       "mcp__browsermcp__browser_get_console_logs",
       "Bash(git push:*)",
-      "mcp__browsermcp__browser_snapshot"
+      "mcp__browsermcp__browser_snapshot",
+      "Bash(npm uninstall:*)",
+      "WebFetch(domain:localhost)",
+      "Bash(taskkill:*)",
+      "Bash(timeout:*)",
+      "Bash(del nul)"
     ]
   },
   "outputStyle": "Learning",

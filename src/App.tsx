@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter as Router } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
@@ -6,6 +6,7 @@ import Layout from './components/Layout';
 import ErrorBoundary from './components/ErrorBoundary';
 import { AuthProvider } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
+import { securityInitializer } from './utils/securityInitializer';
 import './App.css';
 
 const theme = createTheme({
@@ -48,6 +49,19 @@ const theme = createTheme({
 });
 
 function App() {
+  useEffect(() => {
+    // Initialize security features on app mount
+    securityInitializer.initialize({
+      environment: process.env.NODE_ENV as 'development' | 'staging' | 'production',
+      enableCSRF: true,
+      enableRateLimiting: true,
+      enableCSP: true,
+      enableAuditLogging: true,
+      cspReportEndpoint: '/api/csp-report',
+      auditEndpoint: '/api/audit'
+    });
+  }, []);
+
   return (
     <ErrorBoundary>
       <ThemeProvider theme={theme}>

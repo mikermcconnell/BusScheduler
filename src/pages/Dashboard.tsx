@@ -51,7 +51,7 @@ const Dashboard: React.FC = () => {
   ];
 
   return (
-    <Box>
+    <Box sx={{ pr: 3, width: '100%' }}>
       <Typography variant="h4" component="h1" gutterBottom>
         Dashboard
       </Typography>

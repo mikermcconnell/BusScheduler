@@ -11,7 +11,6 @@ import {
   useMediaQuery,
   Fab,
   Tooltip,
-  Container
 } from '@mui/material';
 import {
   Menu as MenuIcon,
@@ -96,6 +95,7 @@ const Layout: React.FC = () => {
   // Hide breadcrumbs on dashboard and simple pages
   const shouldShowBreadcrumbs = location.pathname !== '/' && location.pathname !== '/settings';
 
+  // Check if sidebar is actually collapsed from SidebarNavigation internal state
   const currentSidebarWidth = isMobile ? 0 : (sidebarCollapsed ? COLLAPSED_WIDTH : DRAWER_WIDTH);
 
   return (
@@ -136,6 +136,7 @@ const Layout: React.FC = () => {
       <SidebarNavigation
         open={sidebarOpen}
         onToggle={handleSidebarToggle}
+        collapsed={sidebarCollapsed}
       />
 
       {/* Main Content */}
@@ -147,23 +148,21 @@ const Layout: React.FC = () => {
           flexDirection: 'column',
           minHeight: '100vh',
           backgroundColor: 'background.default',
-          ml: isMobile ? 0 : `${currentSidebarWidth}px`,
+          // Remove margin-left - let flexbox handle positioning
           mt: (isMobile || sidebarCollapsed) ? '64px' : 0, // Account for AppBar height
-          transition: theme.transitions.create(['margin-left'], {
-            easing: theme.transitions.easing.sharp,
-            duration: theme.transitions.duration.leavingScreen,
-          }),
         }}
       >
         {/* Content Container */}
-        <Container 
-          maxWidth="xl" 
+        <Box
           sx={{ 
             flexGrow: 1,
+            pl: 5, // Moderate left padding (20px) to create comfortable gap from sidebar
+            pr: 2, // Small right padding for edge spacing
             py: 3,
             pb: 6, // Extra padding for FAB
             display: 'flex',
-            flexDirection: 'column'
+            flexDirection: 'column',
+            width: '100%' // Ensure full width usage
           }}
         >
           {/* Workflow Breadcrumbs */}
@@ -197,7 +196,7 @@ const Layout: React.FC = () => {
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
-        </Container>
+        </Box>
 
         {/* Footer */}
         <Box

@@ -24,7 +24,6 @@ import WorkflowBreadcrumbs from '../components/WorkflowBreadcrumbs';
 import { useWorkflowDraft } from '../hooks/useWorkflowDraft';
 import {
   Box,
-  Container,
   Typography,
   Button,
   Card,
@@ -1404,7 +1403,7 @@ export default function BlockConfiguration() {
   };
 
   return (
-    <Container maxWidth="xl" sx={{ py: 4 }}>
+    <Box sx={{ py: 4, pr: 3, width: '100%' }}>
       {/* Back Button */}
       <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
         <Button
@@ -2108,6 +2107,6 @@ export default function BlockConfiguration() {
           {saveNotification.message}
         </Alert>
       </Snackbar>
-    </Container>
+    </Box>
   );
 }
