@@ -709,6 +709,33 @@ const BlockSummarySchedule: React.FC = () => {
     setEditingRecovery(null);
     setTempRecoveryValue('');
   }, []);
+  
+  const handleRecoveryKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleRecoverySubmit();
+    }
+    if (e.key === 'Escape') {
+      handleRecoveryCancel();
+    }
+  }, [handleRecoverySubmit, handleRecoveryCancel]);
+  
+  const handleTripEnd = useCallback((tripNumber: number, timePointId: string, timePointIndex: number) => {
+    setTripEndDialog({
+      open: true,
+      tripNumber,
+      timePointId,
+      timePointIndex
+    });
+  }, []);
+  
+  const handleTripRestore = useCallback((tripNumber: number, timePointId: string, timePointIndex: number) => {
+    setTripRestoreDialog({
+      open: true,
+      tripNumber,
+      timePointId,
+      timePointIndex
+    });
+  }, []);
 
   // Trip end and restoration functionality handlers
   const handleTimePointClick = useCallback((tripNumber: number, timePointId: string, timePointIndex: number, event: React.MouseEvent, isInactive: boolean = false) => {
@@ -1229,16 +1256,25 @@ const BlockSummarySchedule: React.FC = () => {
       updatedTrips.sort((a, b) => 
         timeStringToMinutes(a.departureTime) - timeStringToMinutes(b.departureTime)
       );
+      
+      // Renumber trips based on chronological order
+      const renumberedTrips = updatedTrips.map((trip, index) => ({
+        ...trip,
+        tripNumber: index + 1
+      }));
 
       const updatedSchedule = {
         ...prevSchedule,
-        trips: updatedTrips
+        trips: renumberedTrips
       };
 
       // Persist to localStorage
       try {
         localStorage.setItem('currentSummarySchedule', JSON.stringify(updatedSchedule));
-        console.log(`✅ Added trip ${newTripNumber} for Block ${blockNumber} at ${newTripStartTime}`);
+        const finalTripNumber = renumberedTrips.find(t => 
+          t.departureTime === newTripStartTime && t.blockNumber === blockNumber
+        )?.tripNumber || newTripNumber;
+        console.log(`✅ Added trip (now Trip ${finalTripNumber}) for Block ${blockNumber} at ${newTripStartTime}`);
       } catch (error) {
         console.warn('Failed to persist schedule updates:', error);
       }
@@ -1611,14 +1647,40 @@ const BlockSummarySchedule: React.FC = () => {
     });
   }, []);
 
-  // New simplified trip row component
-  const TripRow = memo(({ trip, idx }: { trip: Trip; idx: number }) => {
+  // New simplified trip row component - optimized with proper memoization
+  const TripRow = memo(({ 
+    trip, 
+    idx, 
+    timePoints,
+    onRecoveryClick,
+    onServiceBandClick,
+    onTripEnd,
+    onTripRestore,
+    editingRecovery,
+    tempRecoveryValue,
+    onRecoveryChange,
+    onRecoverySubmit,
+    onRecoveryKeyDown
+  }: { 
+    trip: Trip; 
+    idx: number;
+    timePoints: TimePoint[];
+    onRecoveryClick: (tripId: string, timePointId: string, value: number) => void;
+    onServiceBandClick: (tripNumber: number, band: ServiceBand) => void;
+    onTripEnd: (tripNumber: number, timePointId: string, timePointIndex: number) => void;
+    onTripRestore: (tripNumber: number, timePointId: string, timePointIndex: number) => void;
+    editingRecovery: {tripId: string, timePointId: string} | null;
+    tempRecoveryValue: string;
+    onRecoveryChange: (value: string) => void;
+    onRecoverySubmit: (tripNumber: number, timePointId: string, newValue: number) => void;
+    onRecoveryKeyDown: (e: React.KeyboardEvent) => void;
+  }) => {
     const serviceBandColor = getServiceBandColor(trip.serviceBand);
     
     // Calculate trip time from first to last active timepoint departure
-    const firstTimepointId = schedule.timePoints[0]?.id;
-    const lastActiveIndex = trip.tripEndIndex !== undefined ? trip.tripEndIndex : schedule.timePoints.length - 1;
-    const lastActiveTimepointId = schedule.timePoints[lastActiveIndex]?.id;
+    const firstTimepointId = timePoints[0]?.id;
+    const lastActiveIndex = trip.tripEndIndex !== undefined ? trip.tripEndIndex : timePoints.length - 1;
+    const lastActiveTimepointId = timePoints[lastActiveIndex]?.id;
     const firstDepartureTime = firstTimepointId ? (trip.departureTimes[firstTimepointId] || trip.arrivalTimes[firstTimepointId]) : '';
     const lastDepartureTime = lastActiveTimepointId ? (trip.departureTimes[lastActiveTimepointId] || trip.arrivalTimes[lastActiveTimepointId]) : '';
     const tripTime = calculateTripTime(firstDepartureTime || '', lastDepartureTime || '');
@@ -1676,7 +1738,7 @@ const BlockSummarySchedule: React.FC = () => {
           <Chip 
             label={trip.serviceBand}
             size="small"
-            onClick={() => handleServiceBandClick(trip.tripNumber, trip.serviceBand)}
+            onClick={() => onServiceBandClick(trip.tripNumber, trip.serviceBand)}
             sx={{
               backgroundColor: `${serviceBandColor}20`,
               color: serviceBandColor,
@@ -1693,7 +1755,7 @@ const BlockSummarySchedule: React.FC = () => {
         </TableCell>
         
         {/* Time Points */}
-        {schedule.timePoints.map((tp, tpIndex) => {
+        {timePoints.map((tp, tpIndex) => {
           const isActive = trip.tripEndIndex === undefined || tpIndex <= trip.tripEndIndex;
           const isInactive = !isActive;
           const isClickable = (tpIndex > 0 && isActive) || isInactive; // Can end active trips or restore inactive ones
@@ -1795,16 +1857,15 @@ const BlockSummarySchedule: React.FC = () => {
                         type="text"
                         data-recovery-edit="true"
                         value={tempRecoveryValue}
-                        onChange={(e) => handleRecoveryChange(e.target.value)}
+                        onChange={(e) => onRecoveryChange(e.target.value)}
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter') handleRecoverySubmit();
-                          if (e.key === 'Escape') handleRecoveryCancel();
+                          onRecoveryKeyDown(e);
                           if (e.key === 'Tab') {
                             e.preventDefault();
-                            handleRecoverySubmit();
+                            onRecoverySubmit(trip.tripNumber, tp.id, parseInt(tempRecoveryValue) || 0);
                           }
                         }}
-                        onBlur={handleRecoverySubmit}
+                        onBlur={() => onRecoverySubmit(trip.tripNumber, tp.id, parseInt(tempRecoveryValue) || 0)}
                         autoFocus
                         onFocus={(e) => e.target.select()}
                         style={{
@@ -1823,7 +1884,7 @@ const BlockSummarySchedule: React.FC = () => {
                   ) : (
                     <Typography 
                       component="div" 
-                      onClick={() => handleRecoveryClick(trip.tripNumber.toString(), tp.id, trip.recoveryTimes[tp.id] || 0)}
+                      onClick={() => onRecoveryClick(trip.tripNumber.toString(), tp.id, trip.recoveryTimes[tp.id] || 0)}
                       sx={{ 
                         fontSize: '11px',
                         color: '#0ea5e9',
@@ -2506,6 +2567,16 @@ const BlockSummarySchedule: React.FC = () => {
                           key={trip.tripNumber}
                           trip={trip}
                           idx={originalIdx}
+                          timePoints={schedule.timePoints}
+                          onRecoveryClick={handleRecoveryClick}
+                          onServiceBandClick={handleServiceBandClick}
+                          onTripEnd={handleTripEnd}
+                          onTripRestore={handleTripRestore}
+                          editingRecovery={editingRecovery}
+                          tempRecoveryValue={tempRecoveryValue}
+                          onRecoveryChange={setTempRecoveryValue}
+                          onRecoverySubmit={handleRecoverySubmit}
+                          onRecoveryKeyDown={handleRecoveryKeyDown}
                         />
                       );
                     })}
@@ -3150,6 +3221,16 @@ const BlockSummarySchedule: React.FC = () => {
                         key={trip.tripNumber}
                         trip={trip}
                         idx={originalIdx}
+                        timePoints={schedule.timePoints}
+                        onRecoveryClick={handleRecoveryClick}
+                        onServiceBandClick={handleServiceBandClick}
+                        onTripEnd={handleTripEnd}
+                        onTripRestore={handleTripRestore}
+                        editingRecovery={editingRecovery}
+                        tempRecoveryValue={tempRecoveryValue}
+                        onRecoveryChange={setTempRecoveryValue}
+                        onRecoverySubmit={handleRecoverySubmit}
+                        onRecoveryKeyDown={handleRecoveryKeyDown}
                       />
                     );
                   })}
