@@ -1222,6 +1222,10 @@ const BlockSummarySchedule: React.FC = () => {
         }
       }
 
+      // Get recovery template for this service band
+      const recoveryTemplate = recoveryTemplates[serviceBand] || recoveryTemplates['Standard Service'] || [0, 2, 2, 3, 5];
+      console.log(`Using recovery template for ${serviceBand}:`, recoveryTemplate);
+      
       // Create new trip with generated times based on service band
       const newTrip: Trip = {
         tripNumber: newTripNumber,
@@ -1240,8 +1244,8 @@ const BlockSummarySchedule: React.FC = () => {
         const totalTripTime = timeStringToMinutes(calculatedEndTime) - timeStringToMinutes(newTripStartTime);
         const numTimepoints = prevSchedule.timePoints.length;
         
-        // Estimate travel time between stops (total time minus estimated recovery)
-        const estimatedTotalRecovery = 0 + (1 * (numTimepoints - 2)) + 3; // 0 at start, 1 at middle, 3 at end
+        // Calculate total recovery from template
+        const estimatedTotalRecovery = recoveryTemplate.slice(0, numTimepoints).reduce((sum, r) => sum + r, 0);
         const travelTimePerSegment = Math.floor((totalTripTime - estimatedTotalRecovery) / (numTimepoints - 1));
         
         let currentTime = timeStringToMinutes(newTripStartTime);
@@ -1249,14 +1253,14 @@ const BlockSummarySchedule: React.FC = () => {
           if (index === 0) {
             // First timepoint - only departure
             newTrip.departureTimes[tp.id] = newTripStartTime;
-            newTrip.recoveryTimes[tp.id] = 0;
+            newTrip.recoveryTimes[tp.id] = recoveryTemplate[index] || 0;
           } else {
             // Add travel time
             currentTime += travelTimePerSegment;
             newTrip.arrivalTimes[tp.id] = minutesToTime(currentTime);
             
-            // Add recovery time
-            const recoveryTime = index === prevSchedule.timePoints.length - 1 ? 3 : 1;
+            // Add recovery time from template
+            const recoveryTime = recoveryTemplate[index] || 0;
             newTrip.recoveryTimes[tp.id] = recoveryTime;
             
             // For last stop of early trip, ensure departure matches first trip's start
@@ -1276,14 +1280,14 @@ const BlockSummarySchedule: React.FC = () => {
           if (index === 0) {
             // First timepoint - only departure
             newTrip.departureTimes[tp.id] = newTripStartTime;
-            newTrip.recoveryTimes[tp.id] = 0;
+            newTrip.recoveryTimes[tp.id] = recoveryTemplate[index] || 0;
           } else {
             // Add default 6-minute travel time
             currentTime += 6;
             newTrip.arrivalTimes[tp.id] = minutesToTime(currentTime);
             
-            // Add recovery time (1 min for middle stops, 3 for last stop)
-            const recoveryTime = index === prevSchedule.timePoints.length - 1 ? 3 : 1;
+            // Add recovery time from template
+            const recoveryTime = recoveryTemplate[index] || 0;
             newTrip.recoveryTimes[tp.id] = recoveryTime;
             newTrip.departureTimes[tp.id] = minutesToTime(currentTime + recoveryTime);
             currentTime += recoveryTime;
@@ -1327,7 +1331,7 @@ const BlockSummarySchedule: React.FC = () => {
     setNewTripBlockNumber('');
     setNewTripStartTime('');
     setNewTripEndTime('');
-  }, [addTripDialog, newTripBlockNumber, newTripStartTime, newTripEndTime, determineServiceBandForTime]);
+  }, [addTripDialog, newTripBlockNumber, newTripStartTime, newTripEndTime, determineServiceBandForTime, recoveryTemplates]);
 
   const handleAddTripCancel = useCallback(() => {
     setAddTripDialog(null);
@@ -1355,13 +1359,19 @@ const BlockSummarySchedule: React.FC = () => {
         
         const firstDepartureTime = firstTimepointId ? (trip.departureTimes[firstTimepointId] || trip.arrivalTimes[firstTimepointId]) : '';
         const lastArrivalTime = lastActiveTimepointId ? trip.arrivalTimes[lastActiveTimepointId] : '';
+        const lastDepartureTime = lastActiveTimepointId ? trip.departureTimes[lastActiveTimepointId] : '';
         
         if (firstDepartureTime && lastArrivalTime) {
-          const tripMinutes = timeStringToMinutes(lastArrivalTime) - timeStringToMinutes(firstDepartureTime);
+          // Trip time is from first departure to last arrival (travel time only)
+          const travelMinutes = timeStringToMinutes(lastArrivalTime) - timeStringToMinutes(firstDepartureTime);
+          // Total trip time includes the final recovery/dwell at the last stop
+          const tripMinutes = lastDepartureTime ? 
+            timeStringToMinutes(lastDepartureTime) - timeStringToMinutes(firstDepartureTime) : 
+            travelMinutes;
           totalTripMinutes += tripMinutes;
           validTripCount++;
 
-          // Calculate travel time (trip time minus recovery time)
+          // Calculate total recovery time for this trip
           let tripRecoveryMinutes = 0;
           schedule.timePoints.forEach((tp, index) => {
             if (trip.tripEndIndex === undefined || index <= trip.tripEndIndex) {
@@ -1372,12 +1382,14 @@ const BlockSummarySchedule: React.FC = () => {
           });
           
           totalRecoveryMinutes += tripRecoveryMinutes;
-          totalTravelMinutes += (tripMinutes - tripRecoveryMinutes);
+          // Travel time is the time spent actually moving (without recovery)
+          totalTravelMinutes += travelMinutes;
         }
       }
     });
 
-    const averageRecoveryPercent = totalTripMinutes > 0 ? (totalRecoveryMinutes / totalTripMinutes) * 100 : 0;
+    // Recovery percentage is recovery time divided by travel time (how much recovery is added to base travel)
+    const averageRecoveryPercent = totalTravelMinutes > 0 ? (totalRecoveryMinutes / totalTravelMinutes) * 100 : 0;
 
     return {
       totalTravelTime: formatMinutesToHours(totalTravelMinutes),
