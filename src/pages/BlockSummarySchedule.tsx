@@ -37,6 +37,8 @@ import { SummarySchedule } from '../types/schedule';
 import { workflowStateService } from '../services/workflowStateService';
 import WorkflowBreadcrumbs from '../components/WorkflowBreadcrumbs';
 
+// TODO(human): Add comprehensive component documentation here
+
 // Service Band Types based on travel time data from TimePoints analysis
 export type ServiceBand = 'Fastest Service' | 'Fast Service' | 'Standard Service' | 'Slow Service' | 'Slowest Service';
 

@@ -620,6 +620,177 @@ This metric shows what percentage of recovery time is added on top of base trave
 - **Descriptive captions** explaining each metric's meaning
 - **Professional Material-UI styling** matching transit industry standards
 
+## System Architecture Diagrams
+
+### Schedule Generation Flow
+```
+CSV Upload → Format Detection → TimePoint Analysis
+     ↓              ↓                    ↓
+  Validation   Auto-detect      Service Band Creation
+     ↓          Headers                  ↓
+  Storage   →   Draft Save   →   Block Configuration
+                                        ↓
+                              Summary Schedule Generation
+                                        ↓
+                                  Export (CSV/Excel)
+```
+
+### Cascading Update Flow
+```
+User edits recovery time at Stop 3
+            ↓
+Update Stop 3 departure time
+            ↓
+Cascade within trip (Stops 4-5)
+            ↓
+Is last stop changed?
+     ↓          ↓
+    No         Yes
+     ↓          ↓
+   Done    Update next trip start
+                ↓
+          Cascade to all subsequent
+           trips in same block
+```
+
+### Data Flow Architecture
+```
+┌─────────────┐     ┌──────────────┐     ┌────────────┐
+│   Pages/    │────▶│   Hooks/     │────▶│  Domain/   │
+│ Components  │     │  Services    │     │   Logic    │
+└─────────────┘     └──────────────┘     └────────────┘
+       ↑                    │                    │
+       │                    ↓                    │
+       │            ┌──────────────┐            │
+       └────────────│    State     │◀───────────┘
+                    │  Management  │
+                    └──────────────┘
+```
+
+## Common Development Gotchas
+
+### 1. Recovery Time vs Travel Time
+- **Recovery Time**: Dwell time at stops (waiting/loading passengers)
+- **Travel Time**: Pure movement time between stops
+- **Trip Time**: Total time = Travel Time + Recovery Time
+- **Common Mistake**: Confusing recovery (dwell) with travel (movement)
+
+### 2. Cascading Updates
+**Gotcha**: Changes cascade within trip first, then to subsequent trips
+```javascript
+// WRONG - Cascading to all trips immediately
+trips.forEach(trip => updateAllStops(trip));
+
+// RIGHT - Update current trip, then cascade if needed
+const updatedTrip = updateCurrentTrip(trip);
+if (isLastStop) cascadeToSubsequentTrips(updatedTrip);
+```
+
+### 3. Block Boundaries
+**Gotcha**: Cascading NEVER crosses block boundaries
+```javascript
+// WRONG - Updating all trips regardless of block
+const nextTrip = trips.find(t => t.tripNumber === currentTrip.tripNumber + 1);
+
+// RIGHT - Only update within same block
+const nextTrip = trips.find(t => 
+  t.blockNumber === currentTrip.blockNumber && 
+  t.tripNumber === currentTrip.tripNumber + 1
+);
+```
+
+### 4. Time String Format
+**Gotcha**: Always use HH:MM format (24-hour)
+```javascript
+// WRONG
+"7:00"    // Missing leading zero
+"07:00 AM" // 12-hour format
+
+// RIGHT
+"07:00"   // Correct format
+"19:00"   // 7 PM in 24-hour
+```
+
+### 5. localStorage Limits
+**Gotcha**: Browser localStorage has 5-10MB limit
+```javascript
+// WRONG - Storing large datasets without checking
+localStorage.setItem('bigData', JSON.stringify(hugeArray));
+
+// RIGHT - Check size and handle errors
+try {
+  const data = JSON.stringify(scheduleData);
+  if (data.length > 4 * 1024 * 1024) { // 4MB safety limit
+    console.warn('Data too large for localStorage');
+  }
+  localStorage.setItem('schedule', data);
+} catch (e) {
+  console.error('Storage quota exceeded');
+}
+```
+
+### 6. React Re-render Performance
+**Gotcha**: Large schedule tables can cause performance issues
+```javascript
+// WRONG - Re-calculating on every render
+const stats = calculateExpensiveStats(schedule);
+
+// RIGHT - Memoize expensive calculations
+const stats = useMemo(() => 
+  calculateExpensiveStats(schedule),
+  [schedule.trips] // Only recalculate when trips change
+);
+```
+
+### 7. Service Band Assignment
+**Gotcha**: Service bands are trip-specific, not block-specific
+```javascript
+// WRONG - Assigning service band to entire block
+block.serviceBand = 'Standard Service';
+
+// RIGHT - Each trip gets its own service band
+trip.serviceBand = getServiceBandForTime(trip.departureTime);
+```
+
+### 8. File Upload Security
+**Gotcha**: Never trust file extensions alone
+```javascript
+// WRONG - Only checking extension
+if (file.name.endsWith('.xlsx')) processExcel(file);
+
+// RIGHT - Check MIME type AND magic bytes
+if (file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' &&
+    await verifyMagicBytes(file)) {
+  processExcel(file);
+}
+```
+
+## Performance Optimization Tips
+
+### Virtualization Thresholds
+```javascript
+const getVirtualizationStrategy = (tripCount: number) => {
+  if (tripCount < 100) return 'none';
+  if (tripCount < 500) return 'optional';
+  if (tripCount < 1000) return 'required';
+  return 'pagination'; // > 1000 trips
+};
+```
+
+### Memoization Patterns
+```javascript
+// Memoize with multiple dependencies
+const memoizedValue = useMemo(() => 
+  expensiveCalculation(a, b, c),
+  [a, b, c] // Only recalculate when these change
+);
+
+// Memoize callbacks to prevent re-renders
+const handleClick = useCallback((id) => {
+  doSomething(id);
+}, []); // Empty deps if function doesn't use external values
+```
+
 ## Production Readiness Status: ✅ COMPLETE
 - All core features implemented and tested
 - Security vulnerabilities addressed with comprehensive mitigations
