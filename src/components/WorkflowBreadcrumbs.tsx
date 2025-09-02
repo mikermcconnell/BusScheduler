@@ -24,7 +24,8 @@ import {
   CheckCircle as CompleteIcon,
   RadioButtonUnchecked as PendingIcon,
   PlayArrow as ActiveIcon,
-  Info as InfoIcon
+  Info as InfoIcon,
+  SwapVert as SwapVertIcon
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { workflowStateService, WorkflowState } from '../services/workflowStateService';
@@ -100,10 +101,18 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
       },
       {
         key: 'summary',
-        label: 'Summary Schedule',
+        label: 'Base Schedule',
         path: '/block-summary-schedule',
         icon: <SummaryIcon />,
-        description: 'Generate final schedule',
+        description: 'Generate base schedule with best practice recovery times',
+        status: 'pending' as const
+      },
+      {
+        key: 'connections',
+        label: 'Connection Schedule',
+        path: '/connection-schedule',
+        icon: <SwapVertIcon />,
+        description: 'Configure connections to GO trains, schools, and other routes',
         status: 'pending' as const
       }
     ],
@@ -309,11 +318,12 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
     ];
 
     const pathMappings: { [key: string]: { label: string; icon?: React.ReactNode } } = {
-      'upload': { label: 'Upload Schedule', icon: <UploadIcon /> },
+      'upload': { label: 'Create Draft Schedule', icon: <UploadIcon /> },
       'drafts': { label: 'Draft Schedules', icon: <DraftsIcon /> },
       'timepoints': { label: 'TimePoints Analysis', icon: <TimelineIcon /> },
       'block-configuration': { label: 'Block Configuration', icon: <ConfigIcon /> },
-      'block-summary-schedule': { label: 'Summary Schedule', icon: <SummaryIcon /> },
+      'block-summary-schedule': { label: 'Base Schedule', icon: <SummaryIcon /> },
+      'connection-schedule': { label: 'Connection Schedule', icon: <SwapVertIcon /> },
       'schedules': { label: 'View Schedules', icon: <SummaryIcon /> },
       'routes': { label: 'Manage Routes', icon: <ConfigIcon /> },
       'tod-shifts': { label: 'Tod Shifts', icon: <ConfigIcon /> },

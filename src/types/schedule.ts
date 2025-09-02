@@ -309,19 +309,85 @@ export interface BlockTrip {
  */
 export interface ServiceBand {
   /** Unique service band identifier */
-  id: string;
+  id?: string;
   /** Service band name (e.g., "Fastest Service") */
   name: string;
   /** Start time of this service band in HH:MM format */
-  startTime: string;
+  startTime?: string;
   /** End time of this service band in HH:MM format */
-  endTime: string;
+  endTime?: string;
   /** Travel time multiplier for this band */
-  travelTimeMultiplier: number;
+  travelTimeMultiplier?: number;
   /** Color for visual representation */
   color: string;
   /** Optional description */
   description?: string;
+  /** Total minutes for this service band */
+  totalMinutes?: number;
+  /** Segment travel times */
+  segmentTimes?: number[];
+}
+
+/**
+ * Represents a single bus trip
+ */
+export interface Trip {
+  /** Trip number */
+  tripNumber: number;
+  /** Block number this trip belongs to */
+  blockNumber: number;
+  /** Departure time from first stop */
+  departureTime: string;
+  /** Service band name */
+  serviceBand: string;
+  /** Arrival times at each timepoint */
+  arrivalTimes: { [timePointId: string]: string };
+  /** Departure times from each timepoint */
+  departureTimes: { [timePointId: string]: string };
+  /** Recovery times at each timepoint */
+  recoveryTimes: { [timePointId: string]: number };
+  /** Service band information */
+  serviceBandInfo?: {
+    name: string;
+    color: string;
+    totalMinutes?: number;
+  };
+  /** Total recovery minutes */
+  recoveryMinutes: number;
+  /** Index where trip ends early */
+  tripEndIndex?: number;
+  /** Original times for restoration */
+  originalArrivalTimes?: { [timePointId: string]: string };
+  originalDepartureTimes?: { [timePointId: string]: string };
+  originalRecoveryTimes?: { [timePointId: string]: number };
+}
+
+/**
+ * Complete schedule with all trips and metadata
+ */
+export interface Schedule {
+  /** Schedule ID */
+  id: string;
+  /** Schedule name */
+  name: string;
+  /** Route ID */
+  routeId: string;
+  /** Route name */
+  routeName: string;
+  /** Direction (Inbound/Outbound) */
+  direction: string;
+  /** Day type */
+  dayType: string;
+  /** Time points in order */
+  timePoints: TimePoint[];
+  /** Service bands */
+  serviceBands: ServiceBand[];
+  /** All trips */
+  trips: Trip[];
+  /** Creation timestamp */
+  createdAt: string;
+  /** Last update timestamp */
+  updatedAt: string;
 }
 
 /**
@@ -358,4 +424,187 @@ export interface TimePointData {
   percentile50: number;
   /** 80th percentile travel time in minutes */
   percentile80: number;
+}
+
+/**
+ * Connection types for schedule coordination
+ */
+export enum ConnectionType {
+  BUS_ROUTE = 'BUS_ROUTE',
+  GO_TRAIN = 'GO_TRAIN',
+  SCHOOL_BELL = 'SCHOOL_BELL'
+}
+
+/**
+ * Connection status indicators
+ */
+export enum ConnectionStatus {
+  MET = 'MET',           // Connection time requirements satisfied
+  AT_RISK = 'AT_RISK',   // Close to minimum threshold  
+  FAILED = 'FAILED',     // Cannot meet connection
+  PENDING = 'PENDING'    // Not yet validated
+}
+
+/**
+ * Connection point configuration
+ */
+export interface ConnectionPoint {
+  /** Unique connection identifier */
+  id: string;
+  /** Type of connection */
+  type: ConnectionType;
+  /** Timepoint/stop ID where connection occurs */
+  locationId: string;
+  /** Display name of connection location */
+  locationName: string;
+  /** Target service (route/train/school ID) */
+  targetServiceId: string;
+  /** Display name of target service */
+  targetServiceName: string;
+  /** Required arrival time (for schools/trains) */
+  requiredArrivalTime?: string;
+  /** Required departure time */
+  requiredDepartureTime?: string;
+  /** Minimum transfer time in minutes */
+  minimumTransferTime: number;
+  /** Maximum acceptable wait time */
+  maximumWaitTime?: number;
+  /** Connection priority */
+  priority: 'HIGH' | 'MEDIUM' | 'LOW';
+  /** Days when connection is active */
+  dayTypes: string[];
+  /** Additional notes */
+  notes?: string;
+}
+
+/**
+ * Connection validation result
+ */
+export interface ConnectionValidation {
+  /** Connection point ID */
+  connectionId: string;
+  /** Current validation status */
+  status: ConnectionStatus;
+  /** Actual transfer time in minutes */
+  actualTransferTime?: number;
+  /** Trips affected by this connection */
+  affectedTrips: string[];
+  /** Warning or error message */
+  message?: string;
+}
+
+/**
+ * GO Train schedule entry
+ */
+export interface GOTrainSchedule {
+  /** Train direction (northbound/southbound) */
+  direction: 'northbound' | 'southbound';
+  /** Station stop code */
+  stopCode: string;
+  /** Station name */
+  stationName: string;
+  /** Arrival time in HH:MM format (24-hour) */
+  arrivalTime?: string;
+  /** Departure time in HH:MM format (24-hour) */
+  departureTime?: string;
+  /** Day types this schedule operates */
+  dayTypes: ('weekday' | 'saturday' | 'sunday')[];
+  /** Train number/identifier */
+  trainNumber?: string;
+  /** Notes about this train */
+  notes?: string;
+}
+
+/**
+ * Connection optimization request
+ */
+export interface ConnectionOptimizationRequest {
+  /** Current bus schedule to optimize */
+  schedule: Schedule;
+  /** GO Train schedules to connect with */
+  goTrainSchedules: GOTrainSchedule[];
+  /** Connection parameters */
+  connectionParams: {
+    /** Buffer time for bus-to-train connections (minutes) */
+    busToTrainBuffer: number;
+    /** Buffer time for train-to-bus connections (minutes) */
+    trainToBusBuffer: number;
+    /** Maximum acceptable wait time (minutes) */
+    maxWaitTime: number;
+    /** Prioritize specific connections */
+    priorities?: ConnectionPriority[];
+  };
+}
+
+/**
+ * Connection priority configuration
+ */
+export interface ConnectionPriority {
+  /** Priority level (1 = highest) */
+  level: number;
+  /** Description of priority (e.g., "Georgian College") */
+  description: string;
+  /** Specific time windows to prioritize */
+  timeWindows?: {
+    start: string;
+    end: string;
+  }[];
+  /** Specific train numbers to prioritize */
+  trainNumbers?: string[];
+}
+
+/**
+ * Connection optimization result
+ */
+export interface ConnectionOptimizationResult {
+  /** Optimized schedule */
+  optimizedSchedule: Schedule;
+  /** List of connections made */
+  connections: ConnectionMatch[];
+  /** List of connections that couldn't be made */
+  missedConnections: MissedConnection[];
+  /** Overall optimization score */
+  optimizationScore: number;
+  /** Summary statistics */
+  summary: {
+    totalConnections: number;
+    successfulConnections: number;
+    failedConnections: number;
+    averageWaitTime: number;
+    averageTransferTime: number;
+  };
+}
+
+/**
+ * Successful connection match
+ */
+export interface ConnectionMatch {
+  /** Bus trip ID */
+  busTrip: string;
+  /** GO Train schedule */
+  goTrain: GOTrainSchedule;
+  /** Connection type */
+  connectionType: 'bus-to-train' | 'train-to-bus';
+  /** Actual connection time (minutes) */
+  connectionTime: number;
+  /** Wait time (minutes) */
+  waitTime: number;
+  /** Priority level if applicable */
+  priorityLevel?: number;
+  /** Time adjustment made to bus schedule (minutes) */
+  adjustmentMade?: number;
+}
+
+/**
+ * Missed connection details
+ */
+export interface MissedConnection {
+  /** GO Train schedule that couldn't be connected */
+  goTrain: GOTrainSchedule;
+  /** Reason for missing connection */
+  reason: string;
+  /** Closest bus trip (if any) */
+  closestBusTrip?: string;
+  /** Time difference to closest trip (minutes) */
+  timeDifference?: number;
 }

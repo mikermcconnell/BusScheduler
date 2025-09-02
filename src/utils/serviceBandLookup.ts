@@ -10,6 +10,7 @@ export const getServiceBandForTime = (
   const timeMinutes = timeToMinutes(timeStr);
   
   for (const band of serviceBands) {
+    if (!band.startTime || !band.endTime) continue;
     const startMinutes = timeToMinutes(band.startTime);
     const endMinutes = timeToMinutes(band.endTime);
     

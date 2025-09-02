@@ -121,6 +121,19 @@ export const useWorkflowDraft = (draftId?: string): UseWorkflowDraftReturn => {
   }): Promise<WorkflowDraftResult> => {
     if (!draft) return { success: false, error: 'No active draft' };
     
+    // TODO(human): Add debugging to track save flow
+    console.log('📊 [useWorkflowDraft] Starting timepoints analysis update:', {
+      draftId: draft.draftId,
+      fileName: draft.originalData.fileName,
+      dataSize: {
+        serviceBands: analysisData.serviceBands?.length || 0,
+        travelTimeData: analysisData.travelTimeData?.length || 0,
+        outliers: analysisData.outliers?.length || 0,
+        deletedPeriods: analysisData.deletedPeriods?.length || 0
+      },
+      timestamp: new Date().toISOString()
+    });
+    
     setIsSaving(true);
     setError(null);
     
@@ -131,8 +144,16 @@ export const useWorkflowDraft = (draftId?: string): UseWorkflowDraftReturn => {
       );
       
       if (result.success) {
+        console.log('✅ [useWorkflowDraft] Analysis saved successfully:', {
+          draftId: draft.draftId,
+          success: result.success
+        });
         await loadDraft(draft.draftId);
       } else {
+        console.error('❌ [useWorkflowDraft] Failed to save analysis:', {
+          draftId: draft.draftId,
+          error: result.error
+        });
         setError(result.error || 'Failed to update analysis');
       }
       

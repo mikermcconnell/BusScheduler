@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Firebase Draft Save Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        h1 {
+            color: rgb(0, 75, 128);
+            margin-bottom: 20px;
+        }
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        button {
+            background: rgb(0, 75, 128);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        button:hover {
+            background: rgb(0, 60, 102);
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .success {
+            color: green;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+        .error {
+            color: red;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+        .log {
+            font-family: monospace;
+            font-size: 12px;
+            background: #f0f0f0;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .draft-item {
+            padding: 10px;
+            margin: 10px 0;
+            background: #f9f9f9;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+        }
+        .draft-item h3 {
+            margin-top: 0;
+            color: rgb(0, 75, 128);
+        }
+    </style>
+</head>
+<body>
+    <h1>🔥 Firebase Draft Save Test</h1>
+    
+    <div class="card">
+        <h2>Test Firebase Integration</h2>
+        <p>This page tests the new Firebase-integrated draft service.</p>
+        
+        <button onclick="testCreateDraft()">1. Create Test Draft</button>
+        <button onclick="testUpdateTimepoints()" id="updateBtn" disabled>2. Update Timepoints</button>
+        <button onclick="testGetDraft()" id="getBtn" disabled>3. Get Draft from Firebase</button>
+        <button onclick="testListAllDrafts()">4. List All Drafts</button>
+        <button onclick="testDeleteDraft()" id="deleteBtn" disabled>5. Delete Draft</button>
+        
+        <div id="status"></div>
+        <div id="log" class="log"></div>
+    </div>
+    
+    <div class="card">
+        <h2>All Drafts in Firebase</h2>
+        <div id="draftsList"></div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { 
+            getFirestore, 
+            collection, 
+            doc, 
+            setDoc, 
+            getDoc, 
+            getDocs,
+            deleteDoc,
+            query,
+            orderBy,
+            limit,
+            serverTimestamp
+        } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+        import { 
+            getAuth, 
+            signInAnonymously,
+            onAuthStateChanged
+        } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+
+        // Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyDfgSjtWPqpYlyBJHFE17lmEN9jsaBx70E",
+            authDomain: "scheduler2-mike.firebaseapp.com",
+            projectId: "scheduler2-mike",
+            storageBucket: "scheduler2-mike.firebasestorage.app",
+            messagingSenderId: "721086060052",
+            appId: "1:721086060052:web:03c096c8b00ce0ef4b9da5",
+            measurementId: "G-QFVJ2QHN59"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        
+        let currentDraftId = null;
+        
+        function log(message, isError = false) {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            const color = isError ? 'red' : 'blue';
+            logDiv.innerHTML += `<div style="color: ${color}">[${timestamp}] ${message}</div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(message);
+        }
+        
+        function showStatus(message, isError = false) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.className = isError ? 'error' : 'success';
+            statusDiv.textContent = message;
+        }
+        
+        // Authenticate first
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                log(`✅ Authenticated as: ${user.isAnonymous ? 'Anonymous' : user.uid}`);
+                showStatus('Firebase connected and authenticated!');
+            } else {
+                log('🔑 Signing in anonymously...');
+                try {
+                    await signInAnonymously(auth);
+                } catch (error) {
+                    log(`❌ Auth failed: ${error.message}`, true);
+                    showStatus('Authentication failed!', true);
+                }
+            }
+        });
+        
+        window.testCreateDraft = async function() {
+            try {
+                log('📝 Creating new draft in Firebase...');
+                
+                const draftId = `test_draft_${Date.now()}`;
+                const draftData = {
+                    draftId: draftId,
+                    draftName: 'Test Draft ' + new Date().toLocaleString(),
+                    currentStep: 'upload',
+                    originalData: {
+                        fileName: 'test_file.csv',
+                        fileType: 'csv',
+                        uploadedData: {
+                            segments: [],
+                            timePoints: ['Stop A', 'Stop B', 'Stop C'],
+                            validationSummary: { totalSegments: 0, validSegments: 0, invalidSegments: 0, timeSlots: 0 }
+                        },
+                        uploadTimestamp: new Date().toISOString()
+                    },
+                    metadata: {
+                        createdAt: new Date().toISOString(),
+                        lastModifiedAt: new Date().toISOString(),
+                        lastModifiedStep: 'upload',
+                        version: 1,
+                        isPublished: false
+                    },
+                    serverTimestamp: serverTimestamp()
+                };
+                
+                const draftRef = doc(db, 'workflow_drafts', draftId);
+                await setDoc(draftRef, draftData);
+                
+                currentDraftId = draftId;
+                document.getElementById('updateBtn').disabled = false;
+                document.getElementById('getBtn').disabled = false;
+                document.getElementById('deleteBtn').disabled = false;
+                
+                log(`✅ Draft created with ID: ${draftId}`);
+                showStatus(`Draft created successfully! ID: ${draftId}`);
+                
+                await testListAllDrafts();
+            } catch (error) {
+                log(`❌ Failed to create draft: ${error.message}`, true);
+                showStatus('Failed to create draft!', true);
+            }
+        };
+        
+        window.testUpdateTimepoints = async function() {
+            if (!currentDraftId) {
+                showStatus('No draft ID available!', true);
+                return;
+            }
+            
+            try {
+                log(`📝 Updating timepoints for draft: ${currentDraftId}`);
+                
+                const draftRef = doc(db, 'workflow_drafts', currentDraftId);
+                const draftSnap = await getDoc(draftRef);
+                
+                if (!draftSnap.exists()) {
+                    throw new Error('Draft not found');
+                }
+                
+                const draft = draftSnap.data();
+                const updatedDraft = {
+                    ...draft,
+                    currentStep: 'timepoints',
+                    timepointsAnalysis: {
+                        serviceBands: [
+                            { name: 'Fast', segmentTimes: [5, 7, 8] },
+                            { name: 'Standard', segmentTimes: [7, 9, 10] }
+                        ],
+                        travelTimeData: [],
+                        outliers: [],
+                        userModifications: [],
+                        analysisTimestamp: new Date().toISOString()
+                    },
+                    metadata: {
+                        ...draft.metadata,
+                        lastModifiedAt: new Date().toISOString(),
+                        lastModifiedStep: 'timepoints',
+                        version: (draft.metadata.version || 0) + 1
+                    },
+                    serverTimestamp: serverTimestamp()
+                };
+                
+                await setDoc(draftRef, updatedDraft);
+                
+                log(`✅ Timepoints updated for draft: ${currentDraftId}`);
+                showStatus('Timepoints updated successfully!');
+                
+                await testListAllDrafts();
+            } catch (error) {
+                log(`❌ Failed to update timepoints: ${error.message}`, true);
+                showStatus('Failed to update timepoints!', true);
+            }
+        };
+        
+        window.testGetDraft = async function() {
+            if (!currentDraftId) {
+                showStatus('No draft ID available!', true);
+                return;
+            }
+            
+            try {
+                log(`🔍 Fetching draft from Firebase: ${currentDraftId}`);
+                
+                const draftRef = doc(db, 'workflow_drafts', currentDraftId);
+                const draftSnap = await getDoc(draftRef);
+                
+                if (draftSnap.exists()) {
+                    const data = draftSnap.data();
+                    log(`✅ Draft retrieved: ${JSON.stringify(data, null, 2)}`);
+                    showStatus('Draft retrieved successfully!');
+                } else {
+                    log('❌ Draft not found', true);
+                    showStatus('Draft not found!', true);
+                }
+            } catch (error) {
+                log(`❌ Failed to get draft: ${error.message}`, true);
+                showStatus('Failed to get draft!', true);
+            }
+        };
+        
+        window.testListAllDrafts = async function() {
+            try {
+                log('📋 Listing all drafts from Firebase...');
+                
+                const draftsRef = collection(db, 'workflow_drafts');
+                const q = query(draftsRef, orderBy('serverTimestamp', 'desc'), limit(10));
+                const querySnapshot = await getDocs(q);
+                
+                const drafts = [];
+                querySnapshot.forEach((doc) => {
+                    drafts.push(doc.data());
+                });
+                
+                log(`✅ Found ${drafts.length} drafts`);
+                
+                // Display drafts in UI
+                const draftsList = document.getElementById('draftsList');
+                if (drafts.length === 0) {
+                    draftsList.innerHTML = '<p>No drafts found in Firebase</p>';
+                } else {
+                    draftsList.innerHTML = drafts.map(draft => `
+                        <div class="draft-item">
+                            <h3>${draft.draftName || 'Unnamed Draft'}</h3>
+                            <p><strong>ID:</strong> ${draft.draftId}</p>
+                            <p><strong>Step:</strong> ${draft.currentStep}</p>
+                            <p><strong>Created:</strong> ${draft.metadata?.createdAt || 'Unknown'}</p>
+                            <p><strong>Modified:</strong> ${draft.metadata?.lastModifiedAt || 'Unknown'}</p>
+                            <p><strong>Version:</strong> ${draft.metadata?.version || 1}</p>
+                        </div>
+                    `).join('');
+                }
+                
+                showStatus(`Found ${drafts.length} drafts in Firebase`);
+            } catch (error) {
+                log(`❌ Failed to list drafts: ${error.message}`, true);
+                showStatus('Failed to list drafts!', true);
+            }
+        };
+        
+        window.testDeleteDraft = async function() {
+            if (!currentDraftId) {
+                showStatus('No draft ID available!', true);
+                return;
+            }
+            
+            try {
+                log(`🗑️ Deleting draft from Firebase: ${currentDraftId}`);
+                
+                const draftRef = doc(db, 'workflow_drafts', currentDraftId);
+                await deleteDoc(draftRef);
+                
+                log(`✅ Draft deleted: ${currentDraftId}`);
+                showStatus('Draft deleted successfully!');
+                
+                currentDraftId = null;
+                document.getElementById('updateBtn').disabled = true;
+                document.getElementById('getBtn').disabled = true;
+                document.getElementById('deleteBtn').disabled = true;
+                
+                await testListAllDrafts();
+            } catch (error) {
+                log(`❌ Failed to delete draft: ${error.message}`, true);
+                showStatus('Failed to delete draft!', true);
+            }
+        };
+        
+        // Load drafts on page load
+        window.addEventListener('load', () => {
+            setTimeout(testListAllDrafts, 2000); // Wait for auth
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Schedules collection - allow authenticated users to read/write their own data
+    match /schedules/{scheduleId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Drafts collection - allow authenticated users to read/write their own data  
+    match /drafts/{draftId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Allow anonymous access for development (remove in production)
+    match /{document=**} {
+      allow read, write: if true; // DEVELOPMENT ONLY - change to require auth
+    }
+  }
+}

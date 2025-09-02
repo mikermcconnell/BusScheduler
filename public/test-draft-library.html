@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Draft Library Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+            margin: 20px;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            color: #333;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: rgb(0, 75, 128);
+            border-bottom: 3px solid rgb(0, 75, 128);
+            padding-bottom: 10px;
+            margin-bottom: 30px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid rgb(0, 75, 128);
+        }
+        .test-title {
+            font-weight: bold;
+            color: rgb(0, 75, 128);
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+        .status {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-weight: 500;
+            margin: 5px;
+        }
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status.pending {
+            background: #fff3cd;
+            color: #856404;
+        }
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .link-button {
+            display: inline-block;
+            margin: 10px 5px;
+            padding: 10px 20px;
+            background: rgb(0, 75, 128);
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        .link-button:hover {
+            background: rgb(0, 60, 102);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,75,128,0.3);
+        }
+        #firebase-status {
+            margin-top: 20px;
+            padding: 15px;
+            background: #e8f4f8;
+            border-radius: 8px;
+        }
+        .feature-list {
+            list-style: none;
+            padding: 0;
+        }
+        .feature-list li {
+            padding: 8px 0;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        .feature-list li:before {
+            content: "✓ ";
+            color: #4caf50;
+            font-weight: bold;
+            margin-right: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📚 Draft Library Test Page</h1>
+        
+        <div class="test-section">
+            <div class="test-title">🚀 Quick Access</div>
+            <a href="http://localhost:3050/draft-library" class="link-button" target="_blank">
+                Open Draft Library
+            </a>
+            <a href="http://localhost:3050/" class="link-button" target="_blank">
+                Main Dashboard
+            </a>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">✨ Features Implemented</div>
+            <ul class="feature-list">
+                <li>Firebase/Firestore integration for cloud persistence</li>
+                <li>Drag & drop file upload with visual feedback</li>
+                <li>Grid/List view toggle for draft display</li>
+                <li>Search, filter, and sort functionality</li>
+                <li>Draft progress tracking (Upload → Timepoints → Blocks → Summary → Ready)</li>
+                <li>Quick actions: Open, Duplicate, Delete</li>
+                <li>Automatic navigation to appropriate workflow step</li>
+                <li>Session-based draft management</li>
+                <li>Professional Material-UI v7 design</li>
+            </ul>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">🔥 Firebase Status</div>
+            <div id="firebase-status">
+                <div class="status pending">Checking Firebase connection...</div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">📋 Test Checklist</div>
+            <ol style="line-height: 1.8;">
+                <li>Navigate to Draft Library page</li>
+                <li>Upload a CSV file via drag & drop or click</li>
+                <li>Verify draft appears in the library</li>
+                <li>Test search functionality</li>
+                <li>Test filter by status (Upload, Timepoints, etc.)</li>
+                <li>Test sort options (Name, Date, Progress)</li>
+                <li>Open a draft and verify navigation to correct workflow step</li>
+                <li>Test duplicate and delete actions</li>
+                <li>Verify Firebase persistence (refresh page, drafts remain)</li>
+                <li>Toggle between grid and list views</li>
+            </ol>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">🛠️ Implementation Summary</div>
+            <p><strong>Problem Solved:</strong> Draft saves weren't persisting, needed centralized draft management</p>
+            <p><strong>Solution:</strong> Created Draft Library with Firebase integration</p>
+            <p><strong>Key Components:</strong></p>
+            <ul>
+                <li><code>DraftLibrary.tsx</code> - Main library page</li>
+                <li><code>DraftLibraryCard.tsx</code> - Draft display cards</li>
+                <li><code>DraftUploadZone.tsx</code> - File upload component</li>
+                <li><code>firebaseDraftService.ts</code> - Firebase integration service</li>
+            </ul>
+        </div>
+    </div>
+
+    <script type="module">
+        // Check if Firebase is initialized
+        setTimeout(() => {
+            const statusDiv = document.getElementById('firebase-status');
+            
+            // Try to access the app to check Firebase
+            fetch('http://localhost:3050/draft-library')
+                .then(response => {
+                    if (response.ok) {
+                        statusDiv.innerHTML = '<div class="status success">✓ Application is running and accessible</div>';
+                    } else {
+                        statusDiv.innerHTML = '<div class="status error">⚠ Application returned status: ' + response.status + '</div>';
+                    }
+                })
+                .catch(error => {
+                    statusDiv.innerHTML = '<div class="status error">⚠ Cannot connect to application. Make sure it\'s running on port 3050</div>';
+                });
+        }, 1000);
+    </script>
+</body>
+</html>

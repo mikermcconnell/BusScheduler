@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Routes, Route, useLocation } from 'react-router-dom';
 import { 
   Box, 
@@ -18,9 +18,12 @@ import {
 } from '@mui/icons-material';
 import SidebarNavigation from './SidebarNavigation';
 import WorkflowBreadcrumbs from './WorkflowBreadcrumbs';
+import StoryboardProgress from './StoryboardProgress';
 import KeyboardShortcutsHelp from './KeyboardShortcutsHelp';
 import UserProfile from './UserProfile';
+import AppHeader from './AppHeader';
 import useKeyboardShortcuts from '../hooks/useKeyboardShortcuts';
+import { draftWorkflowService } from '../services/draftWorkflowService';
 
 // Pages
 import Dashboard from '../pages/Dashboard';
@@ -34,7 +37,9 @@ import DraftSchedules from '../pages/DraftSchedules';
 import TimePoints from '../pages/TimePoints';
 import BlockConfiguration from '../pages/BlockConfiguration';
 import BlockSummarySchedule from '../pages/BlockSummarySchedule';
+import ConnectionSchedule from '../pages/ConnectionSchedule';
 import TodShifts from '../pages/TodShifts';
+import DraftLibrary from '../pages/DraftLibrary';
 import Settings from '../pages/Settings';
 import NotFound from '../pages/NotFound';
 
@@ -56,6 +61,10 @@ const Layout: React.FC = () => {
     const saved = localStorage.getItem('sidebarCollapsed');
     return saved ? JSON.parse(saved) : false; // Default to expanded
   });
+
+  // Track active draft schedule for storyboard
+  const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
+  const [activeDraftName, setActiveDraftName] = useState<string | null>(null);
   
   // Handle responsive sidebar behavior
   React.useEffect(() => {
@@ -66,6 +75,40 @@ const Layout: React.FC = () => {
   React.useEffect(() => {
     localStorage.setItem('sidebarCollapsed', JSON.stringify(sidebarCollapsed));
   }, [sidebarCollapsed]);
+
+  // Track active draft from location state or localStorage
+  React.useEffect(() => {
+    // Check if location state has draft info
+    const locationState = location.state as any;
+    if (locationState?.draftId) {
+      setActiveDraftId(locationState.draftId);
+      setActiveDraftName(locationState.draftName || null);
+    } else {
+      // Try to get from localStorage
+      const savedDraftId = draftWorkflowService.getActiveDraft();
+      if (savedDraftId) {
+        const workflow = draftWorkflowService.getWorkflow(savedDraftId);
+        if (workflow) {
+          setActiveDraftId(savedDraftId);
+          setActiveDraftName(workflow.draftName);
+        }
+      } else {
+        // Check if there's a current draft in general localStorage
+        const currentSchedule = localStorage.getItem('currentSchedule');
+        if (currentSchedule) {
+          try {
+            const schedule = JSON.parse(currentSchedule);
+            if (schedule.id) {
+              setActiveDraftId(schedule.id);
+              setActiveDraftName(schedule.fileName || 'Current Draft');
+            }
+          } catch (e) {
+            console.warn('Could not parse current schedule:', e);
+          }
+        }
+      }
+    }
+  }, [location]);
 
   // Keyboard shortcuts
   const { helpVisible, setHelpVisible } = useKeyboardShortcuts({
@@ -88,6 +131,7 @@ const Layout: React.FC = () => {
     '/timepoints',
     '/block-configuration',
     '/block-summary-schedule',
+    '/connection-schedule',
     '/routes',
     '/tod-shifts'
   ].some(path => location.pathname.startsWith(path));
@@ -102,35 +146,8 @@ const Layout: React.FC = () => {
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
       <CssBaseline />
       
-      {/* Top App Bar - only visible on mobile or when sidebar is collapsed */}
-      {(isMobile || sidebarCollapsed) && (
-        <AppBar 
-          position="fixed" 
-          sx={{ 
-            zIndex: theme.zIndex.drawer + 1,
-            ml: isMobile ? 0 : `${currentSidebarWidth}px`,
-            width: isMobile ? '100%' : `calc(100% - ${currentSidebarWidth}px)`
-          }}
-        >
-          <Toolbar>
-            <IconButton
-              color="inherit"
-              aria-label="toggle sidebar"
-              onClick={handleSidebarToggle}
-              edge="start"
-              sx={{ mr: 2 }}
-            >
-              <MenuIcon />
-            </IconButton>
-            
-            <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
-              Bus Route Scheduler
-            </Typography>
-            
-            <UserProfile />
-          </Toolbar>
-        </AppBar>
-      )}
+      {/* App Header with Logo - always visible */}
+      <AppHeader showLogo={true} onMenuClick={handleSidebarToggle} />
 
       {/* Sidebar Navigation */}
       <SidebarNavigation
@@ -148,8 +165,7 @@ const Layout: React.FC = () => {
           flexDirection: 'column',
           minHeight: '100vh',
           backgroundColor: 'background.default',
-          // Remove margin-left - let flexbox handle positioning
-          mt: (isMobile || sidebarCollapsed) ? '64px' : 0, // Account for AppBar height
+          mt: '64px', // Always account for AppHeader height
         }}
       >
         {/* Content Container */}
@@ -165,17 +181,45 @@ const Layout: React.FC = () => {
             width: '100%' // Ensure full width usage
           }}
         >
-          {/* Workflow Breadcrumbs */}
+          {/* Workflow Progress - Storyboard or Breadcrumbs */}
           {shouldShowBreadcrumbs && (
             <>
-              {location.pathname.includes('timepoints') && console.log('🔍 Layout Debug - TimePoints page:', {
-                pathname: location.pathname,
-                shouldShowBreadcrumbs,
-                shouldShowWorkflow
-              })}
-              <WorkflowBreadcrumbs 
-                showWorkflow={shouldShowWorkflow}
-              />
+              {(() => {
+                // Check if we're in schedule creation workflow
+                const isScheduleCreationPath = [
+                  '/upload',
+                  '/drafts',
+                  '/timepoints',
+                  '/block-configuration',
+                  '/block-summary-schedule',
+                  '/connection-schedule'
+                ].some(path => location.pathname.startsWith(path));
+
+                // Show StoryboardProgress for schedule creation with or without active draft
+                if (isScheduleCreationPath) {
+                  return (
+                    <StoryboardProgress
+                      draftId={activeDraftId || undefined}
+                      draftName={activeDraftName || undefined}
+                      compact={false}
+                      onDraftChange={(newDraftId) => {
+                        const workflow = draftWorkflowService.getWorkflow(newDraftId);
+                        if (workflow) {
+                          setActiveDraftId(newDraftId);
+                          setActiveDraftName(workflow.draftName);
+                        }
+                      }}
+                    />
+                  );
+                } else {
+                  // Show regular breadcrumbs for non-schedule pages
+                  return (
+                    <WorkflowBreadcrumbs 
+                      showWorkflow={shouldShowWorkflow}
+                    />
+                  );
+                }
+              })()}
             </>
           )}
 
@@ -190,8 +234,10 @@ const Layout: React.FC = () => {
             <Route path="/schedules" element={<ViewSchedules />} />
             <Route path="/routes" element={<ManageRoutes />} />
             <Route path="/drafts/*" element={<DraftSchedules />} />
+            <Route path="/draft-library" element={<DraftLibrary />} />
             <Route path="/block-configuration" element={<BlockConfiguration />} />
             <Route path="/block-summary-schedule" element={<BlockSummarySchedule />} />
+            <Route path="/connection-schedule" element={<ConnectionSchedule />} />
             <Route path="/tod-shifts" element={<TodShifts />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<NotFound />} />
@@ -210,7 +256,7 @@ const Layout: React.FC = () => {
             mt: 'auto',
           }}
         >
-          Bus Route Scheduler © 2024 - Schedule Management System
+          Bus Schedule Builder © 2024 - Crafting Routes, Connecting Communities 🚌
         </Box>
       </Box>
 

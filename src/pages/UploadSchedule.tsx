@@ -54,8 +54,10 @@ import { CalculationResults, TimeBand } from '../utils/calculator';
 import SummaryDisplay from '../components/SummaryDisplay';
 import { scheduleStorage, DraftSchedule, startAutoSave, stopAutoSave } from '../services/scheduleStorage';
 import DraftScheduleList from '../components/DraftScheduleList';
+import DraftNamingDialog, { DraftNamingResult } from '../components/DraftNamingDialog';
 import { workflowStateService } from '../services/workflowStateService';
 import { useWorkflowDraft } from '../hooks/useWorkflowDraft';
+import { draftWorkflowService } from '../services/draftWorkflowService';
 
 const UploadSchedule: React.FC = () => {
   const navigate = useNavigate();
@@ -96,7 +98,16 @@ const UploadSchedule: React.FC = () => {
   const [lastAutoSave, setLastAutoSave] = useState<Date | null>(null);
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const steps = ['Upload File', 'Process Data', 'View Results'];
+  // Draft naming dialog states
+  const [showDraftNamingDialog, setShowDraftNamingDialog] = useState(false);
+  const [pendingUploadData, setPendingUploadData] = useState<{
+    data: { extractedData?: ParsedExcelData; csvData?: ParsedCsvData; fileType: 'excel' | 'csv' };
+    fileName: string;
+    validation: ValidationResult;
+    report: string;
+  } | null>(null);
+
+  const steps = ['Create Draft', 'Configure Schedule', 'Review & Save'];
   
   // Initialize workflow when component mounts
   useEffect(() => {
@@ -332,58 +343,101 @@ const UploadSchedule: React.FC = () => {
     validation: ValidationResult, 
     report: string
   ) => {
-    if (data.fileType === 'excel' && data.extractedData) {
-      setExtractedData(data.extractedData);
-      setCsvData(null);
-    } else if (data.fileType === 'csv' && data.csvData) {
-      setCsvData(data.csvData);
-      setExtractedData(null);
-    }
+    // Store the upload data and show the draft naming dialog
+    setPendingUploadData({ data, fileName, validation, report });
+    setShowDraftNamingDialog(true);
     
-    setFileType(data.fileType);
-    setValidation(validation);
-    
-    // Create a workflow draft with the uploaded data
-    const uploadedData = data.extractedData || data.csvData;
-    if (uploadedData) {
-      const result = await createDraftFromUpload(fileName, data.fileType, uploadedData);
-      if (result.success && result.draftId) {
-        setCurrentDraftId(result.draftId);
-        console.log('✅ Created workflow draft:', result.draftId);
-        
-        // For CSV files, automatically redirect to TimePoints page
-        if (data.fileType === 'csv') {
-          setTimeout(() => {
-            navigate('/timepoints', {
-              state: {
-                draftId: result.draftId,
-                csvData: data.csvData,
-                fileName,
-                fromUpload: true
-              }
-            });
-          }, 1000);
-          return;
-        }
-      } else {
-        console.error('Failed to create workflow draft:', result.error);
-      }
-    }
-    
-    // Mark the upload step as complete in the workflow
-    workflowStateService.completeStep('upload', {
-      fileName,
-      fileType: data.fileType,
-      uploadedAt: new Date().toISOString()
-    });
-    setUploadedFileName(fileName);
-    setQualityReport(report);
+    // Clear any previous errors
     setUploadError(null);
-    setActiveStep(1); // Move to processing step
     setProcessError(null);
     setSummarySchedule(null);
     setCalculationResults(null);
-  }, [createDraftFromUpload, navigate]);
+  }, []);
+
+  // Handle draft naming dialog confirmation
+  const handleDraftNamingConfirm = useCallback(async (result: DraftNamingResult) => {
+    if (!pendingUploadData) return;
+    
+    const { data, fileName, validation, report } = pendingUploadData;
+    
+    try {
+      // Set up the data in state
+      if (data.fileType === 'excel' && data.extractedData) {
+        setExtractedData(data.extractedData);
+        setCsvData(null);
+      } else if (data.fileType === 'csv' && data.csvData) {
+        setCsvData(data.csvData);
+        setExtractedData(null);
+      }
+      
+      setFileType(data.fileType);
+      setValidation(validation);
+      setUploadedFileName(fileName);
+      setQualityReport(report);
+
+      // Handle replacement if needed
+      if (result.action === 'replace' && result.existingDraftId) {
+        // Delete existing draft workflow
+        draftWorkflowService.deleteWorkflow(result.existingDraftId);
+      }
+
+      // Create or replace the draft with chosen name
+      const uploadedData = data.extractedData || data.csvData;
+      if (uploadedData) {
+        const draftResult = await createDraftFromUpload(result.draftName, data.fileType, uploadedData);
+        if (draftResult.success && draftResult.draftId) {
+          setCurrentDraftId(draftResult.draftId);
+          
+          // Create or update workflow with custom name
+          const workflow = draftWorkflowService.getOrCreateWorkflow(draftResult.draftId, result.draftName);
+          draftWorkflowService.updateStepStatus(draftResult.draftId, 'upload', 'completed');
+          
+          console.log('✅ Created workflow draft with custom name:', result.draftName, draftResult.draftId);
+          
+          // For CSV files, redirect to TimePoints page
+          if (data.fileType === 'csv') {
+            setTimeout(() => {
+              navigate('/timepoints', {
+                state: {
+                  draftId: draftResult.draftId,
+                  draftName: result.draftName,
+                  csvData: data.csvData,
+                  fileName: result.draftName,
+                  fromUpload: true
+                }
+              });
+            }, 1000);
+          } else {
+            // For Excel files, continue with normal flow
+            setActiveStep(1);
+          }
+        } else {
+          console.error('❌ Failed to create workflow draft:', draftResult.error);
+          setUploadError(draftResult.error || 'Failed to create draft');
+        }
+      }
+
+      // Mark the upload step as complete in old workflow system
+      workflowStateService.completeStep('upload', {
+        fileName: result.draftName,
+        fileType: data.fileType,
+        uploadedAt: new Date().toISOString()
+      });
+      
+    } catch (error) {
+      console.error('Error handling draft creation:', error);
+      setUploadError('Failed to create draft schedule');
+    } finally {
+      setShowDraftNamingDialog(false);
+      setPendingUploadData(null);
+    }
+  }, [pendingUploadData, createDraftFromUpload, navigate]);
+
+  // Handle draft naming dialog cancellation
+  const handleDraftNamingCancel = useCallback(() => {
+    setShowDraftNamingDialog(false);
+    setPendingUploadData(null);
+  }, []);
 
   const handleUploadError = useCallback((error: string) => {
     setUploadError(error);
@@ -517,10 +571,10 @@ const UploadSchedule: React.FC = () => {
   return (
     <Box>
       <Typography variant="h4" component="h1" gutterBottom>
-        Upload Schedule
+        Create New Draft Working Schedule
       </Typography>
       <Typography variant="subtitle1" color="text.secondary" sx={{ mb: 4 }}>
-        Import your bus schedule data from Excel or CSV files and generate formatted summaries
+        Upload your raw schedule data to create a draft working schedule that you can configure, refine, and save as a final schedule
       </Typography>
       {/* Draft Management */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
@@ -561,7 +615,7 @@ const UploadSchedule: React.FC = () => {
               {currentDraftId && (
                 <Alert severity="info" sx={{ mb: 2 }}>
                   <Typography variant="body2">
-                    Working on draft: {uploadedFileName}
+                    Current draft working schedule: {uploadedFileName}
                     {lastAutoSave && (
                       <Box component="span" sx={{ ml: 1, fontStyle: 'italic' }}>
                         (Auto-saved {lastAutoSave.toLocaleTimeString()})
@@ -579,7 +633,7 @@ const UploadSchedule: React.FC = () => {
               
               {!uploadedFileName && !currentDraftId && (
                 <Typography variant="body2" color="text.secondary">
-                  Upload a file to start working on a new schedule, or select a draft to resume.
+                  Upload a file to create a new draft working schedule, or select an existing draft to continue working.
                 </Typography>
               )}
             </CardContent>
@@ -666,7 +720,9 @@ const UploadSchedule: React.FC = () => {
                 File Requirements
               </Typography>
               <Typography variant="body1">
-                CSV transify segment travel time import
+                Upload raw schedule data to begin creating your draft working schedule. Supported formats:
+                • CSV files with Transify segment travel time data
+                • Excel files with time point schedules
               </Typography>
             </CardContent>
           </Card>
@@ -794,12 +850,12 @@ const UploadSchedule: React.FC = () => {
           <Card sx={{ mb: 4 }}>
             <CardContent>
               <Typography variant="h6" gutterBottom>
-                Generate Schedule Summary
+                Process Draft Working Schedule
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
                 {fileType === 'csv' ? 
-                  'Process the CSV percentile data to generate formatted schedule summaries with 50th and 80th percentile travel times.' :
-                  'Process the uploaded data to generate formatted schedule summaries for weekday, Saturday, and Sunday service.'
+                  'Process your draft working schedule data to generate formatted summaries with configurable travel times.' :
+                  'Process your draft working schedule to generate formatted summaries for weekday, Saturday, and Sunday service.'
                 }
               </Typography>
               
@@ -811,7 +867,7 @@ const UploadSchedule: React.FC = () => {
                   disabled={!validation.isValid || isProcessing || (fileType === 'csv' && !selectedDayType)}
                   size="large"
                 >
-                  {isProcessing ? 'Processing...' : 'Generate Schedule'}
+                  {isProcessing ? 'Processing...' : 'Process Draft Schedule'}
                 </Button>
                 
                 <Button
@@ -819,7 +875,7 @@ const UploadSchedule: React.FC = () => {
                   onClick={handleReset}
                   disabled={isProcessing}
                 >
-                  Start Over
+                  Start New Draft
                 </Button>
               </Box>
               
@@ -848,7 +904,7 @@ const UploadSchedule: React.FC = () => {
                 Save Schedule
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                Save this schedule to view it later in your schedules collection.
+                Finalize your draft working schedule and save it to your schedules collection.
               </Typography>
               
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -884,7 +940,7 @@ const UploadSchedule: React.FC = () => {
                   onClick={handleReset}
                   disabled={isSaving}
                 >
-                  Process New File
+                  Create New Draft
                 </Button>
               </Box>
               
@@ -1038,6 +1094,14 @@ const UploadSchedule: React.FC = () => {
           </Accordion>
         </Box>
       )}
+
+      {/* Draft Naming Dialog */}
+      <DraftNamingDialog
+        open={showDraftNamingDialog}
+        onClose={handleDraftNamingCancel}
+        onConfirm={handleDraftNamingConfirm}
+        fileName={pendingUploadData?.fileName || ''}
+      />
     </Box>
   );
 };

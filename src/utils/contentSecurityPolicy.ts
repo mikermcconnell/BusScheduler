@@ -49,7 +49,23 @@ class ContentSecurityPolicy {
       'style-src': ["'self'", "'unsafe-inline'"], // Required for MUI
       'img-src': ["'self'", 'data:', 'https:'],
       'font-src': ["'self'", 'data:'],
-      'connect-src': ["'self'", 'https://api.anthropic.com', 'https://api.openai.com'],
+      'connect-src': [
+        "'self'", 
+        'https://api.anthropic.com', 
+        'https://api.openai.com',
+        // Firebase domains
+        'https://*.googleapis.com',
+        'https://*.firebaseapp.com',
+        'https://*.firebasestorage.app',
+        'https://*.firebaseio.com',
+        'https://firebase.googleapis.com',
+        'https://firestore.googleapis.com',
+        'https://identitytoolkit.googleapis.com',
+        'https://securetoken.googleapis.com',
+        // WebSocket connections for Firebase Realtime features
+        'wss://*.firebaseio.com',
+        'wss://*.firebaseapp.com'
+      ],
       'media-src': ["'self'"],
       'object-src': ["'none'"],
       'frame-src': ["'none'"],
@@ -196,6 +212,7 @@ class ContentSecurityPolicy {
   private async reportViolation(violation: any): Promise<void> {
     if (!this.reportEndpoint) return;
 
+    // TODO(human) - Implement client-side violation logging
     try {
       await fetch(this.reportEndpoint, {
         method: 'POST',
@@ -272,7 +289,18 @@ class ContentSecurityPolicy {
       case 'development':
         // More permissive for development
         baseConfig['script-src'] = ["'self'", "'unsafe-inline'", "'unsafe-eval'", 'localhost:*'];
-        baseConfig['connect-src'] = ["'self'", 'localhost:*', 'ws://localhost:*'];
+        baseConfig['connect-src'] = [
+          "'self'", 
+          'localhost:*', 
+          'ws://localhost:*',
+          // Firebase domains for development
+          'https://*.googleapis.com',
+          'https://*.firebaseapp.com',
+          'https://*.firebasestorage.app',
+          'https://*.firebaseio.com',
+          'wss://*.firebaseio.com',
+          'wss://*.firebaseapp.com'
+        ];
         break;
 
       case 'staging':

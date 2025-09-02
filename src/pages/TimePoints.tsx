@@ -64,8 +64,12 @@ import {
 import { ParsedCsvData } from '../utils/csvParser';
 import { scheduleStorage } from '../services/scheduleStorage';
 import { workflowStateService } from '../services/workflowStateService';
+import workflowDraftService from '../services/workflowDraftService';
+import { firebaseStorage } from '../services/firebaseStorage';
 import WorkflowBreadcrumbs from '../components/WorkflowBreadcrumbs';
+import ScheduleStatusIndicator from '../components/ScheduleStatusIndicator';
 import { useWorkflowDraft } from '../hooks/useWorkflowDraft';
+import { useFirebaseAuth } from '../hooks/useFirebaseAuth';
 import { 
   TimePointData as WorkflowTimePointData,
   OutlierData,
@@ -127,6 +131,9 @@ const TimePoints: React.FC = () => {
     error: draftError,
     isSaving: isDraftSaving
   } = useWorkflowDraft(locationDraftId);
+  
+  // Firebase authentication status
+  const { isAuthenticated: isFirebaseConnected } = useFirebaseAuth();
   
   const [timePointData, setTimePointData] = useState<TimePointData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -335,7 +342,17 @@ const TimePoints: React.FC = () => {
               setDeletedPeriods(new Set(draft.timepointsAnalysis.deletedPeriods));
             }
             if (draft.timepointsAnalysis.serviceBands) {
-              setTimeBands(draft.timepointsAnalysis.serviceBands);
+              // Map ServiceBand to TimeBand, ensuring all required properties
+              const timeBands: TimeBand[] = draft.timepointsAnalysis.serviceBands.map((band, index) => ({
+                id: band.id || `band_${index + 1}`,
+                name: band.name,
+                startTime: band.startTime || '00:00',
+                endTime: band.endTime || '23:59',
+                travelTimeMultiplier: band.travelTimeMultiplier || 1.0,
+                color: band.color,
+                description: band.description
+              }));
+              setTimeBands(timeBands);
             }
             // Load service band assignments from draft - this is the source of truth
             if (draft.timepointsAnalysis.timePeriodServiceBands) {
@@ -527,7 +544,7 @@ const TimePoints: React.FC = () => {
         
         if (result.success) {
           setLastAutoSave(new Date());
-          console.log('✅ Auto-save completed successfully');
+          console.log('✅ TimePoints analysis auto-saved to unified draft system');
         } else {
           console.error('❌ Auto-save failed:', result.error);
         }
@@ -619,7 +636,7 @@ const TimePoints: React.FC = () => {
         
         if (result.success) {
           setLastAutoSave(new Date());
-          console.log('✅ Auto-save completed successfully');
+          console.log('✅ TimePoints analysis auto-saved to unified draft system');
         } else {
           console.error('❌ Auto-save failed:', result.error);
         }
@@ -766,9 +783,39 @@ const TimePoints: React.FC = () => {
     setEditNameDialogOpen(true);
   };
 
-  const handleFileNameSave = () => {
+  const handleFileNameSave = async () => {
     if (tempFileName.trim()) {
-      setFileName(tempFileName.trim());
+      const newFileName = tempFileName.trim();
+      setFileName(newFileName);
+      
+      // Update the draft with the new name if we have an active draft
+      if (draft) {
+        setSaving(true);
+        try {
+          const result = await workflowDraftService.updateDraftFileName(
+            draft.draftId,
+            newFileName
+          );
+          
+          if (!result.success) {
+            console.error('Failed to update draft name:', result.error);
+            setSaveError('Failed to update file name');
+            // Revert the name change on failure
+            setFileName(originalFileName);
+          } else {
+            // Update the original file name on success
+            setOriginalFileName(newFileName);
+            console.log('✅ File name updated successfully');
+          }
+        } catch (error) {
+          console.error('Error updating file name:', error);
+          setSaveError('Failed to update file name');
+          setFileName(originalFileName);
+        } finally {
+          setSaving(false);
+        }
+      }
+      
       setEditNameDialogOpen(false);
     }
   };
@@ -841,9 +888,11 @@ const TimePoints: React.FC = () => {
         timePeriodServiceBands
       };
 
+      // Update the workflow draft with analysis data
       const result = await updateTimepointsAnalysis(analysisData);
 
       if (result.success) {
+        console.log('✅ Draft saved successfully through workflow system');
         setSaveSuccess(true);
         setTimeout(() => setSaveSuccess(false), 3000);
       } else {
@@ -1234,6 +1283,15 @@ const TimePoints: React.FC = () => {
             <Typography variant="h5" component="h1">
               Timepoint Page
             </Typography>
+            {/* Schedule Status Indicator */}
+            <ScheduleStatusIndicator
+              isDraft={true}
+              isPublished={false}
+              isSyncing={saving || isDraftSaving || isAutoSaving}
+              isFirebaseConnected={isFirebaseConnected}
+              lastSaved={lastAutoSave ? lastAutoSave.toISOString() : draft?.metadata?.lastModifiedAt || null}
+              scheduleName={fileName}
+            />
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <TextField
                 variant="outlined"
@@ -1251,20 +1309,22 @@ const TimePoints: React.FC = () => {
                 Edit Name
               </Button>
               <Button
-                variant="contained"
-                startIcon={<SaveIcon />}
+                variant="outlined"
+                startIcon={<DraftIcon />}
                 onClick={handleSaveDraft}
-                disabled={saving}
+                disabled={saving || isDraftSaving}
                 sx={{ ml: 1 }}
+title="Save current progress - your timepoint analysis and service band configurations will be preserved"
               >
-                {saving ? 'Saving...' : 'Save to Drafts'}
+{saving ? 'Saving...' : isDraftSaving ? 'Auto-Saving...' : 'Save Progress'}
               </Button>
               <Button
                 variant="contained"
-                color="secondary"
+                color="primary"
                 startIcon={<ScheduleIcon />}
                 onClick={handleGenerateSummary}
                 sx={{ ml: 1 }}
+                title="Continue to configure trip details and generate schedule"
               >
                 Continue to Trip Details
               </Button>
@@ -1962,7 +2022,8 @@ const TimePoints: React.FC = () => {
         onClose={() => setSaveSuccess(false)}
       >
         <Alert severity="success" sx={{ width: '100%' }}>
-          Draft saved successfully! You can find it in the Draft Schedules page.
+          <strong>Draft saved successfully!</strong> Your schedule "{fileName}" has been saved as a draft. 
+          It will remain in draft status until you publish it from the Summary Schedule page.
         </Alert>
       </Snackbar>
 

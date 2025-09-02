@@ -103,7 +103,7 @@ export function generateTrip(
       trip.recoveryTimes[tp.id] = recoveryTemplate[index] || 0;
     } else {
       // Add travel time
-      const travelTime = serviceBand.segmentTimes[index - 1] || 6;
+      const travelTime = serviceBand.segmentTimes?.[index - 1] || 6;
       currentTime += travelTime;
       trip.arrivalTimes[tp.id] = minutesToTime(currentTime);
       
@@ -166,7 +166,7 @@ export function generateTestSchedule(
       trips.push(trip);
       
       // Next trip starts after cycle time
-      const cycleTime = serviceBand.totalMinutes + trip.recoveryMinutes;
+      const cycleTime = (serviceBand.totalMinutes || 40) + trip.recoveryMinutes;
       blockStartTime = addMinutes(blockStartTime, cycleTime);
       tripNumber++;
     }
@@ -212,7 +212,7 @@ export const edgeCaseSchedules = {
   // Early morning schedule
   earlyMorning: () => {
     const schedule = generateTestSchedule(10, 5, 2);
-    schedule.trips = schedule.trips.map(trip => ({
+    schedule.trips = schedule.trips.map((trip: Trip) => ({
       ...trip,
       departureTime: addMinutes('05:00', trip.tripNumber * 15)
     }));
@@ -222,7 +222,7 @@ export const edgeCaseSchedules = {
   // Late night schedule (crossing midnight)
   lateNight: () => {
     const schedule = generateTestSchedule(10, 5, 2);
-    schedule.trips = schedule.trips.map(trip => ({
+    schedule.trips = schedule.trips.map((trip: Trip) => ({
       ...trip,
       departureTime: addMinutes('23:00', trip.tripNumber * 15)
     }));

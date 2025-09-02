@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { workflowStateService } from '../services/workflowStateService';
+import { draftWorkflowService } from '../services/draftWorkflowService';
+import { unifiedDraftService, UnifiedDraft } from '../services/unifiedDraftService';
 import {
   Card,
   CardContent,
@@ -44,6 +46,22 @@ interface DraftScheduleListProps {
   maxHeight?: number;
 }
 
+// Adapter function to convert UnifiedDraft to legacy DraftSchedule format
+const adaptUnifiedDraftToLegacy = (unifiedDraft: UnifiedDraft): DraftSchedule => {
+  return {
+    id: unifiedDraft.draftId,
+    fileName: unifiedDraft.draftName,
+    fileType: unifiedDraft.originalData.fileType,
+    uploadedData: unifiedDraft.originalData.uploadedData,
+    validation: unifiedDraft.originalData.validation,
+    processingStep: unifiedDraft.currentStep === 'ready' ? 'completed' : 'processed',
+    summarySchedule: unifiedDraft.stepData.summarySchedule,
+    createdAt: unifiedDraft.metadata.createdAt,
+    updatedAt: unifiedDraft.metadata.lastModifiedAt,
+    autoSaved: false
+  };
+};
+
 const DraftScheduleList: React.FC<DraftScheduleListProps> = ({
   onRestoreDraft,
   onDraftDeleted,
@@ -60,12 +78,26 @@ const DraftScheduleList: React.FC<DraftScheduleListProps> = ({
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [menuDraftId, setMenuDraftId] = useState<string | null>(null);
 
-  const loadDrafts = () => {
+  const loadDrafts = async () => {
     try {
-      const allDrafts = scheduleStorage.getAllDraftSchedules();
-      // Sort by most recently updated
-      allDrafts.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-      setDrafts(allDrafts);
+      // Run migration on first load to consolidate all storage systems
+      const migrationResult = await unifiedDraftService.migrateFromOldSystems();
+      
+      if (migrationResult.migrated > 0) {
+        console.log(`✅ Successfully migrated ${migrationResult.migrated} drafts to unified storage`);
+        console.log('Migration details:', migrationResult.details);
+        
+        // Clean up old storage systems after successful migration
+        unifiedDraftService.cleanupOldStorage();
+      }
+      
+      // Get all unified drafts (already sorted by most recent)
+      const unifiedDrafts = unifiedDraftService.getAllDrafts();
+      
+      // Convert to legacy format for compatibility with existing UI
+      const legacyDrafts = unifiedDrafts.map(adaptUnifiedDraftToLegacy);
+      
+      setDrafts(legacyDrafts);
     } catch (err) {
       console.error('Error loading drafts:', err);
       setError('Failed to load draft schedules');
@@ -129,7 +161,7 @@ const DraftScheduleList: React.FC<DraftScheduleListProps> = ({
     setError(null);
 
     try {
-      const result = scheduleStorage.deleteDraftSchedule(selectedDraft.id);
+      const result = await unifiedDraftService.deleteDraft(selectedDraft.id);
       if (result.success) {
         loadDrafts();
         onDraftDeleted?.();
@@ -152,7 +184,7 @@ const DraftScheduleList: React.FC<DraftScheduleListProps> = ({
     setError(null);
 
     try {
-      const result = scheduleStorage.promoteDraftToSchedule(selectedDraft.id);
+      const result = await unifiedDraftService.promoteDraftToSchedule(selectedDraft.id);
       if (result.success) {
         loadDrafts();
         onDraftDeleted?.();
@@ -194,10 +226,10 @@ const DraftScheduleList: React.FC<DraftScheduleListProps> = ({
         <CardContent>
           <Box display="flex" alignItems="center" gap={1} mb={2}>
             <DraftIcon />
-            <Typography variant="h6">Draft Schedules</Typography>
+            <Typography variant="h6">Draft Working Schedules</Typography>
           </Box>
           <Typography variant="body2" color="text.secondary">
-            No draft schedules found. Upload a file to create your first draft.
+            No draft working schedules found. Upload a file to create your first draft working schedule.
           </Typography>
         </CardContent>
       </Card>
@@ -212,7 +244,7 @@ const DraftScheduleList: React.FC<DraftScheduleListProps> = ({
             <Box display="flex" alignItems="center" gap={1}>
               <DraftIcon />
               <Typography variant="h6">
-                Draft Schedules ({drafts.length})
+                Draft Working Schedules ({drafts.length})
               </Typography>
             </Box>
             <Button
@@ -274,8 +306,8 @@ const DraftScheduleList: React.FC<DraftScheduleListProps> = ({
                       </Box>
                     }
                     secondary={
-                      <Box>
-                        <Typography variant="caption" color="text.secondary">
+                      <span>
+                        <Typography variant="caption" color="text.secondary" component="span">
                           {compact 
                             ? getTimeAgo(draft.updatedAt)
                             : `Updated: ${formatDateTime(draft.updatedAt)}`
@@ -284,12 +316,12 @@ const DraftScheduleList: React.FC<DraftScheduleListProps> = ({
                         {!compact && (
                           <>
                             <br />
-                            <Typography variant="caption" color="text.secondary">
+                            <Typography variant="caption" color="text.secondary" component="span">
                               Created: {formatDateTime(draft.createdAt)}
                             </Typography>
                           </>
                         )}
-                      </Box>
+                      </span>
                     }
                   />
 
@@ -361,7 +393,7 @@ const DraftScheduleList: React.FC<DraftScheduleListProps> = ({
         open={deleteDialogOpen}
         onClose={() => !loading && setDeleteDialogOpen(false)}
       >
-        <DialogTitle>Delete Draft Schedule</DialogTitle>
+        <DialogTitle>Delete Draft Working Schedule</DialogTitle>
         <DialogContent>
           <Typography>
             Are you sure you want to delete the draft "{selectedDraft?.fileName}"?
@@ -391,7 +423,7 @@ const DraftScheduleList: React.FC<DraftScheduleListProps> = ({
         <DialogTitle>Save as Schedule</DialogTitle>
         <DialogContent>
           <Typography>
-            Convert "{selectedDraft?.fileName}" from draft to a completed schedule?
+            Promote "{selectedDraft?.fileName}" from draft working schedule to final schedule?
             The draft will be removed after successful conversion.
           </Typography>
         </DialogContent>

@@ -7,6 +7,10 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { AuthProvider } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import { securityInitializer } from './utils/securityInitializer';
+import { db, auth } from './config/firebase'; // Initialize Firebase
+import './utils/testUnifiedStorage'; // Test utilities for storage verification
+import './utils/createTestDraft'; // Test draft creation utilities
+import './utils/debugDraftStorage'; // Debug draft storage utilities
 import './App.css';
 
 const theme = createTheme({
@@ -60,6 +64,27 @@ function App() {
       cspReportEndpoint: '/api/csp-report',
       auditEndpoint: '/api/audit'
     });
+
+    // Test Firebase connection
+    console.log('🔥 Firebase initialized');
+    console.log('🔥 Project ID:', process.env.REACT_APP_FIREBASE_PROJECT_ID);
+    console.log('🔥 Auth Domain:', process.env.REACT_APP_FIREBASE_AUTH_DOMAIN);
+    
+    // Test Firestore connection
+    if (db) {
+      console.log('🔥 Firestore database connected');
+    }
+    
+    // Monitor auth state
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      if (user) {
+        console.log('🔥 Firebase user authenticated:', user.uid);
+      } else {
+        console.log('🔥 Firebase user signed out (anonymous mode)');
+      }
+    });
+
+    return () => unsubscribe();
   }, []);
 
   return (

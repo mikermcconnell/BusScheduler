@@ -34,7 +34,8 @@ import {
   Star as StarIcon,
   KeyboardArrowRight as WorkflowIcon,
   Menu as MenuIcon,
-  ChevronLeft as ChevronLeftIcon
+  ChevronLeft as ChevronLeftIcon,
+  LibraryBooks as LibraryIcon
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { scheduleStorage } from '../services/scheduleStorage';
@@ -122,19 +123,26 @@ const SidebarNavigation: React.FC<SidebarNavigationProps> = ({ open, onToggle, c
         description: 'Overview and quick actions'
       },
       {
-        key: 'drafts',
-        label: 'Draft Schedules',
-        path: '/drafts',
-        icon: <DraftsIcon />,
-        description: 'Continue working on schedules',
+        key: 'draft-library',
+        label: 'Draft Library',
+        path: '/draft-library',
+        icon: <LibraryIcon />,
+        description: 'Manage all draft working schedules',
         badge: draftCount > 0 ? draftCount.toString() : undefined
       },
       {
+        key: 'drafts',
+        label: 'Draft Workflow',
+        path: '/drafts',
+        icon: <DraftsIcon />,
+        description: 'Continue working on draft schedules'
+      },
+      {
         key: 'upload',
-        label: 'New Schedule',
+        label: 'New Draft Schedule',
         path: '/upload',
         icon: <UploadIcon />,
-        description: 'Start creating a new schedule'
+        description: 'Create a new draft working schedule'
       },
       {
         key: 'schedules',

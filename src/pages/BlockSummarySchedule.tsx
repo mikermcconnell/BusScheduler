@@ -2320,9 +2320,14 @@ const BlockSummarySchedule: React.FC = () => {
           <Card elevation={2}>
             <CardContent sx={{ p: 4 }}>
               <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-                <Typography variant="h4" fontWeight="bold">
-                  Summary Schedule
-                </Typography>
+                <Box>
+                  <Typography variant="h4" fontWeight="bold">
+                    Base Schedule
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                    This is the base start and end times and best practice recovery times
+                  </Typography>
+                </Box>
                 <Box display="flex" alignItems="center" gap={2}>
                   <Chip 
                     label={`${sortedTrips.length} trips • ${blockStats.length} bus blocks`}
@@ -2368,6 +2373,14 @@ const BlockSummarySchedule: React.FC = () => {
                     size="small"
                   >
                     Back
+                  </Button>
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    onClick={() => navigate('/connection-schedule', { state: { schedule } })}
+                    size="small"
+                  >
+                    Continue to Connections →
                   </Button>
                 </Box>
               </Box>
@@ -3206,7 +3219,7 @@ const BlockSummarySchedule: React.FC = () => {
             alignItems: 'center'
           }}>
             <Typography variant="h5">
-              Summary Schedule - Full Screen ({sortedTrips.length} trips)
+              Base Schedule - Full Screen ({sortedTrips.length} trips)
             </Typography>
             <Button onClick={() => setIsFullscreen(false)} variant="outlined">
               Close

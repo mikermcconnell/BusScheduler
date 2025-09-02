@@ -224,7 +224,7 @@ class WorkflowStateService {
         { key: 'drafts', label: 'Draft Review' },
         { key: 'timepoints', label: 'TimePoints Analysis' },
         { key: 'block-config', label: 'Block Configuration' },
-        { key: 'summary', label: 'Summary Schedule' }
+        { key: 'summary', label: 'Base Schedule' }
       ],
       'route-management': [
         { key: 'routes', label: 'Route Setup' },

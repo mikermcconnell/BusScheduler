@@ -118,7 +118,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
           <Box sx={{ mb: 2 }}>
             <LinearProgress />
             <Typography variant="body2" sx={{ mt: 1 }}>
-              Processing Excel file...
+              Creating draft working schedule...
             </Typography>
           </Box>
         )}
@@ -127,10 +127,10 @@ export const FileUpload: React.FC<FileUploadProps> = ({
           <>
             <CloudUpload sx={{ fontSize: 48, color: '#ccc', mb: 2 }} />
             <Typography variant="h6" gutterBottom>
-              Upload Schedule File
+              Create Draft Working Schedule
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-              Drag and drop your schedule file here, or click to browse
+              Upload raw schedule data to create a new draft working schedule
             </Typography>
             <Button
               variant="contained"
