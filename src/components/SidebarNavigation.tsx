@@ -131,13 +131,6 @@ const SidebarNavigation: React.FC<SidebarNavigationProps> = ({ open, onToggle, c
         badge: draftCount > 0 ? draftCount.toString() : undefined
       },
       {
-        key: 'drafts',
-        label: 'Draft Workflow',
-        path: '/drafts',
-        icon: <DraftsIcon />,
-        description: 'Continue working on draft schedules'
-      },
-      {
         key: 'upload',
         label: 'New Draft Schedule',
         path: '/upload',
@@ -227,7 +220,7 @@ const SidebarNavigation: React.FC<SidebarNavigationProps> = ({ open, onToggle, c
   };
 
   const getItemType = (key: string): RecentItem['type'] => {
-    if (['drafts', 'upload'].includes(key)) return 'draft';
+    if (['draft-library', 'upload'].includes(key)) return 'draft';
     if (['block-configuration', 'routes'].includes(key)) return 'config';
     return 'schedule';
   };

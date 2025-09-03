@@ -33,7 +33,6 @@ import SummarySchedule from '../pages/SummarySchedule';
 import EditCSVSchedule from '../pages/EditCSVSchedule';
 import ViewSchedules from '../pages/ViewSchedules';
 import ManageRoutes from '../pages/ManageRoutes';
-import DraftSchedules from '../pages/DraftSchedules';
 import TimePoints from '../pages/TimePoints';
 import BlockConfiguration from '../pages/BlockConfiguration';
 import BlockSummarySchedule from '../pages/BlockSummarySchedule';
@@ -127,7 +126,7 @@ const Layout: React.FC = () => {
   // Determine if we should show workflow breadcrumbs
   const shouldShowWorkflow = [
     '/upload',
-    '/drafts', 
+    '/draft-library',
     '/timepoints',
     '/block-configuration',
     '/block-summary-schedule',
@@ -188,7 +187,7 @@ const Layout: React.FC = () => {
                 // Check if we're in schedule creation workflow
                 const isScheduleCreationPath = [
                   '/upload',
-                  '/drafts',
+                  '/draft-library',
                   '/timepoints',
                   '/block-configuration',
                   '/block-summary-schedule',
@@ -233,7 +232,6 @@ const Layout: React.FC = () => {
             <Route path="/timepoints" element={<TimePoints />} />
             <Route path="/schedules" element={<ViewSchedules />} />
             <Route path="/routes" element={<ManageRoutes />} />
-            <Route path="/drafts/*" element={<DraftSchedules />} />
             <Route path="/draft-library" element={<DraftLibrary />} />
             <Route path="/block-configuration" element={<BlockConfiguration />} />
             <Route path="/block-summary-schedule" element={<BlockSummarySchedule />} />

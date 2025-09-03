@@ -53,7 +53,6 @@ import { SummarySchedule } from '../types/schedule';
 import { CalculationResults, TimeBand } from '../utils/calculator';
 import SummaryDisplay from '../components/SummaryDisplay';
 import { scheduleStorage, DraftSchedule, startAutoSave, stopAutoSave } from '../services/scheduleStorage';
-import DraftScheduleList from '../components/DraftScheduleList';
 import DraftNamingDialog, { DraftNamingResult } from '../components/DraftNamingDialog';
 import { workflowStateService } from '../services/workflowStateService';
 import { useWorkflowDraft } from '../hooks/useWorkflowDraft';
@@ -672,19 +671,29 @@ const UploadSchedule: React.FC = () => {
           </Card>
         </Grid>
       </Grid>
-      {/* Draft Schedule List */}
+      {/* Draft Schedule List - Redirected to Draft Library */}
       {showDrafts && (
         <Box sx={{ mb: 4 }}>
-          <DraftScheduleList 
-            onRestoreDraft={restoreFromDraft}
-            onDraftDeleted={() => {
-              // Refresh or handle draft deletion
-              if (showDrafts) {
-                // Component will refresh automatically
-              }
-            }}
-            maxHeight={400}
-          />
+          <Card>
+            <CardContent>
+              <Box display="flex" alignItems="center" gap={1} mb={2}>
+                <DraftIcon color="primary" />
+                <Typography variant="h6">
+                  Draft Management
+                </Typography>
+              </Box>
+              <Typography variant="body2" color="text.secondary" gutterBottom>
+                Draft schedules are now managed in the centralized Draft Library.
+              </Typography>
+              <Button
+                variant="contained"
+                onClick={() => navigate('/draft-library')}
+                sx={{ mt: 2 }}
+              >
+                Go to Draft Library
+              </Button>
+            </CardContent>
+          </Card>
         </Box>
       )}
       {/* Progress Stepper */}

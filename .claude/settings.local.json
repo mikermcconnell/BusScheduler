@@ -80,7 +80,10 @@
       "Bash(del \"C:\\Users\\Mike McConnell\\.claude\\agents\\database-admin.md\")",
       "Bash(del \"C:\\Users\\Mike McConnell\\.claude\\agents\\database-optimizer.md\")",
       "Bash(del \"C:\\Users\\Mike McConnell\\.claude\\agents\\syntax-fixer.md\")",
-      "Bash(rm:*)"
+      "Bash(rm:*)",
+      "Read(C:\\Users\\Mike McConnell\\.claude\\agents/**)",
+      "Read(C:\\Users\\Mike McConnell\\.claude\\agents/**)",
+      "Bash(start http://localhost:3050)"
     ]
   },
   "outputStyle": "Learning",
