@@ -38,14 +38,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   // Initialize Google API or bypass
   useEffect(() => {
-    if (bypassAuth) {
-      // Create a mock user for development
+    // For production or when bypass is enabled, use anonymous auth
+    if (bypassAuth || !process.env.REACT_APP_GOOGLE_CLIENT_ID) {
+      // Create a mock user for development/production without Google OAuth
       const mockUser: User = {
-        id: 'dev_user_123',
-        email: 'developer@localhost.com',
-        name: 'Development User',
+        id: 'anonymous_user',
+        email: 'user@scheduler.app',
+        name: 'Schedule User',
         picture: '',
-        accessToken: 'mock_token'
+        accessToken: 'anonymous_token'
       };
       setUser(mockUser);
       setIsLoading(false);
@@ -56,6 +57,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const initializeGoogleAPI = async () => {
     try {
+      // Set a timeout to prevent infinite loading
+      const timeout = setTimeout(() => {
+        console.warn('Google API initialization timeout - falling back to anonymous mode');
+        const mockUser: User = {
+          id: 'anonymous_user',
+          email: 'user@scheduler.app',
+          name: 'Schedule User',
+          picture: '',
+          accessToken: 'anonymous_token'
+        };
+        setUser(mockUser);
+        setIsLoading(false);
+      }, 5000); // 5 second timeout
+
       // Load Google API script if not already loaded
       if (!(window as any).gapi) {
         await loadGoogleAPIScript();
@@ -95,8 +110,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
               }
             });
             
+            clearTimeout(timeout);
             resolve();
           } catch (error) {
+            clearTimeout(timeout);
             reject(error);
           }
         });
@@ -104,6 +121,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     } catch (error) {
       console.error('Error initializing Google API:', error);
+      // Fall back to anonymous mode on error
+      const mockUser: User = {
+        id: 'anonymous_user',
+        email: 'user@scheduler.app',
+        name: 'Schedule User',
+        picture: '',
+        accessToken: 'anonymous_token'
+      };
+      setUser(mockUser);
     } finally {
       setIsLoading(false);
     }
