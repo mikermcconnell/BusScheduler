@@ -29,7 +29,8 @@ import {
   Add as AddIcon,
   SwapHoriz as ReplaceIcon
 } from '@mui/icons-material';
-import { draftWorkflowService, DraftWorkflowState } from '../services/draftWorkflowService';
+import { draftService } from '../services/draftService';
+import { WorkflowDraftState } from '../types/workflow';
 
 export interface DraftNamingResult {
   action: 'create' | 'replace';
@@ -55,27 +56,38 @@ const DraftNamingDialog: React.FC<DraftNamingDialogProps> = ({
   const [draftName, setDraftName] = useState('');
   const [action, setAction] = useState<'create' | 'replace'>('create');
   const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null);
-  const [existingDrafts, setExistingDrafts] = useState<DraftWorkflowState[]>([]);
+  const [existingDrafts, setExistingDrafts] = useState<WorkflowDraftState[]>([]);
   const [nameError, setNameError] = useState<string | null>(null);
 
   // Load existing drafts and set up initial state
   useEffect(() => {
-    if (open) {
-      const drafts = draftWorkflowService.getAllWorkflows();
-      setExistingDrafts(drafts);
-      
-      // Generate suggested name from file name
-      const baseName = fileName.replace(/\.(csv|xlsx?)$/i, '');
-      const cleanName = baseName
-        .replace(/[_-]/g, ' ')
-        .replace(/\b\w/g, l => l.toUpperCase())
-        .trim();
-      
-      setDraftName(suggestedName || cleanName || 'New Schedule Draft');
-      setAction('create');
-      setSelectedDraftId(null);
-      setNameError(null);
-    }
+    const loadDrafts = async () => {
+      if (open) {
+        try {
+          // Use Firebase drafts to match what's shown in Draft Library
+          const drafts = await draftService.getAllDrafts();
+          setExistingDrafts(drafts);
+        } catch (error) {
+          console.error('Failed to load drafts for duplicate check:', error);
+          // Fallback to empty array if Firebase fails
+          setExistingDrafts([]);
+        }
+        
+        // Generate suggested name from file name
+        const baseName = fileName.replace(/\.(csv|xlsx?)$/i, '');
+        const cleanName = baseName
+          .replace(/[_-]/g, ' ')
+          .replace(/\b\w/g, l => l.toUpperCase())
+          .trim();
+        
+        setDraftName(suggestedName || cleanName || 'New Schedule Draft');
+        setAction('create');
+        setSelectedDraftId(null);
+        setNameError(null);
+      }
+    };
+    
+    loadDrafts();
   }, [open, fileName, suggestedName]);
 
   const validateDraftName = (name: string): string | null => {
@@ -92,7 +104,7 @@ const DraftNamingDialog: React.FC<DraftNamingDialogProps> = ({
     // Check for duplicate names when creating new draft
     if (action === 'create') {
       const duplicate = existingDrafts.find(
-        draft => draft.draftName.toLowerCase() === name.trim().toLowerCase()
+        draft => draft.originalData.fileName.toLowerCase() === name.trim().toLowerCase()
       );
       if (duplicate) {
         return 'A draft with this name already exists';
@@ -156,7 +168,7 @@ const DraftNamingDialog: React.FC<DraftNamingDialogProps> = ({
     let uniqueName = baseName;
 
     while (existingDrafts.some(draft => 
-      draft.draftName.toLowerCase() === uniqueName.toLowerCase()
+      draft.originalData.fileName.toLowerCase() === uniqueName.toLowerCase()
     )) {
       uniqueName = `${baseName} (${counter})`;
       counter++;
@@ -325,17 +337,17 @@ const DraftNamingDialog: React.FC<DraftNamingDialogProps> = ({
                         onClick={() => handleDraftSelect(draft.draftId)}
                       >
                         <ListItemText
-                          primary={draft.draftName}
+                          primary={draft.originalData.fileName}
                           secondary={
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
                               <Chip
-                                label={`${draft.overallProgress}% complete`}
+                                label={draft.currentStep}
                                 size="small"
-                                color={draft.overallProgress >= 50 ? 'success' : 'default'}
+                                color={draft.currentStep === 'ready-to-publish' ? 'success' : 'default'}
                                 variant="outlined"
                               />
                               <Typography variant="caption" color="text.secondary">
-                                Modified {new Date(draft.lastModified).toLocaleDateString()}
+                                Modified {new Date(draft.metadata.lastModifiedAt).toLocaleDateString()}
                               </Typography>
                             </Box>
                           }

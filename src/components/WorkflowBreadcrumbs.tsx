@@ -28,7 +28,7 @@ import {
   SwapVert as SwapVertIcon
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { workflowStateService, WorkflowState } from '../services/workflowStateService';
+import { draftService } from '../services/draftService';
 
 interface WorkflowStep {
   key: string;
@@ -62,7 +62,7 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
   const location = useLocation();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
-  const [persistentWorkflow, setPersistentWorkflow] = useState<WorkflowState | null>(null);
+  const [persistentWorkflow, setPersistentWorkflow] = useState<any>(null);
 
   // Define workflow steps for different contexts
   const workflows = {
@@ -184,11 +184,11 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
 
   // Initialize or update persistent workflow state
   useEffect(() => {
-    const currentPersistentWorkflow = workflowStateService.getCurrentWorkflow();
+    const currentPersistentWorkflow = draftService.getCurrentWorkflow();
     
     if (currentWorkflowContext && !currentPersistentWorkflow) {
       // Start a new workflow if none exists
-      const newWorkflow = workflowStateService.startWorkflow(
+      const newWorkflow = draftService.startWorkflow(
         currentWorkflowContext as 'schedule-creation' | 'route-management' | 'shift-planning'
       );
       setPersistentWorkflow(newWorkflow);
@@ -200,7 +200,7 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
     // This ensures the progress bar shows consistently regardless of navigation path
     if (location.pathname === '/timepoints' && currentWorkflowContext === 'schedule-creation' && !currentPersistentWorkflow) {
       console.log('🔧 Initializing workflow context for TimePoints page');
-      const newWorkflow = workflowStateService.startWorkflow('schedule-creation');
+      const newWorkflow = draftService.startWorkflow('schedule-creation');
       setPersistentWorkflow(newWorkflow);
     }
   }, [currentWorkflowContext, location.pathname]);
@@ -216,7 +216,7 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
     if (persistentWorkflow && persistentWorkflow.steps) {
       // Use persistent workflow state and update it based on the current path
       return steps.map((step, index) => {
-        const persistentStep = persistentWorkflow.steps.find(s => s.key === step.key);
+        const persistentStep = persistentWorkflow.steps.find((s: any) => s.key === step.key);
         
         // Check if this step matches the current path
         const isCurrentPage = step.path === currentPath || 
@@ -233,7 +233,7 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
             return { ...step, status: 'completed', isCurrentPage: true };
           }
           // Update persistent workflow to mark current step as active
-          workflowStateService.updateStepStatus(step.key, 'active');
+          // NOTE: Skipping update without draftId
           return { ...step, status: 'active', isCurrentPage: true };
         }
         
@@ -388,7 +388,7 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
     // Update the persistent workflow state to track navigation
     const step = workflowSteps.find(s => s.path === path);
     if (step && persistentWorkflow) {
-      workflowStateService.navigateToStep(step.key);
+      // NOTE: navigateToStep requires draftId, skipping for now
     }
     
     // Preserve state data when navigating between workflow steps
@@ -535,18 +535,14 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
                       StepIconComponent={() => getStepIcon(step)}
                       onClick={() => {
                         // Allow navigation to completed or active steps
-                        const canNavigate = persistentWorkflow 
-                          ? workflowStateService.canAccessStep(step.key)
-                          : (step.status === 'completed' || step.status === 'active');
+                        const canNavigate = (step.status === 'completed' || step.status === 'active');
                         
                         if (canNavigate) {
                           handleNavigation(step.path);
                         }
                       }}
                       sx={{
-                        cursor: (persistentWorkflow 
-                          ? workflowStateService.canAccessStep(step.key) 
-                          : step.status !== 'pending') ? 'pointer' : 'default',
+                        cursor: step.status !== 'pending' ? 'pointer' : 'default',
                         '& .MuiStepLabel-label': {
                           fontSize: '0.875rem',
                           fontWeight: step.status === 'active' ? 'medium' : 'normal'

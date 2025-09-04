@@ -3,7 +3,7 @@
  * This simulates the full upload flow and saves to Draft Schedules
  */
 
-import { unifiedDraftService } from '../services/unifiedDraftService';
+import { draftService } from '../services/draftService';
 import { generateTestSchedule } from '../dev/seeds';
 import { ParsedCsvData } from './csvParser';
 import { ValidationResult } from './validator';
@@ -63,7 +63,7 @@ export async function createTestDraft(draftName: string = 'Test Draft Schedule')
     };
     
     // Create the draft using unified service
-    const result = await unifiedDraftService.createDraft(
+    const result = await draftService.createDraft(
       draftName,
       `${draftName}.csv`,
       'csv',
@@ -78,7 +78,7 @@ export async function createTestDraft(draftName: string = 'Test Draft Schedule')
       
       // Update the draft to show some progress
       if (result.draftId) {
-        await unifiedDraftService.updateDraftStep(
+        await draftService.updateDraftStep(
           result.draftId,
           'timepoints',
           30,
@@ -94,7 +94,7 @@ export async function createTestDraft(draftName: string = 'Test Draft Schedule')
       }
       
       // Get and display the created draft
-      const createdDraft = unifiedDraftService.getDraft(result.draftId!);
+      const createdDraft = await draftService.getDraft(result.draftId!);
       if (createdDraft) {
         console.log('📋 Draft Details:');
         console.log('   Current Step:', createdDraft.currentStep);

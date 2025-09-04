@@ -23,7 +23,7 @@ import KeyboardShortcutsHelp from './KeyboardShortcutsHelp';
 import UserProfile from './UserProfile';
 import AppHeader from './AppHeader';
 import useKeyboardShortcuts from '../hooks/useKeyboardShortcuts';
-import { draftWorkflowService } from '../services/draftWorkflowService';
+import { draftService } from '../services/draftService';
 
 // Pages
 import Dashboard from '../pages/Dashboard';
@@ -84,9 +84,9 @@ const Layout: React.FC = () => {
       setActiveDraftName(locationState.draftName || null);
     } else {
       // Try to get from localStorage
-      const savedDraftId = draftWorkflowService.getActiveDraft();
+      const savedDraftId = draftService.getActiveDraft();
       if (savedDraftId) {
-        const workflow = draftWorkflowService.getWorkflow(savedDraftId);
+        const workflow = draftService.getWorkflow(savedDraftId);
         if (workflow) {
           setActiveDraftId(savedDraftId);
           setActiveDraftName(workflow.draftName);
@@ -202,7 +202,7 @@ const Layout: React.FC = () => {
                       draftName={activeDraftName || undefined}
                       compact={false}
                       onDraftChange={(newDraftId) => {
-                        const workflow = draftWorkflowService.getWorkflow(newDraftId);
+                        const workflow = draftService.getWorkflow(newDraftId);
                         if (workflow) {
                           setActiveDraftId(newDraftId);
                           setActiveDraftName(workflow.draftName);

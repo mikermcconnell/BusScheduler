@@ -15,7 +15,7 @@ import {
 import { SummarySchedule, ServiceBand } from '../types/schedule';
 import { ParsedExcelData } from '../utils/excelParser';
 import { ParsedCsvData } from '../utils/csvParser';
-import { workflowDraftService } from '../services/workflowDraftService';
+import { draftService } from '../services/draftService';
 
 export interface UseWorkflowDraftReturn {
   draft: WorkflowDraftState | null;
@@ -64,7 +64,7 @@ export const useWorkflowDraft = (draftId?: string): UseWorkflowDraftReturn => {
     setError(null);
     
     try {
-      const loadedDraft = await workflowDraftService.getDraftById(id);
+      const loadedDraft = await draftService.getDraftById(id);
       if (loadedDraft) {
         setDraft(loadedDraft);
         setLastSaved(loadedDraft.metadata.lastModifiedAt);
@@ -88,7 +88,7 @@ export const useWorkflowDraft = (draftId?: string): UseWorkflowDraftReturn => {
     setError(null);
     
     try {
-      const result = await workflowDraftService.createDraftFromUpload(
+      const result = await draftService.createDraftFromUpload(
         fileName,
         fileType,
         uploadedData
@@ -138,7 +138,7 @@ export const useWorkflowDraft = (draftId?: string): UseWorkflowDraftReturn => {
     setError(null);
     
     try {
-      const result = await workflowDraftService.updateDraftWithTimepointsAnalysis(
+      const result = await draftService.updateDraftWithTimepointsAnalysis(
         draft.draftId,
         analysisData
       );
@@ -180,7 +180,7 @@ export const useWorkflowDraft = (draftId?: string): UseWorkflowDraftReturn => {
     setError(null);
     
     try {
-      const result = await workflowDraftService.updateDraftWithBlockConfiguration(
+      const result = await draftService.updateDraftWithBlockConfiguration(
         draft.draftId,
         blockConfig
       );
@@ -212,7 +212,7 @@ export const useWorkflowDraft = (draftId?: string): UseWorkflowDraftReturn => {
     setError(null);
     
     try {
-      const result = await workflowDraftService.updateDraftWithSummarySchedule(
+      const result = await draftService.updateDraftWithSummarySchedule(
         draft.draftId,
         summaryData
       );
@@ -241,7 +241,7 @@ export const useWorkflowDraft = (draftId?: string): UseWorkflowDraftReturn => {
     setError(null);
     
     try {
-      const result = await workflowDraftService.publishDraft(draft.draftId);
+      const result = await draftService.publishDraft(draft.draftId);
       
       if (result.success) {
         setDraft(null); // Clear draft after publishing
@@ -267,7 +267,7 @@ export const useWorkflowDraft = (draftId?: string): UseWorkflowDraftReturn => {
     setError(null);
     
     try {
-      const result = await workflowDraftService.deleteDraft(draft.draftId);
+      const result = await draftService.deleteDraft(draft.draftId);
       
       if (result.success) {
         setDraft(null);
@@ -299,7 +299,7 @@ export const useWorkflowDraft = (draftId?: string): UseWorkflowDraftReturn => {
       
       // If no draftId provided, check for session draft
       if (!draftIdToLoad) {
-        const sessionDraftId = workflowDraftService.getCurrentSessionDraftId();
+        const sessionDraftId = draftService.getCurrentSessionDraftId();
         if (sessionDraftId) {
           draftIdToLoad = sessionDraftId;
         }

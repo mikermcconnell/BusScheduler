@@ -38,7 +38,7 @@ import {
   Celebration as CelebrationIcon
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { draftWorkflowService, DraftWorkflowState, WorkflowStepData } from '../services/draftWorkflowService';
+import { draftService, DraftWorkflowState, WorkflowStepData } from '../services/draftService';
 
 // Animation keyframes
 const pulse = keyframes`
@@ -85,17 +85,17 @@ const StoryboardProgress: React.FC<StoryboardProgressProps> = ({
   // Load workflow on mount and when draftId changes
   useEffect(() => {
     if (draftId) {
-      const loadedWorkflow = draftWorkflowService.getOrCreateWorkflow(draftId, draftName);
+      const loadedWorkflow = draftService.getOrCreateWorkflow(draftId, draftName);
       setWorkflow(loadedWorkflow);
-      draftWorkflowService.setActiveDraft(draftId);
+      draftService.setActiveDraft(draftId);
       
       // Update step status based on current location
       updateStepFromLocation(loadedWorkflow);
     } else {
       // Try to load active draft
-      const activeDraftId = draftWorkflowService.getActiveDraft();
+      const activeDraftId = draftService.getActiveDraft();
       if (activeDraftId) {
-        const loadedWorkflow = draftWorkflowService.getWorkflow(activeDraftId);
+        const loadedWorkflow = draftService.getWorkflow(activeDraftId);
         if (loadedWorkflow) {
           setWorkflow(loadedWorkflow);
           updateStepFromLocation(loadedWorkflow);
@@ -104,7 +104,7 @@ const StoryboardProgress: React.FC<StoryboardProgressProps> = ({
     }
     
     // Load all workflows for the selector
-    setAllWorkflows(draftWorkflowService.getAllWorkflows());
+    setAllWorkflows(draftService.getAllWorkflows());
   }, [draftId, draftName]);
 
   // Update step status based on current page
@@ -122,8 +122,8 @@ const StoryboardProgress: React.FC<StoryboardProgressProps> = ({
     if (currentStepKey && workflow) {
       const step = workflow.steps.find(s => s.key === currentStepKey);
       if (step && step.status === 'not-started') {
-        draftWorkflowService.updateStepStatus(workflow.draftId, currentStepKey, 'in-progress');
-        setWorkflow(draftWorkflowService.getWorkflow(workflow.draftId));
+        draftService.updateStepStatus(workflow.draftId, currentStepKey, 'in-progress');
+        setWorkflow(draftService.getWorkflow(workflow.draftId));
       }
     }
   };
@@ -202,17 +202,17 @@ const StoryboardProgress: React.FC<StoryboardProgressProps> = ({
   const handleCompleteStep = () => {
     if (!workflow) return;
     
-    const updatedWorkflow = draftWorkflowService.completeCurrentStep(workflow.draftId);
+    const updatedWorkflow = draftService.completeCurrentStep(workflow.draftId);
     if (updatedWorkflow) {
       setWorkflow(updatedWorkflow);
       
       // Check for milestones
       if (updatedWorkflow.overallProgress === 100) {
-        if (draftWorkflowService.shouldShowCelebration(updatedWorkflow, 'complete')) {
+        if (draftService.shouldShowStoryboardCelebration(updatedWorkflow, 'complete')) {
           triggerCelebration('🎉 Schedule Complete! You\'re a scheduling wizard!');
         }
       } else if (updatedWorkflow.overallProgress >= 50) {
-        if (draftWorkflowService.shouldShowCelebration(updatedWorkflow, 'halfway')) {
+        if (draftService.shouldShowStoryboardCelebration(updatedWorkflow, 'halfway')) {
           triggerCelebration('🌟 Halfway there! You\'re doing amazing!');
         }
       }
@@ -223,7 +223,7 @@ const StoryboardProgress: React.FC<StoryboardProgressProps> = ({
   const handleDraftSelect = (selectedWorkflow: DraftWorkflowState) => {
     setDraftMenuAnchor(null);
     setWorkflow(selectedWorkflow);
-    draftWorkflowService.setActiveDraft(selectedWorkflow.draftId);
+    draftService.setActiveDraft(selectedWorkflow.draftId);
     if (onDraftChange) {
       onDraftChange(selectedWorkflow.draftId);
     }
@@ -247,9 +247,9 @@ const StoryboardProgress: React.FC<StoryboardProgressProps> = ({
     );
   }
 
-  const progressMessage = draftWorkflowService.getProgressMessage(workflow.overallProgress);
+  const progressMessage = draftService.getStoryboardProgressMessage(workflow.overallProgress);
   const currentStep = workflow.steps.find(s => s.key === workflow.currentStep);
-  const currentTip = currentStep ? draftWorkflowService.getStepTip(currentStep.key) : '';
+  const currentTip = currentStep ? draftService.getStepTip(currentStep.key) : '';
 
   return (
     <Paper

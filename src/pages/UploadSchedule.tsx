@@ -27,6 +27,11 @@ import {
   Select,
   MenuItem,
   FormHelperText,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
 } from '@mui/material';
 import {
   CheckCircle as CheckIcon,
@@ -54,9 +59,8 @@ import { CalculationResults, TimeBand } from '../utils/calculator';
 import SummaryDisplay from '../components/SummaryDisplay';
 import { scheduleStorage, DraftSchedule, startAutoSave, stopAutoSave } from '../services/scheduleStorage';
 import DraftNamingDialog, { DraftNamingResult } from '../components/DraftNamingDialog';
-import { workflowStateService } from '../services/workflowStateService';
 import { useWorkflowDraft } from '../hooks/useWorkflowDraft';
-import { draftWorkflowService } from '../services/draftWorkflowService';
+import { draftService } from '../services/draftService';
 
 const UploadSchedule: React.FC = () => {
   const navigate = useNavigate();
@@ -99,6 +103,7 @@ const UploadSchedule: React.FC = () => {
 
   // Draft naming dialog states
   const [showDraftNamingDialog, setShowDraftNamingDialog] = useState(false);
+  const [showCancelConfirmation, setShowCancelConfirmation] = useState(false);
   const [pendingUploadData, setPendingUploadData] = useState<{
     data: { extractedData?: ParsedExcelData; csvData?: ParsedCsvData; fileType: 'excel' | 'csv' };
     fileName: string;
@@ -110,9 +115,9 @@ const UploadSchedule: React.FC = () => {
   
   // Initialize workflow when component mounts
   useEffect(() => {
-    const currentWorkflow = workflowStateService.getCurrentWorkflow();
+    const currentWorkflow = draftService.getCurrentWorkflow();
     if (!currentWorkflow || currentWorkflow.workflowType !== 'schedule-creation') {
-      workflowStateService.startWorkflow('schedule-creation');
+      draftService.startWorkflow('schedule-creation');
     }
   }, []);
 
@@ -377,7 +382,7 @@ const UploadSchedule: React.FC = () => {
       // Handle replacement if needed
       if (result.action === 'replace' && result.existingDraftId) {
         // Delete existing draft workflow
-        draftWorkflowService.deleteWorkflow(result.existingDraftId);
+        draftService.deleteWorkflow(result.existingDraftId);
       }
 
       // Create or replace the draft with chosen name
@@ -388,8 +393,8 @@ const UploadSchedule: React.FC = () => {
           setCurrentDraftId(draftResult.draftId);
           
           // Create or update workflow with custom name
-          const workflow = draftWorkflowService.getOrCreateWorkflow(draftResult.draftId, result.draftName);
-          draftWorkflowService.updateStepStatus(draftResult.draftId, 'upload', 'completed');
+          const workflow = draftService.getOrCreateWorkflow(draftResult.draftId, result.draftName);
+          draftService.updateStepStatus(draftResult.draftId, 'upload', 'completed');
           
           console.log('✅ Created workflow draft with custom name:', result.draftName, draftResult.draftId);
           
@@ -417,7 +422,7 @@ const UploadSchedule: React.FC = () => {
       }
 
       // Mark the upload step as complete in old workflow system
-      workflowStateService.completeStep('upload', {
+      draftService.completeStep('upload', {
         fileName: result.draftName,
         fileType: data.fileType,
         uploadedAt: new Date().toISOString()
@@ -434,8 +439,21 @@ const UploadSchedule: React.FC = () => {
 
   // Handle draft naming dialog cancellation
   const handleDraftNamingCancel = useCallback(() => {
+    // Show confirmation dialog before discarding
+    setShowCancelConfirmation(true);
+  }, []);
+
+  // Handle confirmation to discard the upload
+  const handleConfirmDiscard = useCallback(() => {
+    setShowCancelConfirmation(false);
     setShowDraftNamingDialog(false);
     setPendingUploadData(null);
+  }, []);
+
+  // Handle cancellation of the discard (keep the naming dialog open)
+  const handleCancelDiscard = useCallback(() => {
+    setShowCancelConfirmation(false);
+    // Keep the draft naming dialog open
   }, []);
 
   const handleUploadError = useCallback((error: string) => {
@@ -1111,6 +1129,36 @@ const UploadSchedule: React.FC = () => {
         onConfirm={handleDraftNamingConfirm}
         fileName={pendingUploadData?.fileName || ''}
       />
+
+      {/* Confirmation Dialog for Discarding Upload */}
+      <Dialog
+        open={showCancelConfirmation}
+        onClose={handleCancelDiscard}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box display="flex" alignItems="center" gap={1}>
+            <WarningIcon color="warning" />
+            Discard Upload?
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Are you sure you want to discard this upload? 
+            The file "{pendingUploadData?.fileName || 'your file'}" has been processed and validated successfully. 
+            If you discard it now, you'll need to upload it again.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCancelDiscard} color="primary">
+            Keep Draft
+          </Button>
+          <Button onClick={handleConfirmDiscard} color="error" variant="contained">
+            Discard Upload
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

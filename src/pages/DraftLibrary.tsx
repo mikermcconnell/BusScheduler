@@ -30,7 +30,7 @@ import {
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { WorkflowDraftState } from '../types/workflow';
-import { firebaseDraftService } from '../services/firebaseDraftService';
+import { draftService } from '../services/draftService';
 import DraftLibraryCard from '../components/DraftLibraryCard';
 import DraftUploadZone from '../components/DraftUploadZone';
 
@@ -56,7 +56,7 @@ const DraftLibrary: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const loadedDrafts = await firebaseDraftService.getAllDrafts();
+      const loadedDrafts = await draftService.getAllDrafts();
       setDrafts(loadedDrafts);
       setFilteredDrafts(loadedDrafts);
     } catch (err: any) {
@@ -110,7 +110,7 @@ const DraftLibrary: React.FC = () => {
   // Handle draft actions
   const handleOpenDraft = async (draft: WorkflowDraftState) => {
     // Set as current session draft
-    firebaseDraftService.setCurrentSessionDraft(draft.draftId);
+    draftService.setCurrentSessionDraft(draft.draftId);
     
     // Navigate to appropriate workflow step
     switch (draft.currentStep) {
@@ -135,7 +135,7 @@ const DraftLibrary: React.FC = () => {
   const handleDeleteDraft = async (draftId: string) => {
     if (window.confirm('Are you sure you want to delete this draft?')) {
       try {
-        await firebaseDraftService.deleteDraft(draftId);
+        await draftService.deleteDraft(draftId);
         await loadDrafts(); // Reload the list
       } catch (err: any) {
         setError('Failed to delete draft: ' + err.message);
@@ -146,7 +146,7 @@ const DraftLibrary: React.FC = () => {
   const handleDuplicateDraft = async (draft: WorkflowDraftState) => {
     try {
       // Create a new draft with the same data
-      const result = await firebaseDraftService.createDraftFromUpload(
+      const result = await draftService.createDraftFromUpload(
         draft.originalData.fileName + ' (Copy)',
         draft.originalData.fileType,
         draft.originalData.uploadedData

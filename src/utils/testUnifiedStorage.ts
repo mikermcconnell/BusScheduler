@@ -3,7 +3,7 @@
  * Run in browser console to test migration and draft loading
  */
 
-import { unifiedDraftService } from '../services/unifiedDraftService';
+import { draftService } from '../services/draftService';
 
 export async function testUnifiedStorage() {
   console.log('🧪 Testing Unified Draft Storage System...');
@@ -11,16 +11,16 @@ export async function testUnifiedStorage() {
   try {
     // Test migration
     console.log('🔄 Running migration from old storage systems...');
-    const migrationResult = await unifiedDraftService.migrateFromOldSystems();
+    const migrationResult = await draftService.migrateFromOldSystems();
     
     console.log('📊 Migration Results:');
     console.log(`  ✅ Successfully migrated: ${migrationResult.migrated} drafts`);
     console.log(`  ❌ Failed migrations: ${migrationResult.failed} drafts`);
     console.log('  📝 Details:', migrationResult.details);
     
-    // Test loading all drafts
+    // Test loading all drafts (in unified format)
     console.log('📂 Loading all drafts...');
-    const allDrafts = unifiedDraftService.getAllDrafts();
+    const allDrafts = await draftService.getAllDraftsUnified();
     
     console.log(`📋 Found ${allDrafts.length} drafts in unified storage:`);
     allDrafts.forEach((draft, index) => {
@@ -42,7 +42,7 @@ export async function testUnifiedStorage() {
     
     // Test cleanup
     console.log('🧹 Cleaning up old storage systems...');
-    unifiedDraftService.cleanupOldStorage();
+    draftService.cleanupOldStorage();
     
     console.log('✅ Unified storage test completed successfully!');
     
@@ -50,7 +50,7 @@ export async function testUnifiedStorage() {
       migrationResult,
       totalDrafts: allDrafts.length,
       test12Found: !!test12,
-      drafts: allDrafts.map(d => ({ name: d.draftName, id: d.draftId, step: d.currentStep }))
+      drafts: allDrafts.map((d: any) => ({ name: d.draftName, id: d.draftId, step: d.currentStep }))
     };
     
   } catch (error) {

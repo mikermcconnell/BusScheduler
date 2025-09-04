@@ -19,7 +19,7 @@ import {
 } from '@mui/icons-material';
 import { scheduleStorage } from '../services/scheduleStorage';
 import { SummarySchedule } from '../types/schedule';
-import { workflowStateService } from '../services/workflowStateService';
+import { draftService } from '../services/draftService';
 import WorkflowBreadcrumbs from '../components/WorkflowBreadcrumbs';
 import { useWorkflowDraft } from '../hooks/useWorkflowDraft';
 import {
@@ -1340,7 +1340,7 @@ export default function BlockConfiguration() {
         console.log('💾 Summary schedule saved to localStorage for persistence');
         
         // Mark the Block Configuration step as complete
-        workflowStateService.completeStep('block-config', {
+        draftService.completeStep('block-config', {
           schedule: completeSchedule,
           trips: updatedSchedule.trips
         });
@@ -1364,7 +1364,7 @@ export default function BlockConfiguration() {
         console.log('💾 Summary schedule saved to localStorage for persistence (save failed)');
         
         // Mark the Block Configuration step as complete even if save failed
-        workflowStateService.completeStep('block-config', {
+        draftService.completeStep('block-config', {
           schedule: completeSchedule,
           trips: updatedSchedule.trips
         });
@@ -1389,7 +1389,7 @@ export default function BlockConfiguration() {
       console.log('💾 Summary schedule saved to localStorage for persistence (catch error)');
       
       // Mark the Block Configuration step as complete even in error case
-      workflowStateService.completeStep('block-config', {
+      draftService.completeStep('block-config', {
         schedule: completeSchedule,
         trips: updatedSchedule.trips
       });

@@ -34,7 +34,7 @@ import {
 import { calculateTripTime } from '../utils/dateHelpers';
 import { scheduleStorage } from '../services/scheduleStorage';
 import { SummarySchedule } from '../types/schedule';
-import { workflowStateService } from '../services/workflowStateService';
+import { draftService } from '../services/draftService';
 import WorkflowBreadcrumbs from '../components/WorkflowBreadcrumbs';
 
 // TODO(human): Add comprehensive component documentation here
@@ -298,7 +298,7 @@ const BlockSummarySchedule: React.FC = () => {
 
   // Mark the summary step as completed when the component loads
   useEffect(() => {
-    workflowStateService.completeStep('summary', {
+    draftService.completeStep('summary', {
       scheduleGenerated: true,
       timestamp: new Date().toISOString()
     });

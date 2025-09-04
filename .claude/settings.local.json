@@ -83,9 +83,10 @@
       "Bash(rm:*)",
       "Read(C:\\Users\\Mike McConnell\\.claude\\agents/**)",
       "Read(C:\\Users\\Mike McConnell\\.claude\\agents/**)",
-      "Bash(start http://localhost:3050)"
+      "Bash(start http://localhost:3050)",
+      "Read(C:\\Users\\Mike McConnell\\.claude\\agents/**)"
     ]
   },
-  "outputStyle": "Learning",
+  "outputStyle": "default",
   "defaultMode": "acceptEdits"
 }

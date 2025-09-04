@@ -16,7 +16,7 @@ import {
   Error as ErrorIcon
 } from '@mui/icons-material';
 import { useFileUpload } from '../hooks/useFileUpload';
-import { firebaseDraftService } from '../services/firebaseDraftService';
+import { draftService } from '../services/draftService';
 import { ParsedCsvData } from '../utils/csvParser';
 import { ParsedExcelData } from '../utils/excelParser';
 
@@ -72,7 +72,7 @@ const DraftUploadZone: React.FC<DraftUploadZoneProps> = ({
       }
       
       // Create draft in Firebase
-      const draftResult = await firebaseDraftService.createDraftFromUpload(
+      const draftResult = await draftService.createDraftFromUpload(
         file.name,
         fileType,
         uploadData as ParsedExcelData | ParsedCsvData

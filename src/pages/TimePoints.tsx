@@ -63,8 +63,7 @@ import {
 } from 'recharts';
 import { ParsedCsvData } from '../utils/csvParser';
 import { scheduleStorage } from '../services/scheduleStorage';
-import { workflowStateService } from '../services/workflowStateService';
-import workflowDraftService from '../services/workflowDraftService';
+import { draftService } from '../services/draftService';
 import { firebaseStorage } from '../services/firebaseStorage';
 import WorkflowBreadcrumbs from '../components/WorkflowBreadcrumbs';
 import ScheduleStatusIndicator from '../components/ScheduleStatusIndicator';
@@ -744,7 +743,7 @@ const TimePoints: React.FC = () => {
     
     if (result.success) {
       // Mark the TimePoints step as complete
-      workflowStateService.completeStep('timepoints', {
+      draftService.completeStep('timepoints', {
         timePointData,
         serviceBands: timeBands,
         deletedPeriods: Array.from(deletedPeriods)
@@ -792,7 +791,7 @@ const TimePoints: React.FC = () => {
       if (draft) {
         setSaving(true);
         try {
-          const result = await workflowDraftService.updateDraftFileName(
+          const result = await draftService.updateDraftFileName(
             draft.draftId,
             newFileName
           );
