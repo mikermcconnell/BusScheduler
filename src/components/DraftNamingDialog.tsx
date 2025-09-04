@@ -133,7 +133,7 @@ const DraftNamingDialog: React.FC<DraftNamingDialogProps> = ({
     setSelectedDraftId(draftId);
     const selectedDraft = existingDrafts.find(d => d.draftId === draftId);
     if (selectedDraft) {
-      setDraftName(selectedDraft.draftName);
+      setDraftName(selectedDraft.originalData.fileName);
     }
   };
 

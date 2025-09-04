@@ -84,7 +84,12 @@
       "Read(C:\\Users\\Mike McConnell\\.claude\\agents/**)",
       "Read(C:\\Users\\Mike McConnell\\.claude\\agents/**)",
       "Bash(start http://localhost:3050)",
-      "Read(C:\\Users\\Mike McConnell\\.claude\\agents/**)"
+      "Read(C:\\Users\\Mike McConnell\\.claude\\agents/**)",
+      "Read(/C:\\Users\\Mike McConnell\\Documents\\mike_apps\\Scheduler2\\src\\components/**)",
+      "Read(/C:\\Users\\Mike McConnell\\Documents\\mike_apps\\Scheduler2\\src\\types/**)",
+      "Read(/C:\\Users\\Mike McConnell\\Documents\\mike_apps\\Scheduler2\\src/**)",
+      "Read(/C:\\Users\\Mike McConnell\\Documents\\mike_apps\\Scheduler2\\src\\types/**)",
+      "Read(/C:\\Users\\Mike McConnell\\Documents\\mike_apps\\Scheduler2\\src\\types/**)"
     ]
   },
   "outputStyle": "default",
