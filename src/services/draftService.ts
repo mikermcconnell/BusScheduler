@@ -1112,6 +1112,9 @@ class UnifiedDraftService {
         publishedAt: draft.metadata.publishedAt
       }
     };
+
+    console.log('🔄 Successfully converted draft:', converted.draftId, 'fileName:', converted.originalData.fileName);
+    return converted;
   }
 
   /**
