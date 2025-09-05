@@ -592,17 +592,31 @@ class UnifiedDraftService {
     try {
       console.log('🔥 Loading all unified drafts from Firebase');
       const draftsRef = collection(db, this.COLLECTION_NAME);
-      const q = query(
-        draftsRef,
-        orderBy('serverTimestamp', 'desc'),
-        limit(this.MAX_DRAFTS)
-      );
       
-      const querySnapshot = await getDocs(q);
+      // Try ordered query first, fallback to unordered if it fails
+      let querySnapshot;
+      try {
+        const q = query(
+          draftsRef,
+          orderBy('serverTimestamp', 'desc'),
+          limit(this.MAX_DRAFTS)
+        );
+        querySnapshot = await getDocs(q);
+        console.log('🔥 Successfully used ordered query');
+      } catch (orderError) {
+        console.warn('🔥 Ordered query failed, trying unordered fallback:', orderError);
+        // Fallback: get all drafts without ordering
+        const fallbackQuery = query(draftsRef, limit(this.MAX_DRAFTS));
+        querySnapshot = await getDocs(fallbackQuery);
+        console.log('🔥 Using unordered fallback query');
+      }
+      
       const drafts: UnifiedDraftCompat[] = [];
       
       querySnapshot.forEach((doc) => {
         const data = doc.data();
+        console.log('🔥 Processing draft document:', doc.id, 'hasServerTimestamp:', !!data.serverTimestamp);
+        
         // Remove Firestore-specific fields
         delete data.serverTimestamp;
         
@@ -612,9 +626,13 @@ class UnifiedDraftService {
       });
       
       console.log(`🔥 Loaded ${drafts.length} unified drafts from Firebase`);
-      return drafts.sort((a, b) => 
-        new Date(b.metadata.lastModifiedAt).getTime() - new Date(a.metadata.lastModifiedAt).getTime()
-      );
+      
+      // Sort by lastModifiedAt in memory (more reliable)
+      return drafts.sort((a, b) => {
+        const timeA = new Date(a.metadata.lastModifiedAt).getTime();
+        const timeB = new Date(b.metadata.lastModifiedAt).getTime();
+        return timeB - timeA;
+      });
     } catch (error) {
       console.error('🔥 Error loading unified drafts from Firebase:', error);
       return [];
@@ -949,10 +967,20 @@ class UnifiedDraftService {
    * Ensure draft has all required unified fields (migration/compatibility helper)
    */
   private ensureUnifiedFormat(data: any): UnifiedDraftCompat {
+    console.log('🔧 Ensuring unified format for data:', {
+      hasDraftId: !!data.draftId,
+      hasDraftName: !!data.draftName,
+      hasCurrentStep: !!data.currentStep,
+      hasOriginalData: !!data.originalData,
+      originalFileName: data.originalData?.fileName,
+      currentStep: data.currentStep
+    });
+
     const now = new Date().toISOString();
     
     // If it's already a WorkflowDraftState, convert it
     if (data.currentStep && data.originalData && data.metadata && !data.draftName) {
+      console.log('🔧 Converting WorkflowDraftState to UnifiedDraftCompat');
       return {
         draftId: data.draftId,
         draftName: data.originalData.fileName?.replace(/\.[^/.]+$/, '') || 'Draft',
@@ -1011,6 +1039,14 @@ class UnifiedDraftService {
    * Convert unified draft to WorkflowDraftState for backward compatibility
    */
   private convertToWorkflowDraftState(draft: UnifiedDraftCompat): WorkflowDraftState {
+    console.log('🔄 Converting unified draft to WorkflowDraftState:', {
+      draftId: draft.draftId,
+      draftName: draft.draftName,
+      currentStep: draft.currentStep,
+      hasOriginalData: !!draft.originalData,
+      originalFileName: draft.originalData?.fileName
+    });
+
     // Map legacy or invalid step names to valid WorkflowDraftState steps
     const mapStep = (step: string): WorkflowDraftState['currentStep'] => {
       switch (step) {
@@ -1022,14 +1058,24 @@ class UnifiedDraftService {
         case 'summary':
         case 'ready-to-publish':
           return step as WorkflowDraftState['currentStep'];
-        default: return 'upload'; // Fallback for unknown steps
+        default: 
+          console.warn('🔄 Unknown step found, defaulting to upload:', step);
+          return 'upload'; // Fallback for unknown steps
       }
     };
 
-    return {
+    // Ensure originalData exists and has required properties
+    const safeOriginalData = draft.originalData || {
+      fileName: draft.draftName || 'Unknown Draft',
+      fileType: 'csv' as const,
+      uploadedData: {} as any,
+      uploadTimestamp: draft.metadata.createdAt
+    };
+
+    const converted = {
       draftId: draft.draftId,
       currentStep: mapStep(draft.currentStep),
-      originalData: draft.originalData,
+      originalData: safeOriginalData,
       timepointsAnalysis: draft.stepData.timepoints ? {
         serviceBands: draft.stepData.timepoints.serviceBands,
         travelTimeData: draft.stepData.timepoints.travelTimeData,
