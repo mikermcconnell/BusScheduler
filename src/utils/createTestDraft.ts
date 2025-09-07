@@ -94,7 +94,7 @@ export async function createTestDraft(draftName: string = 'Test Draft Schedule')
       }
       
       // Get and display the created draft
-      const createdDraft = await draftService.getDraft(result.draftId!);
+      const createdDraft = await draftService.getDraft(result.draftId!, 'test-user');
       if (createdDraft) {
         console.log('📋 Draft Details:');
         console.log('   Current Step:', createdDraft.currentStep);

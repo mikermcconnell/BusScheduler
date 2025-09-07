@@ -154,6 +154,35 @@ class ContentSecurityPolicy {
   }
 
   /**
+   * Build CSP policy string for meta tag (excludes unsupported directives)
+   */
+  buildPolicyForMeta(): string {
+    const policyParts: string[] = [];
+    
+    // Directives that are ignored when delivered via meta element
+    const unsupportedInMeta = new Set([
+      'frame-ancestors',
+      'report-uri',
+      'report-to'
+    ]);
+
+    Object.entries(this.directives).forEach(([directive, value]) => {
+      // Skip directives not supported in meta tags
+      if (unsupportedInMeta.has(directive)) {
+        return;
+      }
+
+      if (typeof value === 'boolean' && value) {
+        policyParts.push(directive);
+      } else if (Array.isArray(value) && value.length > 0) {
+        policyParts.push(`${directive} ${value.join(' ')}`);
+      }
+    });
+
+    return policyParts.join('; ');
+  }
+
+  /**
    * Apply CSP as meta tag (for SPAs without server control)
    */
   applyAsMetaTag(): void {
@@ -166,7 +195,7 @@ class ContentSecurityPolicy {
     // Create new CSP meta tag
     const metaTag = document.createElement('meta');
     metaTag.httpEquiv = 'Content-Security-Policy';
-    metaTag.content = this.buildPolicy();
+    metaTag.content = this.buildPolicyForMeta();
     document.head.appendChild(metaTag);
   }
 

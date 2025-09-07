@@ -248,5 +248,245 @@ User edits recovery → Update stop departure → Cascade within trip
 - **Quality**: 85%+ coverage, WCAG AA, 90+ Lighthouse
 
 ---
+
+## Agentic Coding Best Practices
+
+### Recommended Approach (Auto-Selection)
+**Trigger**: "Recommended approach: [task description]"
+**Purpose**: Automatically analyzes task and applies the most suitable methodology
+
+```bash
+# Examples
+"Recommended approach: Add user profile editing"     # Will likely use TDD
+"Recommended approach: Optimize dashboard loading"   # Will use performance-optimizer
+"Recommended approach: Refactor payment system"      # Will use Task Think
+"Recommended approach: Build chat with encryption"   # Will use Router + Security
+```
+
+**How it works**: Analyzes task complexity, scope, and requirements to select:
+- TDD for new features with clear requirements
+- Task Think for complex refactoring or multi-file changes
+- Task Router for uncertain scope or multi-domain tasks
+- Combined approaches for critical or complex features
+
+### Test-Driven Development (TDD)
+**Trigger**: "Test-Driven Development: [feature]" or "TDD: [feature]"
+**Pattern**: Tests First → Red → Green → Refactor → Review
+
+```bash
+# Example commands
+"TDD: Add user authentication"           # Writes tests first, then implementation
+"Run tests to confirm failures"          # Verify red state
+"Implement to pass tests"                # Minimal code to green
+"Review TDD implementation"              # Quality check
+```
+
+### Task Think Workflow
+**Trigger**: "Task Think: [complex task]" or when dealing with multi-file changes
+**Pattern**: Explore → Plan → Implement → Integrate
+
+```bash
+# Example commands
+"Task Think: Refactor authentication"    # Deep analysis before coding
+"Task Think harder: [complex task]"      # Extra depth for complex features
+```
+
+**Key Rules**:
+- Always explore codebase first (Read, Glob, Grep)
+- Use sequential-thinking for planning
+- Track with TodoWrite throughout
+- No premature coding
+
+### Task Router Agent
+**Trigger**: "Route this task: [description]" or when unsure which agent to use
+**Purpose**: Automatically assigns specialized agents
+
+| Task Type | Primary Agent | Use Case |
+|-----------|--------------|----------|
+| Frontend | ui-engineer | React components, UI/UX |
+| Backend | backend-implementer | APIs, services, logic |
+| Database | firebase-specialist | Firestore, queries |
+| Testing | test-engineer | Test suites, coverage |
+| Performance | performance-optimizer | Speed, memory, rendering |
+| Security | security-specialist | Validation, XSS, auth |
+| Planning | planner-agent | Feature breakdown |
+| Review | code-reviewer | Quality assurance |
+
+### Combined Methodologies
+```bash
+"Task Think with TDD: OAuth implementation"        # Analysis + test-first
+"Route this TDD task: Payment processing"         # Auto-assign + test-first
+"Task Think with routing: Dashboard redesign"     # Full systematic approach
+```
+
+### Quick Decision Guide
+- **New features**: Use TDD
+- **Complex refactoring**: Use Task Think
+- **Uncertain scope**: Use Task Router
+- **Critical changes**: Task Think + TDD
+- **Multi-domain**: Router + TDD
+
+### Quality Gates
+Always include:
+- test-engineer for coverage
+- code-reviewer for final check
+- security-specialist for sensitive ops
+- performance-optimizer for data-heavy features
+
+---
+
+## TypeScript Architecture & Agent Guidelines
+
+### Type Architecture Overview
+The codebase uses sophisticated TypeScript patterns that require careful handling:
+
+**Core Type System:**
+- **Discriminated Unions**: `WorkspaceEvent` (11 event types) with strict type-payload relationships
+- **Complex Interfaces**: Schedule, Trip, TimePoint hierarchies with cross-references
+- **Union Input Types**: `WorkspaceEventInput` preserves type safety for event emission
+- **Service Integration**: Firebase, React Context, and testing utilities all typed
+
+### Critical Type Files (READ FIRST)
+```
+src/types/workspaceEvents.ts   # Event system discriminated unions
+src/types/schedule.ts          # Core domain types
+src/types/workflow.ts          # Draft and block configuration
+src/types/export.ts            # Export format definitions
+```
+
+### Agent Type-First Protocols
+
+#### 1. Pre-Change Type Analysis
+**ALWAYS do this before any code changes:**
+```bash
+# Read related type definitions
+# Understand discriminated union structure
+# Check existing component prop interfaces
+# Validate context provider patterns
+```
+
+#### 2. Domain-Specific Guidelines
+
+**Event System Changes:**
+- Read `workspaceEvents.ts` first to understand union structure
+- Use proper discriminated union patterns: `event.type === 'data-validation'`
+- Never mix payload types between different event variants
+- Event emission must match `WorkspaceEventInput` constraints
+
+**React Components:**
+- Check component prop interfaces in same directory
+- Validate context provider typing (AuthContext, FeatureFlagContext)
+- Ensure children and render props are properly typed
+- Use generic constraints for reusable components
+
+**Test Files:**
+- Create typed mock factories instead of inline objects
+- Use proper test utilities that respect runtime types
+- Validate test data matches actual interfaces
+- Don't bypass types with `any` - fix the underlying issue
+
+**Service Layer:**
+- Check existing service interfaces before adding methods
+- Maintain Firebase typing patterns
+- Use proper async/await return types
+- Validate error handling maintains type safety
+
+#### 3. TypeScript Error Prevention Checklist
+
+**Before Making Changes:**
+- [ ] Read all related type definition files
+- [ ] Understand discriminated union constraints
+- [ ] Check component prop interface requirements
+- [ ] Validate context provider patterns
+
+**During Implementation:**
+- [ ] Use type guards for union type narrowing
+- [ ] Maintain strict null checking
+- [ ] Preserve generic type constraints
+- [ ] Follow existing error handling patterns
+
+**After Changes:**
+- [ ] Run `npx tsc --noEmit` immediately
+- [ ] Fix any type errors before continuing
+- [ ] Validate tests still compile and pass
+- [ ] Check type coverage hasn't decreased
+
+### Common Type Error Patterns
+
+**1. Union Type Mismatches**
+```typescript
+// WRONG: Mixing event types
+const event: WorkspaceEventInput = {
+  type: 'data-validation',
+  payload: { shortcut: 'Ctrl+S' } // This is KeyboardShortcutEvent payload!
+}
+
+// RIGHT: Match payload to event type
+const event: WorkspaceEventInput = {
+  type: 'data-validation',
+  payload: { validationId: 'v1', status: 'valid', errors: [], warnings: [] }
+}
+```
+
+**2. Context Provider Props**
+```typescript
+// WRONG: Passing value prop to providers
+<AuthProvider value={mockAuth}>
+
+// RIGHT: Use proper provider pattern
+<AuthProvider>{children}</AuthProvider>
+```
+
+**3. Test Mock Factories**
+```typescript
+// WRONG: Inline test objects with missing properties
+const testEvent = { type: 'schedule-data', action: 'update' };
+
+// RIGHT: Complete typed test factory
+const createScheduleDataEvent = (overrides: Partial<ScheduleDataEvent> = {}): ScheduleDataEvent => ({
+  id: 'test-id',
+  type: 'schedule-data',
+  timestamp: Date.now(),
+  source: 'test',
+  priority: 1,
+  payload: {
+    dataType: 'trips',
+    action: 'update',
+    data: {},
+    ...overrides.payload
+  },
+  ...overrides
+});
+```
+
+### Automated Prevention Setup
+
+Add these to package.json:
+```json
+{
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "precommit": "npm run typecheck && npm run lint",
+    "ci-check": "tsc --noEmit --strict"
+  }
+}
+```
+
+### Type Coverage Strategy
+
+**Current Issues to Address:**
+- Event system union type mismatches in `WorkspaceContext.tsx:532`
+- Test file type debt in `integration/*.test.ts` files
+- Provider prop type inconsistencies
+- Mock factory type safety gaps
+
+**Gradual Migration Plan:**
+1. Fix critical union type errors first
+2. Create typed test factories
+3. Update context provider patterns  
+4. Establish type coverage baseline
+5. Prevent regression with CI checks
+
+---
 **Version**: 2.1.0 | **Status**: Production Ready | **Updated**: January 2025
 **Stack**: React 19, Material-UI v7, TypeScript 5.9, Router v7, Firebase

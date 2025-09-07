@@ -258,7 +258,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const savedUser = localStorage.getItem('scheduler2_user');
     if (savedUser && !user && !isLoading) {
       try {
-        const userData = JSON.parse(savedUser);
+        JSON.parse(savedUser);
         // Don't set access token from localStorage for security
         // User will need to sign in again for API access
       } catch (error) {

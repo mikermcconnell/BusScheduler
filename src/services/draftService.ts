@@ -13,12 +13,9 @@ import {
   getDocs,
   deleteDoc,
   query,
-  where,
   orderBy,
   limit,
   serverTimestamp,
-  Timestamp,
-  writeBatch,
   runTransaction
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
@@ -53,7 +50,7 @@ export interface UnifiedDraftCompat {
   };
   
   // Workflow Progress
-  currentStep: 'upload' | 'timepoints' | 'blocks' | 'summary' | 'connections' | 'ready' | 'ready-to-publish';
+  currentStep: 'upload' | 'timepoints' | 'blocks' | 'summary' | 'ready-to-publish';
   progress: number; // 0-100
   
   // Step Data (populated as user progresses)
@@ -102,7 +99,7 @@ function sanitizeErrorMessage(error: any): string {
   
   // Remove potentially sensitive information
   const sanitized = message
-    .replace(/file:\/\/.*?[\/\\]/g, '') // Remove file paths
+    .replace(/file:\/\/.*?[/\\]/g, '') // Remove file paths
     .replace(/localhost:\d+/g, 'localhost') // Remove port numbers
     .replace(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, '[IP]') // Remove IP addresses
     .replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, '[EMAIL]') // Remove emails
@@ -243,6 +240,73 @@ class UnifiedDraftService {
   }
 
   /**
+   * Serialize data for Firebase (handles nested arrays and undefined values)
+   */
+  private serializeForFirebase(data: any): any {
+    if (data === null || data === undefined) {
+      return null; // Firebase can handle null, but not undefined
+    }
+    
+    if (Array.isArray(data)) {
+      // Check if this array contains nested arrays that need conversion
+      const hasNestedArrays = data.some(item => Array.isArray(item));
+      
+      if (hasNestedArrays) {
+        // Only convert to indexed format if there are nested arrays
+        return data.map((item, index) => ({
+          _index: index,
+          _value: this.serializeForFirebase(item)
+        }));
+      } else {
+        // Simple arrays (strings, numbers, objects) can stay as arrays
+        return data.map(item => this.serializeForFirebase(item));
+      }
+    }
+    
+    if (typeof data === 'object') {
+      const serialized: any = {};
+      for (const [key, value] of Object.entries(data)) {
+        if (value !== undefined) { // Omit undefined values completely
+          serialized[key] = this.serializeForFirebase(value);
+        }
+      }
+      return serialized;
+    }
+    
+    return data; // Primitive values are fine as-is
+  }
+
+  /**
+   * Deserialize data from Firebase (reconstructs nested arrays)
+   */
+  private deserializeFromFirebase(data: any): any {
+    if (data === null || data === undefined) {
+      return data;
+    }
+    
+    if (Array.isArray(data) && data.length > 0 && data[0]?._index !== undefined) {
+      // Reconstruct nested arrays
+      return data
+        .sort((a, b) => a._index - b._index)
+        .map(item => this.deserializeFromFirebase(item._value));
+    }
+    
+    if (Array.isArray(data)) {
+      return data.map(item => this.deserializeFromFirebase(item));
+    }
+    
+    if (typeof data === 'object') {
+      const deserialized: any = {};
+      for (const [key, value] of Object.entries(data)) {
+        deserialized[key] = this.deserializeFromFirebase(value);
+      }
+      return deserialized;
+    }
+    
+    return data;
+  }
+
+  /**
    * Create new draft from file upload (enhanced with compatibility)
    */
   async createDraft(
@@ -256,16 +320,23 @@ class UnifiedDraftService {
       const draftId = this.generateDraftId();
       const now = new Date().toISOString();
       
+      // Create the draft structure with proper handling of undefined values
+      const originalData: any = {
+        fileName: sanitizeText(fileName),
+        fileType,
+        uploadedData: this.serializeForFirebase(uploadedData),
+        uploadTimestamp: now
+      };
+      
+      // Only include validation if it exists and is not null/undefined
+      if (validation && (validation.isValid !== undefined || validation.errors?.length || validation.warnings?.length)) {
+        originalData.validation = validation;
+      }
+      
       const unifiedDraft: UnifiedDraftCompat = {
         draftId,
         draftName: sanitizeText(draftName),
-        originalData: {
-          fileName: sanitizeText(fileName),
-          fileType,
-          uploadedData,
-          validation,
-          uploadTimestamp: now
-        },
+        originalData,
         currentStep: 'upload',
         progress: 10, // Upload completed
         stepData: {},
@@ -355,7 +426,9 @@ class UnifiedDraftService {
         serverTimestamp: serverTimestamp()
       };
       
-      await setDoc(draftRef, updatedDraft);
+      // Serialize for Firebase compatibility (removes undefined values and handles nested arrays)
+      const serializedDraft = this.serializeForFirebase(updatedDraft);
+      await setDoc(draftRef, serializedDraft);
       
       console.log('🔥 Successfully updated timepoints in Firebase');
       return { 
@@ -406,7 +479,9 @@ class UnifiedDraftService {
         serverTimestamp: serverTimestamp()
       };
       
-      await setDoc(draftRef, updatedDraft);
+      // Serialize for Firebase compatibility (removes undefined values and handles nested arrays)
+      const serializedDraft = this.serializeForFirebase(updatedDraft);
+      await setDoc(draftRef, serializedDraft);
       
       console.log('🔥 Updated block configuration in Firebase');
       return { 
@@ -455,7 +530,9 @@ class UnifiedDraftService {
         serverTimestamp: serverTimestamp()
       };
       
-      await setDoc(draftRef, updatedDraft);
+      // Serialize for Firebase compatibility (removes undefined values and handles nested arrays)
+      const serializedDraft = this.serializeForFirebase(updatedDraft);
+      await setDoc(draftRef, serializedDraft);
       
       console.log('🔥 Updated summary schedule in Firebase');
       return { 
@@ -490,6 +567,11 @@ class UnifiedDraftService {
         // Remove Firestore-specific fields
         delete data.serverTimestamp;
         
+        // Deserialize uploaded data to restore nested arrays
+        if (data.originalData?.uploadedData) {
+          data.originalData.uploadedData = this.deserializeFromFirebase(data.originalData.uploadedData);
+        }
+        
         // Ensure draft has all required unified fields
         const unifiedDraft = this.ensureUnifiedFormat(data);
         console.log('🔥 Unified draft loaded from Firebase:', draftId);
@@ -504,12 +586,6 @@ class UnifiedDraftService {
     }
   }
 
-  /**
-   * Get draft by ID (unified interface compatibility)
-   */
-  getDraft(draftId: string): Promise<UnifiedDraftCompat | null> {
-    return this.getDraftByIdUnified(draftId);
-  }
   
   /**
    * Save draft to Firestore with race condition protection
@@ -525,11 +601,14 @@ class UnifiedDraftService {
       draft.metadata.lastModifiedAt = new Date().toISOString();
       draft.metadata.version = (draft.metadata.version || 0) + 1;
       
+      // Serialize the entire draft for Firebase compatibility (removes undefined values and handles nested arrays)
+      const serializedDraft = this.serializeForFirebase(draft);
+      
       // Save to Firestore using transaction for consistency
       await runTransaction(db, async (transaction) => {
         const draftRef = doc(db, this.COLLECTION_NAME, draft.draftId);
         transaction.set(draftRef, {
-          ...draft,
+          ...serializedDraft,
           serverTimestamp: serverTimestamp()
         });
       });
@@ -945,7 +1024,7 @@ class UnifiedDraftService {
         validation: legacyDraft.validation || { isValid: true, errors: [], warnings: [] },
         uploadTimestamp: legacyDraft.createdAt || now
       },
-      currentStep: legacyDraft.summarySchedule ? 'ready' : 'upload',
+      currentStep: legacyDraft.summarySchedule ? 'ready-to-publish' : 'upload',
       progress: legacyDraft.summarySchedule ? 90 : 10,
       stepData: {
         summarySchedule: legacyDraft.summarySchedule
@@ -1092,7 +1171,7 @@ class UnifiedDraftService {
       summarySchedule: draft.stepData.summarySchedule ? {
         schedule: draft.stepData.summarySchedule,
         metadata: {
-          generationMethod: 'block-based',
+          generationMethod: 'block-based' as const,
           parameters: {},
           validationResults: [],
           performanceMetrics: {
@@ -1481,6 +1560,33 @@ class UnifiedDraftService {
       return this.completeCurrentStep(draftId, data);
     }
     return null;
+  }
+
+  /**
+   * Public method to save a draft (for WorkspaceContext compatibility)
+   */
+  async saveDraft(draft: UnifiedDraftCompat, userId: string): Promise<DraftOperationResult> {
+    try {
+      return await this.saveDraftInternal(draft);
+    } catch (error) {
+      console.error('Failed to save draft:', error);
+      return {
+        success: false,
+        error: sanitizeErrorMessage(error)
+      };
+    }
+  }
+
+  /**
+   * Public method to get a draft (for WorkspaceContext compatibility)
+   */
+  async getDraft(draftId: string, userId: string): Promise<UnifiedDraftCompat | null> {
+    try {
+      return await this.getDraftByIdUnified(draftId);
+    } catch (error) {
+      console.error('Failed to get draft:', error);
+      return null;
+    }
   }
 
 }

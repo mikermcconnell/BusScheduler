@@ -391,6 +391,22 @@ export interface Schedule {
 }
 
 /**
+ * Block configuration for bus scheduling
+ */
+export interface BlockConfiguration {
+  /** Block number identifier */
+  blockNumber: number;
+  /** Start time for the block in HH:MM format */
+  startTime: string;
+  /** End time for the block in HH:MM format */
+  endTime: string;
+  /** Number of trips in this block */
+  tripCount?: number;
+  /** Service band to use */
+  serviceBand?: string;
+}
+
+/**
  * Bus block creation parameters
  */
 export interface BusBlockCreationParams {

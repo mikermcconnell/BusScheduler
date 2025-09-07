@@ -11,8 +11,6 @@ import {
   List,
   ListItem,
   ListItemText,
-  ListItemSecondaryAction,
-  IconButton,
   Chip,
   Alert,
   FormControlLabel,
@@ -23,7 +21,6 @@ import {
 } from '@mui/material';
 import {
   Save as SaveIcon,
-  Delete as DeleteIcon,
   Schedule as ScheduleIcon,
   Edit as RenameIcon,
   Add as AddIcon,
