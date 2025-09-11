@@ -4,7 +4,6 @@ import {
   Button,
   Paper,
   Typography,
-  LinearProgress,
   Alert,
   Chip,
   IconButton
@@ -16,6 +15,7 @@ import {
   CheckCircle
 } from '@mui/icons-material';
 import { useFileUpload } from '../hooks/useFileUpload';
+import { LoadingOverlay } from './loading';
 
 interface FileUploadProps {
   onFileUploaded?: (
@@ -114,14 +114,12 @@ export const FileUpload: React.FC<FileUploadProps> = ({
           style={{ display: 'none' }}
         />
 
-        {isLoading && (
-          <Box sx={{ mb: 2 }}>
-            <LinearProgress />
-            <Typography variant="body2" sx={{ mt: 1 }}>
-              Creating draft working schedule...
-            </Typography>
-          </Box>
-        )}
+        <LoadingOverlay 
+          open={isLoading}
+          message="Creating draft working schedule..."
+          showProgress
+          transparent
+        />
 
         {!fileName && !isLoading && (
           <>

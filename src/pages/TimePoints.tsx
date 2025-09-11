@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import DraftNameHeader from '../components/DraftNameHeader';
+import { LoadingSpinner, LoadingSkeleton } from '../components/loading';
 import {
   Typography,
   Card,
@@ -1083,8 +1084,12 @@ const TimePoints: React.FC = () => {
 
   if (loading) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-        <CircularProgress />
+      <Box sx={{ p: 3 }}>
+        <DraftNameHeader />
+        <Typography variant="h4" component="h1" gutterBottom sx={{ mt: 3, mb: 3 }}>
+          TimePoints Analysis
+        </Typography>
+        <LoadingSkeleton variant="dashboard" />
       </Box>
     );
   }

@@ -60,18 +60,9 @@ class MagicLinkAuthService {
       // URL to redirect back to after email verification
       url: `${baseUrl}/auth/email-link`,
       // This must be true for email link sign-in
-      handleCodeInApp: true,
-      // Optional: for mobile apps
-      iOS: {
-        bundleId: 'com.scheduler2.app'
-      },
-      android: {
-        packageName: 'com.scheduler2.app',
-        installApp: false,
-        minimumVersion: '12'
-      },
-      // Optional: to prevent abuse
-      dynamicLinkDomain: process.env.REACT_APP_DYNAMIC_LINK_DOMAIN
+      handleCodeInApp: true
+      // Note: iOS, Android, and dynamicLinkDomain removed as this is a web-only app
+      // and Firebase Dynamic Links is deprecated as of 2025
     };
   }
 
@@ -213,6 +204,13 @@ class MagicLinkAuthService {
           break;
         case 'auth/operation-not-allowed':
           errorMessage = 'Email sign-in is not enabled. Please contact support.';
+          break;
+        case 'auth/network-request-failed':
+          errorMessage = 'Network error. Please check your internet connection and Firebase configuration.';
+          console.error('Network error details:', {
+            authDomain: this.auth.config.authDomain,
+            apiKeyPresent: !!this.auth.config.apiKey
+          });
           break;
       }
 

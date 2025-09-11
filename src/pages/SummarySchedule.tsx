@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import DraftNameHeader from '../components/DraftNameHeader';
+import { LoadingSkeleton } from '../components/loading';
 import {
   Typography,
   Card,
@@ -92,8 +93,11 @@ const SummarySchedule: React.FC = () => {
 
   if (isLoading) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
-        <Typography>Loading schedule...</Typography>
+      <Box sx={{ p: 3 }}>
+        <Typography variant="h4" component="h1" gutterBottom>
+          Summary Schedule
+        </Typography>
+        <LoadingSkeleton variant="dashboard" />
       </Box>
     );
   }

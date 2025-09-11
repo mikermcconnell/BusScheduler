@@ -151,7 +151,7 @@ const segmentTime = tripServiceBand.segmentTimes[segmentIndex];
 
 3. **Authentication Flow**:
    - User enters email → Firebase sends magic link
-   - Link directs to `/auth/action` on your domain
+   - Link directs to `/auth/email-link` on your domain
    - `EmailLinkHandler` component processes authentication
    - No Dynamic Links required - works with direct domain URLs
 

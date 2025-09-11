@@ -32,8 +32,11 @@ export const db = getFirestore(app);
 export const auth = getAuth(app);
 export const functions = getFunctions(app);
 
-// Initialize Analytics (only in production)
-export const analytics = process.env.NODE_ENV === 'production' ? getAnalytics(app) : null;
+// Initialize Analytics only in production with valid config
+// Skip analytics if using fake/local config to avoid API key errors
+export const analytics = (process.env.NODE_ENV === 'production' && hasRealFirebaseConfig) 
+  ? getAnalytics(app) 
+  : null;
 
 // Track if emulators are already connected to prevent duplicate connections
 let emulatorsConnected = false;
