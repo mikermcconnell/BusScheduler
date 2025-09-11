@@ -10,12 +10,15 @@ import { getFunctions, connectFunctionsEmulator } from 'firebase/functions';
 import { getAnalytics } from 'firebase/analytics';
 
 // Firebase configuration
-// TODO: Replace with your actual Firebase project configuration
+// Check if we have real Firebase config, otherwise use a flag to disable Firebase
+const hasRealFirebaseConfig = process.env.REACT_APP_FIREBASE_API_KEY && 
+  process.env.REACT_APP_FIREBASE_API_KEY !== "demo-api-key";
+
 const firebaseConfig = {
-  apiKey: process.env.REACT_APP_FIREBASE_API_KEY || "demo-api-key",
-  authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN || "scheduler2-demo.firebaseapp.com",
-  projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID || "scheduler2-demo",
-  storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET || "scheduler2-demo.firebasestorage.app",
+  apiKey: process.env.REACT_APP_FIREBASE_API_KEY || "AIzaSyFakeKeyForLocalStorageOnly",
+  authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN || "scheduler2-local.firebaseapp.com",
+  projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID || "scheduler2-local",
+  storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET || "scheduler2-local.firebasestorage.app",
   messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID || "123456789",
   appId: process.env.REACT_APP_FIREBASE_APP_ID || "1:123456789:web:abcdef123456",
   measurementId: process.env.REACT_APP_FIREBASE_MEASUREMENT_ID || "G-ABCDEFGHIJ"
@@ -115,3 +118,4 @@ export const getFirebaseErrorMessage = (error: any): string => {
 // Development helpers
 export const isDevelopment = process.env.NODE_ENV === 'development';
 export const isEmulatorMode = process.env.REACT_APP_USE_FIREBASE_EMULATOR === 'true';
+export const hasValidFirebaseConfig = hasRealFirebaseConfig;

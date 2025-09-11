@@ -1,11 +1,12 @@
 import React, { useEffect } from 'react';
-import { BrowserRouter as Router } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import Layout from './components/Layout';
 import ErrorBoundary from './components/ErrorBoundary';
 import { AuthProvider } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
+import EmailLinkHandler from './components/EmailLinkHandler';
 import { securityInitializer } from './utils/securityInitializer';
 import { db, auth } from './config/firebase'; // Initialize Firebase
 import './utils/testUnifiedStorage'; // Test utilities for storage verification
@@ -93,9 +94,17 @@ function App() {
         <CssBaseline />
         <Router>
           <AuthProvider>
-            <ProtectedRoute>
-              <Layout />
-            </ProtectedRoute>
+            <Routes>
+              {/* Email link handler route - accessible without authentication */}
+              <Route path="/auth/email-link" element={<EmailLinkHandler />} />
+              
+              {/* All other routes require authentication */}
+              <Route path="/*" element={
+                <ProtectedRoute>
+                  <Layout />
+                </ProtectedRoute>
+              } />
+            </Routes>
           </AuthProvider>
         </Router>
       </ThemeProvider>

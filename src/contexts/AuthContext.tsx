@@ -4,7 +4,12 @@
  */
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { signInAnonymously } from 'firebase/auth';
+import { 
+  signInAnonymously, 
+  onAuthStateChanged, 
+  User as FirebaseUser,
+  signOut as firebaseSignOut 
+} from 'firebase/auth';
 import { auth } from '../config/firebase';
 
 interface User {
@@ -13,6 +18,7 @@ interface User {
   name: string;
   picture?: string;
   accessToken: string;
+  authMethod?: 'google' | 'email' | 'anonymous';
 }
 
 interface AuthContextType {
@@ -22,6 +28,7 @@ interface AuthContextType {
   signIn: () => Promise<{ success: boolean; error?: string }>;
   signOut: () => Promise<void>;
   refreshToken: () => Promise<{ success: boolean; error?: string }>;
+  firebaseUser: FirebaseUser | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -32,48 +39,70 @@ interface AuthProviderProps {
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [gapi, setGapi] = useState<any>(null);
   
   // Bypass authentication for development
   const bypassAuth = process.env.REACT_APP_BYPASS_AUTH === 'true';
 
+  // Listen to Firebase Auth state changes
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setFirebaseUser(firebaseUser);
+      
+      if (firebaseUser) {
+        console.log('🔥 Firebase user authenticated:', firebaseUser.uid);
+        
+        // Check if user signed in with email link
+        if (firebaseUser.email && !firebaseUser.providerData.some(p => p.providerId === 'google.com')) {
+          // User signed in with magic link
+          const user: User = {
+            id: firebaseUser.uid,
+            email: firebaseUser.email || 'user@scheduler.app',
+            name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
+            picture: firebaseUser.photoURL || '',
+            accessToken: await firebaseUser.getIdToken(),
+            authMethod: firebaseUser.isAnonymous ? 'anonymous' : 'email'
+          };
+          setUser(user);
+          localStorage.setItem('scheduler2_user', JSON.stringify(user));
+        } else if (firebaseUser.isAnonymous) {
+          // Anonymous user
+          const user: User = {
+            id: firebaseUser.uid,
+            email: 'user@scheduler.app',
+            name: 'Schedule User',
+            picture: '',
+            accessToken: 'anonymous_token',
+            authMethod: 'anonymous'
+          };
+          setUser(user);
+        }
+        // Google auth is handled separately by Google API
+      } else {
+        // No Firebase user, check if we need anonymous auth
+        if (bypassAuth && !user) {
+          try {
+            const result = await signInAnonymously(auth);
+            console.log('🔥 Signed in anonymously with Firebase:', result.user.uid);
+          } catch (error) {
+            console.error('Failed to sign in anonymously:', error);
+          }
+        }
+      }
+      
+      setIsLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [bypassAuth]);
+
   // Initialize Google API or bypass
   useEffect(() => {
     const setupAuth = async () => {
-      // For production or when bypass is enabled, use anonymous auth
-      if (bypassAuth || !process.env.REACT_APP_GOOGLE_CLIENT_ID) {
-        console.log('🔓 Auth bypass mode enabled - signing in anonymously with Firebase');
-        
-        try {
-          // Sign in anonymously with Firebase Auth
-          const result = await signInAnonymously(auth);
-          console.log('🔥 Signed in anonymously with Firebase:', result.user.uid);
-          
-          // Create mock user with Firebase anonymous UID
-          const mockUser: User = {
-            id: result.user.uid || 'anonymous_user',
-            email: 'user@scheduler.app',
-            name: 'Schedule User',
-            picture: '',
-            accessToken: 'anonymous_token'
-          };
-          setUser(mockUser);
-        } catch (error) {
-          console.error('Failed to sign in anonymously with Firebase:', error);
-          // Fallback to local mock user if Firebase anonymous sign-in fails
-          const mockUser: User = {
-            id: 'anonymous_user',
-            email: 'user@scheduler.app',
-            name: 'Schedule User',
-            picture: '',
-            accessToken: 'anonymous_token'
-          };
-          setUser(mockUser);
-        }
-        
-        setIsLoading(false);
-      } else {
+      // Only initialize Google API if we have a client ID and not in bypass mode
+      if (!bypassAuth && process.env.REACT_APP_GOOGLE_CLIENT_ID) {
         initializeGoogleAPI();
       }
     };
@@ -185,7 +214,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       email: profile.getEmail(),
       name: profile.getName(),
       picture: profile.getImageUrl(),
-      accessToken: authResponse.access_token
+      accessToken: authResponse.access_token,
+      authMethod: 'google'
     };
     
     setUser(user);
@@ -195,7 +225,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       id: user.id,
       email: user.email,
       name: user.name,
-      picture: user.picture
+      picture: user.picture,
+      authMethod: user.authMethod
     }));
   };
 
@@ -232,25 +263,29 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const signOut = async (): Promise<void> => {
     try {
-      if (bypassAuth) {
-        // In bypass mode, just clear the user
-        setUser(null);
-        return;
+      // Sign out from Firebase (handles both email and anonymous)
+      if (firebaseUser && !firebaseUser.providerData.some(p => p.providerId === 'google.com')) {
+        await firebaseSignOut(auth);
       }
       
-      if (gapi && user) {
+      // Sign out from Google if applicable
+      if (gapi && user?.authMethod === 'google') {
         const authInstance = gapi.auth2.getAuthInstance();
         await authInstance.signOut();
       }
       
       setUser(null);
+      setFirebaseUser(null);
       localStorage.removeItem('scheduler2_user');
+      localStorage.removeItem('scheduler2_emailForSignIn');
       
     } catch (error) {
       console.error('Sign out error:', error);
-      // Force local sign out even if Google sign out fails
+      // Force local sign out even if remote sign out fails
       setUser(null);
+      setFirebaseUser(null);
       localStorage.removeItem('scheduler2_user');
+      localStorage.removeItem('scheduler2_emailForSignIn');
     }
   };
 
@@ -300,7 +335,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     isSignedIn: !!user,
     signIn,
     signOut,
-    refreshToken
+    refreshToken,
+    firebaseUser
   };
 
   return (

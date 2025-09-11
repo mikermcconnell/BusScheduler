@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { User, onAuthStateChanged, signInAnonymously } from 'firebase/auth';
-import { auth } from '../config/firebase';
+import { auth, hasValidFirebaseConfig } from '../config/firebase';
 
 interface UseFirebaseAuthReturn {
   user: User | null;

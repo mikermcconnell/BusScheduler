@@ -135,6 +135,26 @@ const segmentTime = tripServiceBand.segmentTimes[segmentIndex];
 - **User authentication** (email/password, Google, anonymous)
 - **Seamless migration** from localStorage
 
+### Magic Link Authentication Setup
+**Note**: Firebase Dynamic Links deprecated August 2025 - use direct email links instead
+
+#### Configuration Steps:
+1. **Firebase Console Settings**:
+   - Enable Email/Password authentication in Sign-in methods
+   - Toggle ON "Email link (passwordless sign-in)" option
+   - Add authorized domains: `localhost`, your production domain
+
+2. **Environment Variables**:
+   ```bash
+   REACT_APP_MAGIC_LINK_DOMAIN=http://localhost:3000  # For development
+   ```
+
+3. **Authentication Flow**:
+   - User enters email → Firebase sends magic link
+   - Link directs to `/auth/action` on your domain
+   - `EmailLinkHandler` component processes authentication
+   - No Dynamic Links required - works with direct domain URLs
+
 ## Technical Implementation
 
 ### Key Functions

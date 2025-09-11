@@ -2540,3 +2540,830 @@ For CI servers and headless environments, generate a new token with firebase log
 [debug] [2025-09-11T17:08:23.117Z] > authorizing via signed-in user (michaelryanmcconnell@gmail.com)
 [debug] [2025-09-11T17:08:23.185Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ 200
 [debug] [2025-09-11T17:08:23.185Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [omitted]
+[debug] [2025-09-11T17:10:46.860Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:10:46.862Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:10:46.862Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:10:46.863Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:10:46.863Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:10:46.863Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:10:46.864Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:10:46.864Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:10:46.864Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:10:46.864Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:10:46.865Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [none]
+[debug] [2025-09-11T17:10:46.866Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:10:46.905Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [none]
+[debug] [2025-09-11T17:10:46.905Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:10:46.906Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [none]
+[debug] [2025-09-11T17:10:46.906Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:10:46.907Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [none]
+[debug] [2025-09-11T17:10:46.907Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:10:46.908Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [none]
+[debug] [2025-09-11T17:10:46.908Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:10:46.936Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:10:46.937Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:10:46.937Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:10:46.937Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:10:46.937Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:10:46.937Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:10:46.938Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:10:46.938Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:10:46.938Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:10:46.938Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:10:46.938Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:10:46.938Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:10:46.938Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:10:46.938Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:10:46.939Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:10:46.939Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:10:46.939Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:10:46.939Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:10:46.939Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:10:46.939Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:10:46.940Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [none]
+[debug] [2025-09-11T17:10:46.940Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:10:46.941Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [none]
+[debug] [2025-09-11T17:10:46.941Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:10:46.941Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [none]
+[debug] [2025-09-11T17:10:46.942Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:10:46.943Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [none]
+[debug] [2025-09-11T17:10:46.943Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:10:46.944Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [none]
+[debug] [2025-09-11T17:10:46.944Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:10:46.945Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [none]
+[debug] [2025-09-11T17:10:46.945Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:10:46.946Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [none]
+[debug] [2025-09-11T17:10:46.946Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:10:46.946Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [none]
+[debug] [2025-09-11T17:10:46.946Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:10:46.947Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [none]
+[debug] [2025-09-11T17:10:46.947Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:10:46.948Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [none]
+[debug] [2025-09-11T17:10:46.948Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:10:47.209Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com 403
+[debug] [2025-09-11T17:10:47.209Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [omitted]
+[debug] [2025-09-11T17:10:47.215Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com 403
+[debug] [2025-09-11T17:10:47.216Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [omitted]
+[debug] [2025-09-11T17:10:47.217Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com 403
+[debug] [2025-09-11T17:10:47.217Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [omitted]
+[debug] [2025-09-11T17:10:47.244Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com 200
+[debug] [2025-09-11T17:10:47.244Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [omitted]
+[debug] [2025-09-11T17:10:47.245Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com 200
+[debug] [2025-09-11T17:10:47.245Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [omitted]
+[debug] [2025-09-11T17:10:47.246Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com 200
+[debug] [2025-09-11T17:10:47.246Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [omitted]
+[debug] [2025-09-11T17:10:47.246Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com 200
+[debug] [2025-09-11T17:10:47.246Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [omitted]
+[debug] [2025-09-11T17:10:47.247Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com 200
+[debug] [2025-09-11T17:10:47.247Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [omitted]
+[debug] [2025-09-11T17:10:47.247Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com 200
+[debug] [2025-09-11T17:10:47.247Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [omitted]
+[debug] [2025-09-11T17:10:47.248Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com 200
+[debug] [2025-09-11T17:10:47.248Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [omitted]
+[debug] [2025-09-11T17:10:47.254Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com 200
+[debug] [2025-09-11T17:10:47.254Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [omitted]
+[debug] [2025-09-11T17:10:47.287Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com 200
+[debug] [2025-09-11T17:10:47.287Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [omitted]
+[debug] [2025-09-11T17:10:47.483Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ 200
+[debug] [2025-09-11T17:10:47.483Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [omitted]
+[debug] [2025-09-11T17:10:47.485Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ 200
+[debug] [2025-09-11T17:10:47.485Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [omitted]
+[debug] [2025-09-11T17:10:47.492Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-09-11T17:10:47.492Z] > authorizing via signed-in user (michaelryanmcconnell@gmail.com)
+[debug] [2025-09-11T17:10:47.641Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ 200
+[debug] [2025-09-11T17:10:47.641Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [omitted]
+[debug] [2025-09-11T17:10:47.654Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-09-11T17:10:47.654Z] > authorizing via signed-in user (michaelryanmcconnell@gmail.com)
+[debug] [2025-09-11T17:13:11.702Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:13:11.704Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:13:11.704Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:13:11.705Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:13:11.705Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:13:11.705Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:13:11.706Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:13:11.706Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:13:11.706Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:13:11.706Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:13:11.707Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [none]
+[debug] [2025-09-11T17:13:11.708Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:13:11.747Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [none]
+[debug] [2025-09-11T17:13:11.747Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:13:11.748Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [none]
+[debug] [2025-09-11T17:13:11.748Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:13:11.749Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [none]
+[debug] [2025-09-11T17:13:11.749Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:13:11.750Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [none]
+[debug] [2025-09-11T17:13:11.750Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:13:11.775Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:13:11.775Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:13:11.775Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:13:11.775Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:13:11.776Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:13:11.776Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:13:11.776Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:13:11.776Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:13:11.777Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:13:11.777Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:13:11.777Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:13:11.777Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:13:11.777Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:13:11.777Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:13:11.778Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:13:11.778Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:13:11.778Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:13:11.778Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:13:11.778Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:13:11.778Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:13:11.778Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [none]
+[debug] [2025-09-11T17:13:11.778Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:13:11.779Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [none]
+[debug] [2025-09-11T17:13:11.779Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:13:11.780Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [none]
+[debug] [2025-09-11T17:13:11.780Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:13:11.782Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [none]
+[debug] [2025-09-11T17:13:11.782Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:13:11.783Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [none]
+[debug] [2025-09-11T17:13:11.783Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:13:11.784Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [none]
+[debug] [2025-09-11T17:13:11.784Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:13:11.784Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [none]
+[debug] [2025-09-11T17:13:11.784Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:13:11.785Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [none]
+[debug] [2025-09-11T17:13:11.785Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:13:11.786Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [none]
+[debug] [2025-09-11T17:13:11.786Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:13:11.786Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [none]
+[debug] [2025-09-11T17:13:11.786Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:13:12.059Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com 403
+[debug] [2025-09-11T17:13:12.059Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [omitted]
+[debug] [2025-09-11T17:13:12.067Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com 403
+[debug] [2025-09-11T17:13:12.067Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [omitted]
+[debug] [2025-09-11T17:13:12.070Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com 403
+[debug] [2025-09-11T17:13:12.070Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [omitted]
+[debug] [2025-09-11T17:13:12.075Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com 200
+[debug] [2025-09-11T17:13:12.075Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [omitted]
+[debug] [2025-09-11T17:13:12.081Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com 200
+[debug] [2025-09-11T17:13:12.081Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [omitted]
+[debug] [2025-09-11T17:13:12.111Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com 200
+[debug] [2025-09-11T17:13:12.111Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [omitted]
+[debug] [2025-09-11T17:13:12.111Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com 200
+[debug] [2025-09-11T17:13:12.111Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [omitted]
+[debug] [2025-09-11T17:13:12.111Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com 200
+[debug] [2025-09-11T17:13:12.112Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [omitted]
+[debug] [2025-09-11T17:13:12.112Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com 200
+[debug] [2025-09-11T17:13:12.112Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [omitted]
+[debug] [2025-09-11T17:13:12.113Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com 200
+[debug] [2025-09-11T17:13:12.113Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [omitted]
+[debug] [2025-09-11T17:13:12.114Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com 200
+[debug] [2025-09-11T17:13:12.114Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [omitted]
+[debug] [2025-09-11T17:13:12.125Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com 200
+[debug] [2025-09-11T17:13:12.125Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [omitted]
+[debug] [2025-09-11T17:13:12.307Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ 200
+[debug] [2025-09-11T17:13:12.307Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [omitted]
+[debug] [2025-09-11T17:13:12.357Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ 200
+[debug] [2025-09-11T17:13:12.358Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [omitted]
+[debug] [2025-09-11T17:13:12.364Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-09-11T17:13:12.364Z] > authorizing via signed-in user (michaelryanmcconnell@gmail.com)
+[debug] [2025-09-11T17:13:12.432Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ 200
+[debug] [2025-09-11T17:13:12.432Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [omitted]
+[debug] [2025-09-11T17:13:12.436Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-09-11T17:13:12.436Z] > authorizing via signed-in user (michaelryanmcconnell@gmail.com)
+[debug] [2025-09-11T17:16:51.035Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:16:51.038Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:16:51.038Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:16:51.039Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:16:51.039Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:16:51.039Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:16:51.040Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:16:51.040Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:16:51.040Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:16:51.040Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:16:51.041Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [none]
+[debug] [2025-09-11T17:16:51.042Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:16:51.082Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [none]
+[debug] [2025-09-11T17:16:51.082Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:16:51.083Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [none]
+[debug] [2025-09-11T17:16:51.083Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:16:51.084Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [none]
+[debug] [2025-09-11T17:16:51.084Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:16:51.085Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [none]
+[debug] [2025-09-11T17:16:51.085Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:16:51.117Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:16:51.117Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:16:51.117Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:16:51.117Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:16:51.118Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:16:51.118Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:16:51.118Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:16:51.118Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:16:51.118Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:16:51.118Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:16:51.118Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:16:51.118Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:16:51.119Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:16:51.119Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:16:51.119Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:16:51.119Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:16:51.119Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:16:51.119Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:16:51.120Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:16:51.120Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:16:51.120Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [none]
+[debug] [2025-09-11T17:16:51.120Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:16:51.121Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [none]
+[debug] [2025-09-11T17:16:51.121Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:16:51.122Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [none]
+[debug] [2025-09-11T17:16:51.122Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:16:51.123Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [none]
+[debug] [2025-09-11T17:16:51.123Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:16:51.124Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [none]
+[debug] [2025-09-11T17:16:51.125Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:16:51.125Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [none]
+[debug] [2025-09-11T17:16:51.125Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:16:51.126Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [none]
+[debug] [2025-09-11T17:16:51.126Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:16:51.127Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [none]
+[debug] [2025-09-11T17:16:51.127Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:16:51.127Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [none]
+[debug] [2025-09-11T17:16:51.127Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:16:51.128Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [none]
+[debug] [2025-09-11T17:16:51.128Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:16:51.366Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com 403
+[debug] [2025-09-11T17:16:51.366Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [omitted]
+[debug] [2025-09-11T17:16:51.372Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com 403
+[debug] [2025-09-11T17:16:51.372Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [omitted]
+[debug] [2025-09-11T17:16:51.390Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com 403
+[debug] [2025-09-11T17:16:51.391Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [omitted]
+[debug] [2025-09-11T17:16:51.396Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ 200
+[debug] [2025-09-11T17:16:51.396Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [omitted]
+[debug] [2025-09-11T17:16:51.432Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com 200
+[debug] [2025-09-11T17:16:51.432Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [omitted]
+[debug] [2025-09-11T17:16:51.432Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com 200
+[debug] [2025-09-11T17:16:51.432Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [omitted]
+[debug] [2025-09-11T17:16:51.433Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com 200
+[debug] [2025-09-11T17:16:51.433Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [omitted]
+[debug] [2025-09-11T17:16:51.433Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com 200
+[debug] [2025-09-11T17:16:51.433Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [omitted]
+[debug] [2025-09-11T17:16:51.433Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com 200
+[debug] [2025-09-11T17:16:51.433Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [omitted]
+[debug] [2025-09-11T17:16:51.434Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com 200
+[debug] [2025-09-11T17:16:51.434Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [omitted]
+[debug] [2025-09-11T17:16:51.446Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com 200
+[debug] [2025-09-11T17:16:51.446Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [omitted]
+[debug] [2025-09-11T17:16:51.447Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com 200
+[debug] [2025-09-11T17:16:51.447Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [omitted]
+[debug] [2025-09-11T17:16:51.549Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com 200
+[debug] [2025-09-11T17:16:51.549Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [omitted]
+[debug] [2025-09-11T17:16:51.701Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ 200
+[debug] [2025-09-11T17:16:51.702Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [omitted]
+[debug] [2025-09-11T17:16:51.721Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-09-11T17:16:51.722Z] > authorizing via signed-in user (michaelryanmcconnell@gmail.com)
+[debug] [2025-09-11T17:16:51.725Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ 200
+[debug] [2025-09-11T17:16:51.725Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [omitted]
+[debug] [2025-09-11T17:16:51.729Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-09-11T17:16:51.729Z] > authorizing via signed-in user (michaelryanmcconnell@gmail.com)
+[debug] [2025-09-11T17:18:25.625Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:18:25.628Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:18:25.628Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:18:25.628Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:18:25.629Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:18:25.629Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:18:25.630Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:18:25.630Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:18:25.630Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:18:25.630Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:18:25.631Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [none]
+[debug] [2025-09-11T17:18:25.631Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:18:25.671Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [none]
+[debug] [2025-09-11T17:18:25.671Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:18:25.672Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [none]
+[debug] [2025-09-11T17:18:25.672Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:18:25.673Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [none]
+[debug] [2025-09-11T17:18:25.673Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:18:25.674Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [none]
+[debug] [2025-09-11T17:18:25.674Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:18:25.703Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:18:25.703Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:18:25.703Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:18:25.703Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:18:25.704Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:18:25.704Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:18:25.704Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:18:25.704Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:18:25.704Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:18:25.704Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:18:25.704Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:18:25.704Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:18:25.705Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:18:25.705Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:18:25.705Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:18:25.705Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:18:25.705Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:18:25.705Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:18:25.706Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:18:25.706Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:18:25.706Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [none]
+[debug] [2025-09-11T17:18:25.706Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:18:25.707Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [none]
+[debug] [2025-09-11T17:18:25.707Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:18:25.708Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [none]
+[debug] [2025-09-11T17:18:25.708Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:18:25.710Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [none]
+[debug] [2025-09-11T17:18:25.710Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:18:25.711Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [none]
+[debug] [2025-09-11T17:18:25.711Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:18:25.711Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [none]
+[debug] [2025-09-11T17:18:25.711Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:18:25.712Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [none]
+[debug] [2025-09-11T17:18:25.712Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:18:25.713Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [none]
+[debug] [2025-09-11T17:18:25.713Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:18:25.713Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [none]
+[debug] [2025-09-11T17:18:25.713Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:18:25.714Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [none]
+[debug] [2025-09-11T17:18:25.714Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:18:25.974Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com 403
+[debug] [2025-09-11T17:18:25.974Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [omitted]
+[debug] [2025-09-11T17:18:25.977Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com 403
+[debug] [2025-09-11T17:18:25.977Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [omitted]
+[debug] [2025-09-11T17:18:25.980Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com 403
+[debug] [2025-09-11T17:18:25.980Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [omitted]
+[debug] [2025-09-11T17:18:26.008Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com 200
+[debug] [2025-09-11T17:18:26.009Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [omitted]
+[debug] [2025-09-11T17:18:26.010Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com 200
+[debug] [2025-09-11T17:18:26.011Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [omitted]
+[debug] [2025-09-11T17:18:26.020Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com 200
+[debug] [2025-09-11T17:18:26.020Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [omitted]
+[debug] [2025-09-11T17:18:26.020Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com 200
+[debug] [2025-09-11T17:18:26.020Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [omitted]
+[debug] [2025-09-11T17:18:26.020Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com 200
+[debug] [2025-09-11T17:18:26.020Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [omitted]
+[debug] [2025-09-11T17:18:26.021Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com 200
+[debug] [2025-09-11T17:18:26.021Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [omitted]
+[debug] [2025-09-11T17:18:26.022Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com 200
+[debug] [2025-09-11T17:18:26.022Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [omitted]
+[debug] [2025-09-11T17:18:26.031Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com 200
+[debug] [2025-09-11T17:18:26.031Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [omitted]
+[debug] [2025-09-11T17:18:26.055Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com 200
+[debug] [2025-09-11T17:18:26.055Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [omitted]
+[debug] [2025-09-11T17:18:26.295Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ 200
+[debug] [2025-09-11T17:18:26.295Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [omitted]
+[debug] [2025-09-11T17:18:26.314Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-09-11T17:18:26.315Z] > authorizing via signed-in user (michaelryanmcconnell@gmail.com)
+[debug] [2025-09-11T17:18:26.318Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ 200
+[debug] [2025-09-11T17:18:26.318Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [omitted]
+[debug] [2025-09-11T17:18:26.324Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-09-11T17:18:26.324Z] > authorizing via signed-in user (michaelryanmcconnell@gmail.com)
+[debug] [2025-09-11T17:18:26.326Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ 200
+[debug] [2025-09-11T17:18:26.326Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [omitted]
+[debug] [2025-09-11T17:26:54.481Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:26:54.484Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:26:54.484Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:26:54.484Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:26:54.485Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:26:54.485Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:26:54.486Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:26:54.486Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:26:54.486Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:26:54.487Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:26:54.488Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [none]
+[debug] [2025-09-11T17:26:54.488Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:26:54.539Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [none]
+[debug] [2025-09-11T17:26:54.539Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:26:54.540Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [none]
+[debug] [2025-09-11T17:26:54.540Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:26:54.542Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [none]
+[debug] [2025-09-11T17:26:54.542Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:26:54.543Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [none]
+[debug] [2025-09-11T17:26:54.543Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:26:54.572Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:26:54.572Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:26:54.572Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:26:54.572Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:26:54.573Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:26:54.573Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:26:54.573Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:26:54.573Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:26:54.573Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:26:54.574Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:26:54.574Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:26:54.574Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:26:54.574Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:26:54.574Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:26:54.575Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:26:54.575Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:26:54.575Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:26:54.575Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:26:54.575Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:26:54.575Z] Checked if tokens are valid: true, expires at: 1757614101540
+[debug] [2025-09-11T17:26:54.575Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [none]
+[debug] [2025-09-11T17:26:54.575Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:26:54.576Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [none]
+[debug] [2025-09-11T17:26:54.576Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:26:54.577Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [none]
+[debug] [2025-09-11T17:26:54.577Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:26:54.579Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [none]
+[debug] [2025-09-11T17:26:54.579Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:26:54.580Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [none]
+[debug] [2025-09-11T17:26:54.580Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:26:54.581Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [none]
+[debug] [2025-09-11T17:26:54.581Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:26:54.581Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [none]
+[debug] [2025-09-11T17:26:54.581Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:26:54.582Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [none]
+[debug] [2025-09-11T17:26:54.582Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:26:54.583Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [none]
+[debug] [2025-09-11T17:26:54.583Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:26:54.583Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [none]
+[debug] [2025-09-11T17:26:54.583Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T17:26:54.866Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com 403
+[debug] [2025-09-11T17:26:54.867Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [omitted]
+[debug] [2025-09-11T17:26:54.868Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com 403
+[debug] [2025-09-11T17:26:54.868Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [omitted]
+[debug] [2025-09-11T17:26:54.883Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ 200
+[debug] [2025-09-11T17:26:54.883Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [omitted]
+[debug] [2025-09-11T17:26:54.887Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com 403
+[debug] [2025-09-11T17:26:54.888Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [omitted]
+[debug] [2025-09-11T17:26:54.903Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com 200
+[debug] [2025-09-11T17:26:54.903Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [omitted]
+[debug] [2025-09-11T17:26:54.906Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com 200
+[debug] [2025-09-11T17:26:54.906Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [omitted]
+[debug] [2025-09-11T17:26:54.906Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com 200
+[debug] [2025-09-11T17:26:54.906Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [omitted]
+[debug] [2025-09-11T17:26:54.907Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com 200
+[debug] [2025-09-11T17:26:54.907Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [omitted]
+[debug] [2025-09-11T17:26:54.907Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com 200
+[debug] [2025-09-11T17:26:54.907Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [omitted]
+[debug] [2025-09-11T17:26:54.908Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com 200
+[debug] [2025-09-11T17:26:54.908Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [omitted]
+[debug] [2025-09-11T17:26:54.908Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com 200
+[debug] [2025-09-11T17:26:54.908Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [omitted]
+[debug] [2025-09-11T17:26:54.912Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com 200
+[debug] [2025-09-11T17:26:54.912Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [omitted]
+[debug] [2025-09-11T17:26:54.954Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com 200
+[debug] [2025-09-11T17:26:54.955Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [omitted]
+[debug] [2025-09-11T17:26:55.206Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ 200
+[debug] [2025-09-11T17:26:55.206Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [omitted]
+[debug] [2025-09-11T17:26:55.213Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-09-11T17:26:55.213Z] > authorizing via signed-in user (michaelryanmcconnell@gmail.com)
+[debug] [2025-09-11T17:26:55.228Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ 200
+[debug] [2025-09-11T17:26:55.229Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [omitted]
+[debug] [2025-09-11T17:26:55.233Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-09-11T17:26:55.233Z] > authorizing via signed-in user (michaelryanmcconnell@gmail.com)
+[debug] [2025-09-11T18:47:29.982Z] Checked if tokens are valid: false, expires at: 1757614101540
+[debug] [2025-09-11T18:47:29.984Z] Checked if tokens are valid: false, expires at: 1757614101540
+[debug] [2025-09-11T18:47:29.985Z] > refreshing access token with scopes: []
+[debug] [2025-09-11T18:47:29.986Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2025-09-11T18:47:29.987Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2025-09-11T18:47:30.027Z] Checked if tokens are valid: false, expires at: 1757614101540
+[debug] [2025-09-11T18:47:30.028Z] Checked if tokens are valid: false, expires at: 1757614101540
+[debug] [2025-09-11T18:47:30.028Z] > refreshing access token with scopes: []
+[debug] [2025-09-11T18:47:30.028Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2025-09-11T18:47:30.028Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2025-09-11T18:47:30.030Z] Checked if tokens are valid: false, expires at: 1757614101540
+[debug] [2025-09-11T18:47:30.030Z] Checked if tokens are valid: false, expires at: 1757614101540
+[debug] [2025-09-11T18:47:30.030Z] > refreshing access token with scopes: []
+[debug] [2025-09-11T18:47:30.030Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2025-09-11T18:47:30.031Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2025-09-11T18:47:30.032Z] Checked if tokens are valid: false, expires at: 1757614101540
+[debug] [2025-09-11T18:47:30.032Z] Checked if tokens are valid: false, expires at: 1757614101540
+[debug] [2025-09-11T18:47:30.032Z] > refreshing access token with scopes: []
+[debug] [2025-09-11T18:47:30.032Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2025-09-11T18:47:30.032Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2025-09-11T18:47:30.033Z] Checked if tokens are valid: false, expires at: 1757614101540
+[debug] [2025-09-11T18:47:30.033Z] Checked if tokens are valid: false, expires at: 1757614101540
+[debug] [2025-09-11T18:47:30.033Z] > refreshing access token with scopes: []
+[debug] [2025-09-11T18:47:30.033Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2025-09-11T18:47:30.033Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2025-09-11T18:47:30.057Z] Checked if tokens are valid: false, expires at: 1757614101540
+[debug] [2025-09-11T18:47:30.057Z] Checked if tokens are valid: false, expires at: 1757614101540
+[debug] [2025-09-11T18:47:30.057Z] > refreshing access token with scopes: []
+[debug] [2025-09-11T18:47:30.058Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2025-09-11T18:47:30.058Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2025-09-11T18:47:30.059Z] Checked if tokens are valid: false, expires at: 1757614101540
+[debug] [2025-09-11T18:47:30.059Z] Checked if tokens are valid: false, expires at: 1757614101540
+[debug] [2025-09-11T18:47:30.059Z] > refreshing access token with scopes: []
+[debug] [2025-09-11T18:47:30.059Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2025-09-11T18:47:30.059Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2025-09-11T18:47:30.060Z] Checked if tokens are valid: false, expires at: 1757614101540
+[debug] [2025-09-11T18:47:30.061Z] Checked if tokens are valid: false, expires at: 1757614101540
+[debug] [2025-09-11T18:47:30.061Z] > refreshing access token with scopes: []
+[debug] [2025-09-11T18:47:30.061Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2025-09-11T18:47:30.061Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2025-09-11T18:47:30.063Z] Checked if tokens are valid: false, expires at: 1757614101540
+[debug] [2025-09-11T18:47:30.063Z] Checked if tokens are valid: false, expires at: 1757614101540
+[debug] [2025-09-11T18:47:30.063Z] > refreshing access token with scopes: []
+[debug] [2025-09-11T18:47:30.063Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2025-09-11T18:47:30.063Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2025-09-11T18:47:30.064Z] Checked if tokens are valid: false, expires at: 1757614101540
+[debug] [2025-09-11T18:47:30.064Z] Checked if tokens are valid: false, expires at: 1757614101540
+[debug] [2025-09-11T18:47:30.064Z] > refreshing access token with scopes: []
+[debug] [2025-09-11T18:47:30.065Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2025-09-11T18:47:30.065Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2025-09-11T18:47:30.065Z] Checked if tokens are valid: false, expires at: 1757614101540
+[debug] [2025-09-11T18:47:30.066Z] Checked if tokens are valid: false, expires at: 1757614101540
+[debug] [2025-09-11T18:47:30.066Z] > refreshing access token with scopes: []
+[debug] [2025-09-11T18:47:30.066Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2025-09-11T18:47:30.066Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2025-09-11T18:47:30.067Z] Checked if tokens are valid: false, expires at: 1757614101540
+[debug] [2025-09-11T18:47:30.067Z] Checked if tokens are valid: false, expires at: 1757614101540
+[debug] [2025-09-11T18:47:30.067Z] > refreshing access token with scopes: []
+[debug] [2025-09-11T18:47:30.067Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2025-09-11T18:47:30.067Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2025-09-11T18:47:30.068Z] Checked if tokens are valid: false, expires at: 1757614101540
+[debug] [2025-09-11T18:47:30.068Z] Checked if tokens are valid: false, expires at: 1757614101540
+[debug] [2025-09-11T18:47:30.068Z] > refreshing access token with scopes: []
+[debug] [2025-09-11T18:47:30.068Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2025-09-11T18:47:30.068Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2025-09-11T18:47:30.069Z] Checked if tokens are valid: false, expires at: 1757614101540
+[debug] [2025-09-11T18:47:30.069Z] Checked if tokens are valid: false, expires at: 1757614101540
+[debug] [2025-09-11T18:47:30.069Z] > refreshing access token with scopes: []
+[debug] [2025-09-11T18:47:30.069Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2025-09-11T18:47:30.069Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2025-09-11T18:47:30.070Z] Checked if tokens are valid: false, expires at: 1757614101540
+[debug] [2025-09-11T18:47:30.070Z] Checked if tokens are valid: false, expires at: 1757614101540
+[debug] [2025-09-11T18:47:30.070Z] > refreshing access token with scopes: []
+[debug] [2025-09-11T18:47:30.070Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2025-09-11T18:47:30.070Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2025-09-11T18:47:30.194Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2025-09-11T18:47:30.194Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2025-09-11T18:47:30.219Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [none]
+[debug] [2025-09-11T18:47:30.219Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:47:30.223Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2025-09-11T18:47:30.223Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2025-09-11T18:47:30.237Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [none]
+[debug] [2025-09-11T18:47:30.237Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:47:30.243Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2025-09-11T18:47:30.243Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2025-09-11T18:47:30.256Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [none]
+[debug] [2025-09-11T18:47:30.257Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:47:30.258Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2025-09-11T18:47:30.258Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2025-09-11T18:47:30.271Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [none]
+[debug] [2025-09-11T18:47:30.272Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:47:30.273Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2025-09-11T18:47:30.273Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2025-09-11T18:47:30.286Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [none]
+[debug] [2025-09-11T18:47:30.286Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:47:30.288Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2025-09-11T18:47:30.289Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2025-09-11T18:47:30.302Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [none]
+[debug] [2025-09-11T18:47:30.302Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:47:30.303Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2025-09-11T18:47:30.303Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2025-09-11T18:47:30.317Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [none]
+[debug] [2025-09-11T18:47:30.317Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:47:30.318Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2025-09-11T18:47:30.318Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2025-09-11T18:47:30.333Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [none]
+[debug] [2025-09-11T18:47:30.333Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:47:30.334Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2025-09-11T18:47:30.334Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2025-09-11T18:47:30.349Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [none]
+[debug] [2025-09-11T18:47:30.349Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:47:30.352Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2025-09-11T18:47:30.352Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2025-09-11T18:47:30.366Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [none]
+[debug] [2025-09-11T18:47:30.366Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:47:30.367Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2025-09-11T18:47:30.367Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2025-09-11T18:47:30.380Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [none]
+[debug] [2025-09-11T18:47:30.380Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:47:30.382Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2025-09-11T18:47:30.382Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2025-09-11T18:47:30.396Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [none]
+[debug] [2025-09-11T18:47:30.396Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:47:30.397Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2025-09-11T18:47:30.398Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2025-09-11T18:47:30.411Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [none]
+[debug] [2025-09-11T18:47:30.411Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:47:30.412Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2025-09-11T18:47:30.412Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2025-09-11T18:47:30.426Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [none]
+[debug] [2025-09-11T18:47:30.426Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:47:30.447Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2025-09-11T18:47:30.447Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2025-09-11T18:47:30.462Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [none]
+[debug] [2025-09-11T18:47:30.462Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:47:30.635Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com 403
+[debug] [2025-09-11T18:47:30.635Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [omitted]
+[debug] [2025-09-11T18:47:30.677Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com 403
+[debug] [2025-09-11T18:47:30.677Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [omitted]
+[debug] [2025-09-11T18:47:30.694Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com 200
+[debug] [2025-09-11T18:47:30.694Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [omitted]
+[debug] [2025-09-11T18:47:30.695Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com 200
+[debug] [2025-09-11T18:47:30.695Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [omitted]
+[debug] [2025-09-11T18:47:30.696Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com 200
+[debug] [2025-09-11T18:47:30.696Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [omitted]
+[debug] [2025-09-11T18:47:30.696Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com 403
+[debug] [2025-09-11T18:47:30.696Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [omitted]
+[debug] [2025-09-11T18:47:30.697Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com 200
+[debug] [2025-09-11T18:47:30.697Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [omitted]
+[debug] [2025-09-11T18:47:30.697Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com 200
+[debug] [2025-09-11T18:47:30.697Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [omitted]
+[debug] [2025-09-11T18:47:30.697Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com 200
+[debug] [2025-09-11T18:47:30.697Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [omitted]
+[debug] [2025-09-11T18:47:30.699Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com 200
+[debug] [2025-09-11T18:47:30.699Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [omitted]
+[debug] [2025-09-11T18:47:30.749Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com 200
+[debug] [2025-09-11T18:47:30.749Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [omitted]
+[debug] [2025-09-11T18:47:30.749Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com 200
+[debug] [2025-09-11T18:47:30.749Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [omitted]
+[debug] [2025-09-11T18:47:31.024Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ 200
+[debug] [2025-09-11T18:47:31.024Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [omitted]
+[debug] [2025-09-11T18:47:31.080Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ 200
+[debug] [2025-09-11T18:47:31.080Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [omitted]
+[debug] [2025-09-11T18:47:31.087Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-09-11T18:47:31.087Z] > authorizing via signed-in user (michaelryanmcconnell@gmail.com)
+[debug] [2025-09-11T18:47:31.089Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ 200
+[debug] [2025-09-11T18:47:31.089Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [omitted]
+[debug] [2025-09-11T18:47:31.093Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-09-11T18:47:31.093Z] > authorizing via signed-in user (michaelryanmcconnell@gmail.com)
+[debug] [2025-09-11T18:55:11.683Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:11.685Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:11.685Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:11.686Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:11.686Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:11.686Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:11.687Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:11.687Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:11.687Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:11.687Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:11.688Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [none]
+[debug] [2025-09-11T18:55:11.689Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:55:11.728Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [none]
+[debug] [2025-09-11T18:55:11.728Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:55:11.729Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [none]
+[debug] [2025-09-11T18:55:11.729Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:55:11.730Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [none]
+[debug] [2025-09-11T18:55:11.730Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:55:11.731Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [none]
+[debug] [2025-09-11T18:55:11.731Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:55:11.755Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:11.755Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:11.755Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:11.755Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:11.756Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:11.756Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:11.756Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:11.756Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:11.756Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:11.756Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:11.757Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:11.757Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:11.757Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:11.757Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:11.757Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:11.757Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:11.758Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:11.758Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:11.758Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:11.758Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:11.758Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [none]
+[debug] [2025-09-11T18:55:11.758Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:55:11.759Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [none]
+[debug] [2025-09-11T18:55:11.759Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:55:11.760Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [none]
+[debug] [2025-09-11T18:55:11.760Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:55:11.762Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [none]
+[debug] [2025-09-11T18:55:11.762Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:55:11.763Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [none]
+[debug] [2025-09-11T18:55:11.763Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:55:11.764Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [none]
+[debug] [2025-09-11T18:55:11.764Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:55:11.764Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [none]
+[debug] [2025-09-11T18:55:11.764Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:55:11.765Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [none]
+[debug] [2025-09-11T18:55:11.765Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:55:11.766Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [none]
+[debug] [2025-09-11T18:55:11.766Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:55:11.766Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [none]
+[debug] [2025-09-11T18:55:11.766Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:55:12.072Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com 403
+[debug] [2025-09-11T18:55:12.072Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [omitted]
+[debug] [2025-09-11T18:55:12.074Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com 403
+[debug] [2025-09-11T18:55:12.074Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [omitted]
+[debug] [2025-09-11T18:55:12.075Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com 403
+[debug] [2025-09-11T18:55:12.076Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [omitted]
+[debug] [2025-09-11T18:55:12.115Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com 200
+[debug] [2025-09-11T18:55:12.115Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [omitted]
+[debug] [2025-09-11T18:55:12.116Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com 200
+[debug] [2025-09-11T18:55:12.117Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [omitted]
+[debug] [2025-09-11T18:55:12.117Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com 200
+[debug] [2025-09-11T18:55:12.117Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [omitted]
+[debug] [2025-09-11T18:55:12.118Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com 200
+[debug] [2025-09-11T18:55:12.118Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [omitted]
+[debug] [2025-09-11T18:55:12.118Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com 200
+[debug] [2025-09-11T18:55:12.118Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [omitted]
+[debug] [2025-09-11T18:55:12.119Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com 200
+[debug] [2025-09-11T18:55:12.119Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [omitted]
+[debug] [2025-09-11T18:55:12.120Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com 200
+[debug] [2025-09-11T18:55:12.120Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [omitted]
+[debug] [2025-09-11T18:55:12.121Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com 200
+[debug] [2025-09-11T18:55:12.121Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [omitted]
+[debug] [2025-09-11T18:55:12.197Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com 200
+[debug] [2025-09-11T18:55:12.197Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [omitted]
+[debug] [2025-09-11T18:55:12.455Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ 200
+[debug] [2025-09-11T18:55:12.455Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [omitted]
+[debug] [2025-09-11T18:55:12.460Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ 200
+[debug] [2025-09-11T18:55:12.460Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [omitted]
+[debug] [2025-09-11T18:55:12.478Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-09-11T18:55:12.478Z] > authorizing via signed-in user (michaelryanmcconnell@gmail.com)
+[debug] [2025-09-11T18:55:12.507Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ 200
+[debug] [2025-09-11T18:55:12.507Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [omitted]
+[debug] [2025-09-11T18:55:12.511Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-09-11T18:55:12.512Z] > authorizing via signed-in user (michaelryanmcconnell@gmail.com)
+[debug] [2025-09-11T18:55:24.997Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:24.999Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:24.999Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:25.000Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:25.000Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:25.000Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:25.001Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:25.001Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:25.001Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:25.001Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:25.002Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [none]
+[debug] [2025-09-11T18:55:25.003Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:55:25.043Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [none]
+[debug] [2025-09-11T18:55:25.043Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:55:25.044Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [none]
+[debug] [2025-09-11T18:55:25.044Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:55:25.045Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [none]
+[debug] [2025-09-11T18:55:25.045Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:55:25.046Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [none]
+[debug] [2025-09-11T18:55:25.046Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:55:25.071Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:25.071Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:25.071Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:25.071Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:25.072Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:25.072Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:25.072Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:25.072Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:25.072Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:25.072Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:25.072Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:25.072Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:25.073Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:25.073Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:25.073Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:25.073Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:25.073Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:25.073Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:25.074Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:25.074Z] Checked if tokens are valid: true, expires at: 1757620049447
+[debug] [2025-09-11T18:55:25.074Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [none]
+[debug] [2025-09-11T18:55:25.074Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:55:25.075Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [none]
+[debug] [2025-09-11T18:55:25.075Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:55:25.076Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [none]
+[debug] [2025-09-11T18:55:25.076Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:55:25.077Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [none]
+[debug] [2025-09-11T18:55:25.077Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:55:25.078Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [none]
+[debug] [2025-09-11T18:55:25.079Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:55:25.079Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [none]
+[debug] [2025-09-11T18:55:25.079Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:55:25.080Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [none]
+[debug] [2025-09-11T18:55:25.080Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:55:25.081Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [none]
+[debug] [2025-09-11T18:55:25.081Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:55:25.081Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [none]
+[debug] [2025-09-11T18:55:25.081Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:55:25.082Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [none]
+[debug] [2025-09-11T18:55:25.082Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com x-goog-quota-user=projects/barrie-scheduler
+[debug] [2025-09-11T18:55:25.294Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com 200
+[debug] [2025-09-11T18:55:25.294Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [omitted]
+[debug] [2025-09-11T18:55:25.320Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com 403
+[debug] [2025-09-11T18:55:25.320Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [omitted]
+[debug] [2025-09-11T18:55:25.330Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com 200
+[debug] [2025-09-11T18:55:25.330Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [omitted]
+[debug] [2025-09-11T18:55:25.331Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com 200
+[debug] [2025-09-11T18:55:25.331Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [omitted]
+[debug] [2025-09-11T18:55:25.345Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com 200
+[debug] [2025-09-11T18:55:25.345Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [omitted]
+[debug] [2025-09-11T18:55:25.346Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com 200
+[debug] [2025-09-11T18:55:25.346Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [omitted]
+[debug] [2025-09-11T18:55:25.347Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com 403
+[debug] [2025-09-11T18:55:25.347Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [omitted]
+[debug] [2025-09-11T18:55:25.355Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ 200
+[debug] [2025-09-11T18:55:25.356Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [omitted]
+[debug] [2025-09-11T18:55:25.368Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com 403
+[debug] [2025-09-11T18:55:25.368Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseio.com [omitted]
+[debug] [2025-09-11T18:55:25.383Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com 200
+[debug] [2025-09-11T18:55:25.383Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasecrashlytics.googleapis.com [omitted]
+[debug] [2025-09-11T18:55:25.384Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com 200
+[debug] [2025-09-11T18:55:25.384Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebasedataconnect.googleapis.com [omitted]
+[debug] [2025-09-11T18:55:25.402Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com 200
+[debug] [2025-09-11T18:55:25.402Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [omitted]
+[debug] [2025-09-11T18:55:25.408Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-09-11T18:55:25.408Z] > authorizing via signed-in user (michaelryanmcconnell@gmail.com)
+[debug] [2025-09-11T18:55:25.428Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com 200
+[debug] [2025-09-11T18:55:25.428Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/firebaseapphosting.googleapis.com [omitted]
+[debug] [2025-09-11T18:55:25.590Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ 200
+[debug] [2025-09-11T18:55:25.590Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [omitted]
+[debug] [2025-09-11T18:55:25.676Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ 200
+[debug] [2025-09-11T18:55:25.676Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/barrie-scheduler/services/ [omitted]
+[debug] [2025-09-11T18:55:25.689Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-09-11T18:55:25.689Z] > authorizing via signed-in user (michaelryanmcconnell@gmail.com)

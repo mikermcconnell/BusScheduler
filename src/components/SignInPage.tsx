@@ -14,23 +14,36 @@ import {
   Alert,
   CircularProgress,
   Paper,
-  Grid
+  Grid,
+  TextField,
+  Divider,
+  ToggleButton,
+  ToggleButtonGroup
 } from '@mui/material';
 import {
   Google as GoogleIcon,
   Schedule as ScheduleIcon,
   CloudSync,
   Security,
-  Speed
+  Speed,
+  Email as EmailIcon,
+  Link as LinkIcon
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
+import { magicLinkAuth } from '../services/magicLinkAuth';
+import CheckEmailPage from './CheckEmailPage';
 
 export const SignInPage: React.FC = () => {
   const { signIn } = useAuth();
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [authMethod, setAuthMethod] = useState<'google' | 'email'>('email');
+  const [email, setEmail] = useState('');
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [isSendingMagicLink, setIsSendingMagicLink] = useState(false);
+  const [showCheckEmail, setShowCheckEmail] = useState(false);
 
-  const handleSignIn = async () => {
+  const handleGoogleSignIn = async () => {
     setIsSigningIn(true);
     setError(null);
     
@@ -46,6 +59,63 @@ export const SignInPage: React.FC = () => {
       setIsSigningIn(false);
     }
   };
+
+  const handleEmailSignIn = async () => {
+    setEmailError(null);
+    
+    // Validate email
+    if (!email.trim()) {
+      setEmailError('Please enter your email address');
+      return;
+    }
+    
+    if (!magicLinkAuth.isValidEmail(email)) {
+      setEmailError('Please enter a valid email address');
+      return;
+    }
+
+    setIsSendingMagicLink(true);
+    
+    try {
+      const result = await magicLinkAuth.sendMagicLink(email);
+      
+      if (result.success) {
+        setShowCheckEmail(true);
+      } else {
+        setEmailError(result.error || 'Failed to send magic link');
+      }
+    } catch (error) {
+      console.error('Magic link error:', error);
+      setEmailError('An unexpected error occurred. Please try again.');
+    } finally {
+      setIsSendingMagicLink(false);
+    }
+  };
+
+  const handleAuthMethodChange = (
+    event: React.MouseEvent<HTMLElement>,
+    newMethod: 'google' | 'email' | null
+  ) => {
+    if (newMethod !== null) {
+      setAuthMethod(newMethod);
+      setError(null);
+      setEmailError(null);
+    }
+  };
+
+  // If showing check email page
+  if (showCheckEmail) {
+    return (
+      <CheckEmailPage 
+        email={email}
+        onBack={() => {
+          setShowCheckEmail(false);
+          setEmail('');
+        }}
+        onResend={handleEmailSignIn}
+      />
+    );
+  }
 
   const features = [
     {
@@ -130,7 +200,7 @@ export const SignInPage: React.FC = () => {
               xs: 12,
               md: 6
             }}>
-            <Card sx={{ maxWidth: 400, mx: 'auto' }}>
+            <Card sx={{ maxWidth: 450, mx: 'auto' }}>
               <CardContent sx={{ p: 4 }}>
                 <Box textAlign="center" mb={3}>
                   <ScheduleIcon sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
@@ -138,39 +208,126 @@ export const SignInPage: React.FC = () => {
                     Welcome
                   </Typography>
                   <Typography variant="body1" color="text.secondary">
-                    Sign in with your Google account to access your schedules
+                    Sign in to access your schedules
                   </Typography>
                 </Box>
 
-                {error && (
+                {/* Auth Method Toggle */}
+                <Box display="flex" justifyContent="center" mb={3}>
+                  <ToggleButtonGroup
+                    value={authMethod}
+                    exclusive
+                    onChange={handleAuthMethodChange}
+                    aria-label="authentication method"
+                    size="small"
+                  >
+                    <ToggleButton value="email" aria-label="email sign in">
+                      <EmailIcon sx={{ mr: 1 }} />
+                      Email
+                    </ToggleButton>
+                    <ToggleButton value="google" aria-label="google sign in">
+                      <GoogleIcon sx={{ mr: 1 }} />
+                      Google
+                    </ToggleButton>
+                  </ToggleButtonGroup>
+                </Box>
+
+                {(error || emailError) && (
                   <Alert severity="error" sx={{ mb: 3 }}>
-                    {error}
+                    {error || emailError}
                   </Alert>
                 )}
 
-                <Button
-                  fullWidth
-                  variant="contained"
-                  size="large"
-                  startIcon={isSigningIn ? <CircularProgress size={20} color="inherit" /> : <GoogleIcon />}
-                  onClick={handleSignIn}
-                  disabled={isSigningIn}
-                  sx={{
-                    py: 1.5,
-                    fontSize: '1.1rem',
-                    textTransform: 'none',
-                    backgroundColor: '#4285f4',
-                    '&:hover': {
-                      backgroundColor: '#3367d6'
-                    }
-                  }}
-                >
-                  {isSigningIn ? 'Signing in...' : 'Sign in with Google'}
-                </Button>
+                {/* Email Sign In */}
+                {authMethod === 'email' && (
+                  <>
+                    <TextField
+                      fullWidth
+                      label="Email Address"
+                      type="email"
+                      value={email}
+                      onChange={(e) => {
+                        setEmail(e.target.value);
+                        setEmailError(null);
+                      }}
+                      error={!!emailError}
+                      helperText={emailError}
+                      disabled={isSendingMagicLink}
+                      sx={{ mb: 2 }}
+                      InputProps={{
+                        startAdornment: <EmailIcon sx={{ mr: 1, color: 'action.active' }} />
+                      }}
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter' && !isSendingMagicLink) {
+                          handleEmailSignIn();
+                        }
+                      }}
+                    />
+                    
+                    <Button
+                      fullWidth
+                      variant="contained"
+                      size="large"
+                      startIcon={isSendingMagicLink ? <CircularProgress size={20} color="inherit" /> : <LinkIcon />}
+                      onClick={handleEmailSignIn}
+                      disabled={isSendingMagicLink}
+                      sx={{
+                        py: 1.5,
+                        fontSize: '1.1rem',
+                        textTransform: 'none'
+                      }}
+                    >
+                      {isSendingMagicLink ? 'Sending...' : 'Send Magic Link'}
+                    </Button>
+                    
+                    <Box mt={2}>
+                      <Typography variant="body2" color="text.secondary" textAlign="center">
+                        No password needed! We'll send you a secure sign-in link.
+                      </Typography>
+                    </Box>
+                  </>
+                )}
+
+                {/* Google Sign In */}
+                {authMethod === 'google' && (
+                  <>
+                    <Button
+                      fullWidth
+                      variant="contained"
+                      size="large"
+                      startIcon={isSigningIn ? <CircularProgress size={20} color="inherit" /> : <GoogleIcon />}
+                      onClick={handleGoogleSignIn}
+                      disabled={isSigningIn}
+                      sx={{
+                        py: 1.5,
+                        fontSize: '1.1rem',
+                        textTransform: 'none',
+                        backgroundColor: '#4285f4',
+                        '&:hover': {
+                          backgroundColor: '#3367d6'
+                        }
+                      }}
+                    >
+                      {isSigningIn ? 'Signing in...' : 'Sign in with Google'}
+                    </Button>
+                    
+                    <Box mt={2}>
+                      <Typography variant="body2" color="text.secondary" textAlign="center">
+                        Sign in with your Google account for quick access
+                      </Typography>
+                    </Box>
+                  </>
+                )}
+
+                <Divider sx={{ my: 3 }}>
+                  <Typography variant="caption" color="text.secondary">
+                    SECURE SIGN IN
+                  </Typography>
+                </Divider>
 
                 <Box mt={3}>
                   <Typography variant="caption" color="text.secondary" display="block" textAlign="center">
-                    By signing in, you agree to store your schedule data in Google Drive
+                    By signing in, you agree to securely store your schedule data
                   </Typography>
                 </Box>
               </CardContent>
