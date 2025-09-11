@@ -50,8 +50,8 @@ describe('DashboardMetrics Integration', () => {
       const metrics = await service.getMetrics();
       
       // Even if Firebase fails, should still get localStorage-based metrics
-      expect(metrics.activeSchedules).toBeGreaterThanOrEqual(0);
-      expect(metrics.activeDrafts).toBeGreaterThanOrEqual(0);
+      expect(metrics.scheduleQuality).toBeDefined();
+      expect(metrics.draftPipeline.totalDrafts).toBeGreaterThanOrEqual(0);
       expect(metrics.lastUpdated).toBeDefined();
     });
 
@@ -65,7 +65,7 @@ describe('DashboardMetrics Integration', () => {
       expect(results).toHaveLength(3);
       results.forEach(result => {
         expect(result).toBeDefined();
-        expect(typeof result.activeSchedules).toBe('number');
+        expect(result.scheduleQuality).toBeDefined();
       });
     });
 

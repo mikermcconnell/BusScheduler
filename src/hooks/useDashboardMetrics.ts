@@ -105,9 +105,6 @@ export function useDashboardMetrics(options: UseDashboardMetricsOptions = {}): U
           return true;
         case 'data-validation':
           return event.payload.status === 'valid' || event.payload.status === 'invalid';
-        case 'recovery-time-change':
-          // Refresh when recovery times change to update quality metrics
-          return true;
         default:
           return false;
       }
@@ -156,7 +153,7 @@ export function useDashboardMetrics(options: UseDashboardMetricsOptions = {}): U
 
     // Subscribe to workspace events for real-time updates
     subscriptionIdRef.current = workspaceEventBus.subscribe(
-      ['schedule-data', 'workflow-progress', 'data-validation', 'recovery-time-change'],
+      ['schedule-data', 'workflow-progress', 'data-validation'],
       handleWorkspaceEvent,
       {
         throttle: 2000 // Throttle to prevent excessive updates

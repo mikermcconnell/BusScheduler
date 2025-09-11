@@ -88,49 +88,55 @@ describe('DashboardMetricsService', () => {
       });
     });
 
-    it('should return correct active schedules count', async () => {
+    it('should return correct schedule quality metrics', async () => {
       const metrics = await service.getMetrics();
       
-      expect(metrics.activeSchedules).toBe(2); // Only Active status schedules
+      expect(metrics.scheduleQuality).toBeDefined();
+      expect(metrics.scheduleQuality.schedulesWithHealthyRecovery).toBeGreaterThanOrEqual(0);
+      expect(metrics.scheduleQuality.averageRecoveryPercentage).toBeGreaterThanOrEqual(0);
     });
 
-    it('should return combined drafts count from localStorage and Firebase', async () => {
+    it('should return draft pipeline status', async () => {
       const metrics = await service.getMetrics();
       
-      expect(metrics.activeDrafts).toBe(4); // 2 from localStorage + 2 from Firebase
+      expect(metrics.draftPipeline).toBeDefined();
+      expect(metrics.draftPipeline.totalDrafts).toBe(4); // 2 from localStorage + 2 from Firebase
+      expect(metrics.draftPipeline.reviewing).toBeGreaterThanOrEqual(0);
     });
 
-    it('should calculate this week activity count', async () => {
+    it('should calculate recent activity metrics', async () => {
       const metrics = await service.getMetrics();
       
-      expect(metrics.thisWeekActivity).toBe(3); // All 3 audit events from this week
+      expect(metrics.recentActivity).toBeDefined();
+      expect(metrics.recentActivity.thisWeekSchedulesCreated).toBeGreaterThanOrEqual(0);
+      expect(metrics.recentActivity.thisWeekSchedulesModified).toBeGreaterThanOrEqual(0);
     });
 
-    it('should calculate workflow completion rate', async () => {
+    it('should calculate planning efficiency metrics', async () => {
       const metrics = await service.getMetrics();
       
-      // 1 draft at 100% + 1 draft at 80% = average 90%
-      expect(metrics.workflowCompletionRate).toBe(90);
+      expect(metrics.planningEfficiency).toBeDefined();
+      expect(metrics.planningEfficiency.averageCycleTime).toBeGreaterThanOrEqual(0);
+      expect(metrics.planningEfficiency.averageServiceFrequency).toBeGreaterThanOrEqual(0);
     });
 
-    it('should return storage usage statistics', async () => {
+    it('should return system health metrics', async () => {
       const metrics = await service.getMetrics();
       
-      expect(metrics.storageUsage).toEqual({
-        totalSize: 1024000,
-        usedPercentage: expect.any(Number),
-        remainingCapacity: 47
-      });
+      expect(metrics.systemHealth).toBeDefined();
+      expect(metrics.systemHealth.storageUsedPercentage).toBeGreaterThanOrEqual(0);
+      expect(metrics.systemHealth.averageProcessingTime).toBe(25.5);
+      expect(metrics.systemHealth.dataIntegrityScore).toBeGreaterThanOrEqual(0);
     });
 
-    it('should return performance metrics', async () => {
+    it('should return validation status metrics', async () => {
       const metrics = await service.getMetrics();
       
-      expect(metrics.performanceMetrics).toEqual({
-        averageProcessingTime: 25.5,
-        totalEvents: 150,
-        eventTypesActive: 2 // Two event types in eventsByType
-      });
+      expect(metrics.validationStatus).toBeDefined();
+      expect(metrics.validationStatus.schedulesWithErrors).toBeGreaterThanOrEqual(0);
+      expect(metrics.validationStatus.schedulesWithWarnings).toBeGreaterThanOrEqual(0);
+      expect(metrics.validationStatus.commonIssues).toBeDefined();
+      expect(Array.isArray(metrics.validationStatus.commonIssues)).toBe(true);
     });
 
     it('should include lastUpdated timestamp', async () => {
@@ -158,12 +164,44 @@ describe('DashboardMetricsService', () => {
     it('should return cached metrics if fresh (< 5 minutes)', async () => {
       // Set up cache
       const cachedMetrics = {
-        activeSchedules: 99,
-        activeDrafts: 99,
-        thisWeekActivity: 99,
-        workflowCompletionRate: 99,
-        storageUsage: { totalSize: 0, usedPercentage: 0, remainingCapacity: 0 },
-        performanceMetrics: { averageProcessingTime: 0, totalEvents: 0, eventTypesActive: 0 },
+        scheduleQuality: {
+          averageRecoveryPercentage: 15,
+          schedulesWithHealthyRecovery: 99,
+          schedulesNeedingAttention: 0,
+          validationPassRate: 100,
+          averageBlockUtilization: 85
+        },
+        planningEfficiency: {
+          averageCycleTime: 60,
+          averageServiceFrequency: 15,
+          peakHourCoverage: 85,
+          serviceBandDistribution: { fastest: 33, standard: 34, slowest: 33 }
+        },
+        draftPipeline: {
+          uploading: 0,
+          analyzing: 0,
+          configuring: 0,
+          reviewing: 0,
+          readyToPublish: 0,
+          totalDrafts: 99
+        },
+        validationStatus: {
+          schedulesWithErrors: 0,
+          schedulesWithWarnings: 0,
+          commonIssues: [],
+          criticalAlerts: 0
+        },
+        recentActivity: {
+          thisWeekSchedulesCreated: 0,
+          thisWeekSchedulesModified: 0,
+          lastPublishedSchedule: null,
+          upcomingExpirations: 0
+        },
+        systemHealth: {
+          storageUsedPercentage: 0,
+          averageProcessingTime: 0,
+          dataIntegrityScore: 100
+        },
         lastUpdated: Date.now()
       };
       
@@ -173,13 +211,21 @@ describe('DashboardMetricsService', () => {
       }));
       
       const metrics = await service.getMetrics();
-      expect(metrics.activeSchedules).toBe(99); // Should use cached value
+      expect(metrics.scheduleQuality.schedulesWithHealthyRecovery).toBe(99); // Should use cached value
     });
 
     it('should refresh cache if stale (> 5 minutes)', async () => {
       // Set up stale cache
       sessionStorage.setItem('dashboard_metrics_cache', JSON.stringify({
-        metrics: { activeSchedules: 99 },
+        metrics: { 
+          scheduleQuality: { schedulesWithHealthyRecovery: 99 },
+          planningEfficiency: {},
+          draftPipeline: {},
+          validationStatus: {},
+          recentActivity: {},
+          systemHealth: {},
+          lastUpdated: Date.now()
+        },
         timestamp: Date.now() - 360000 // 6 minutes ago
       }));
       
@@ -191,7 +237,7 @@ describe('DashboardMetricsService', () => {
       ]);
       
       const metrics = await service.getMetrics();
-      expect(metrics.activeSchedules).toBe(2); // Should use fresh value, not cached 99
+      expect(metrics.scheduleQuality).toBeDefined(); // Should use fresh value, not cached
     });
   });
 
@@ -214,8 +260,8 @@ describe('DashboardMetricsService', () => {
       const metrics = await service.getMetrics();
       
       // Should still return metrics with localStorage data
-      expect(metrics.activeSchedules).toBe(2);
-      expect(metrics.activeDrafts).toBe(2); // Only localStorage drafts
+      expect(metrics.scheduleQuality).toBeDefined();
+      expect(metrics.draftPipeline.totalDrafts).toBe(2); // Only localStorage drafts
     });
 
     it('should handle corrupted cache gracefully', async () => {

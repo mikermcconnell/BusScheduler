@@ -16,19 +16,50 @@ const mockDashboardMetrics = dashboardMetrics as jest.Mocked<typeof dashboardMet
 const mockEventBus = workspaceEventBus as jest.Mocked<typeof workspaceEventBus>;
 
 const mockMetrics = {
-  activeSchedules: 5,
-  activeDrafts: 3,
-  thisWeekActivity: 12,
-  workflowCompletionRate: 75,
-  storageUsage: {
-    totalSize: 1024000,
-    usedPercentage: 15,
-    remainingCapacity: 45
+  scheduleQuality: {
+    averageRecoveryPercentage: 15.5,
+    schedulesWithHealthyRecovery: 4,
+    schedulesNeedingAttention: 1,
+    validationPassRate: 90,
+    averageBlockUtilization: 85
   },
-  performanceMetrics: {
+  planningEfficiency: {
+    averageCycleTime: 120,
+    averageServiceFrequency: 30,
+    peakHourCoverage: 95,
+    serviceBandDistribution: {
+      fastest: 30,
+      standard: 50,
+      slowest: 20
+    }
+  },
+  draftPipeline: {
+    uploading: 1,
+    analyzing: 2,
+    configuring: 1,
+    reviewing: 2,
+    readyToPublish: 1,
+    totalDrafts: 7
+  },
+  validationStatus: {
+    schedulesWithErrors: 0,
+    schedulesWithWarnings: 2,
+    commonIssues: ['Low recovery time', 'Peak hour gaps'],
+    criticalAlerts: 0
+  },
+  recentActivity: {
+    thisWeekSchedulesCreated: 3,
+    thisWeekSchedulesModified: 5,
+    lastPublishedSchedule: {
+      name: 'Route 101 - Weekday',
+      timestamp: new Date().toISOString()
+    },
+    upcomingExpirations: 2
+  },
+  systemHealth: {
+    storageUsedPercentage: 15,
     averageProcessingTime: 35.5,
-    totalEvents: 200,
-    eventTypesActive: 4
+    dataIntegrityScore: 95
   },
   lastUpdated: Date.now()
 };
@@ -158,7 +189,7 @@ describe('useDashboardMetrics', () => {
       
       // Make getMetrics take some time
       mockDashboardMetrics.getMetrics.mockImplementation(() => 
-        new Promise(resolve => setTimeout(() => resolve(mockMetrics), 100))
+        new Promise(resolve => setTimeout(() => resolve(mockMetrics as any), 100))
       );
       
       act(() => {
