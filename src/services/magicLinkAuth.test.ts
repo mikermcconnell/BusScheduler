@@ -224,7 +224,7 @@ describe('MagicLinkAuthService', () => {
         code: 'auth/invalid-email',
         message: 'Invalid email',
         name: 'FirebaseError',
-        customData: {}
+        customData: { appName: 'test-app' }
       };
       (sendSignInLinkToEmail as jest.Mock).mockRejectedValue(authError);
       
@@ -239,7 +239,7 @@ describe('MagicLinkAuthService', () => {
         code: 'auth/network-request-failed',
         message: 'Network error',
         name: 'FirebaseError',
-        customData: {}
+        customData: { appName: 'test-app' }
       };
       (sendSignInLinkToEmail as jest.Mock).mockRejectedValue(authError);
       
@@ -254,7 +254,7 @@ describe('MagicLinkAuthService', () => {
         code: 'auth/unauthorized-domain',
         message: 'Unauthorized domain',
         name: 'FirebaseError',
-        customData: {}
+        customData: { appName: 'test-app' }
       };
       (sendSignInLinkToEmail as jest.Mock).mockRejectedValue(authError);
       
@@ -375,7 +375,7 @@ describe('MagicLinkAuthService', () => {
         code: 'auth/invalid-action-code',
         message: 'Invalid action code',
         name: 'FirebaseError',
-        customData: {}
+        customData: { appName: 'test-app' }
       };
       (signInWithEmailLink as jest.Mock).mockRejectedValue(authError);
       
@@ -394,7 +394,7 @@ describe('MagicLinkAuthService', () => {
         code: 'auth/expired-action-code',
         message: 'Expired action code',
         name: 'FirebaseError',
-        customData: {}
+        customData: { appName: 'test-app' }
       };
       (signInWithEmailLink as jest.Mock).mockRejectedValue(authError);
       
@@ -412,7 +412,7 @@ describe('MagicLinkAuthService', () => {
         code: 'auth/user-disabled',
         message: 'User disabled',
         name: 'FirebaseError',
-        customData: {}
+        customData: { appName: 'test-app' }
       };
       (signInWithEmailLink as jest.Mock).mockRejectedValue(authError);
       
@@ -539,7 +539,10 @@ describe('MagicLinkAuthService', () => {
     test('should use correct domain for production deployment', async () => {
       // Simulate production environment
       process.env.REACT_APP_MAGIC_LINK_DOMAIN = 'https://bus-scheduler-teal.vercel.app';
-      window.location.origin = 'https://bus-scheduler-teal.vercel.app';
+      Object.defineProperty(window, 'location', {
+        value: { origin: 'https://bus-scheduler-teal.vercel.app' },
+        writable: true
+      });
       
       (sendSignInLinkToEmail as jest.Mock).mockResolvedValue(undefined);
       
@@ -558,7 +561,10 @@ describe('MagicLinkAuthService', () => {
 
     test('should fallback to window.location.origin if env var not set', async () => {
       process.env.REACT_APP_MAGIC_LINK_DOMAIN = '';
-      window.location.origin = 'https://custom-domain.com';
+      Object.defineProperty(window, 'location', {
+        value: { origin: 'https://custom-domain.com' },
+        writable: true
+      });
       
       (sendSignInLinkToEmail as jest.Mock).mockResolvedValue(undefined);
       
@@ -590,7 +596,7 @@ describe('MagicLinkAuthService', () => {
           code,
           message: 'Error message',
           name: 'FirebaseError',
-          customData: {}
+          customData: { appName: 'test-app' }
         };
         (sendSignInLinkToEmail as jest.Mock).mockRejectedValue(authError);
         

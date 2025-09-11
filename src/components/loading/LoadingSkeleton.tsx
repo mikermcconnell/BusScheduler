@@ -1,5 +1,5 @@
 import React from 'react';
-import { Skeleton, Box, Grid, Card, CardContent, Stack } from '@mui/material';
+import { Skeleton, Box, Card, CardContent, Stack, Grid } from '@mui/material';
 
 interface LoadingSkeletonProps {
   variant?: 'card' | 'table' | 'list' | 'dashboard' | 'form' | 'custom';
