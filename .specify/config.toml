@@ -1,0 +1,35 @@
+[project]
+name = "Scheduler2"
+description = "Production-ready bus route scheduling application"
+version = "2.1.0"
+type = "web-application"
+
+[ai]
+primary_assistant = "claude"
+model = "claude-sonnet-4"
+context_files = ["CLAUDE.md", "README.md", "package.json"]
+
+[specifications]
+location = ".specify/specs"
+template = "feature-spec.md"
+auto_generate = true
+
+[development]
+workflow = "spec-driven"
+testing_strategy = "tdd"
+documentation = "inline"
+review_required = true
+
+[tools]
+package_manager = "npm"
+typescript = true
+framework = "react"
+testing = ["jest", "react-testing-library"]
+linting = ["eslint", "typescript"]
+
+[features]
+auto_save = "implemented"
+schedule_generation = "implemented"
+block_configuration = "implemented"
+export_functionality = "implemented"
+firebase_integration = "implemented"

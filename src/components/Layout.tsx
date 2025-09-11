@@ -14,11 +14,11 @@ import {
 } from '@mui/material';
 import {
   Menu as MenuIcon,
-  Keyboard as KeyboardIcon
+  Keyboard as KeyboardIcon,
+  ChevronRight as ExpandIcon
 } from '@mui/icons-material';
 import SidebarNavigation from './SidebarNavigation';
 import WorkflowBreadcrumbs from './WorkflowBreadcrumbs';
-import StoryboardProgress from './StoryboardProgress';
 import KeyboardShortcutsHelp from './KeyboardShortcutsHelp';
 import UserProfile from './UserProfile';
 import AppHeader from './AppHeader';
@@ -58,7 +58,7 @@ const Layout: React.FC = () => {
   
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     const saved = localStorage.getItem('sidebarCollapsed');
-    return saved ? JSON.parse(saved) : false; // Default to expanded
+    return saved ? JSON.parse(saved) : true; // Default to collapsed to save space
   });
 
   // Track active draft schedule for storyboard
@@ -126,7 +126,6 @@ const Layout: React.FC = () => {
   // Determine if we should show workflow breadcrumbs
   const shouldShowWorkflow = [
     '/upload',
-    '/draft-library',
     '/timepoints',
     '/block-configuration',
     '/block-summary-schedule',
@@ -135,8 +134,8 @@ const Layout: React.FC = () => {
     '/tod-shifts'
   ].some(path => location.pathname.startsWith(path));
 
-  // Hide breadcrumbs on dashboard and simple pages
-  const shouldShowBreadcrumbs = location.pathname !== '/' && location.pathname !== '/settings';
+  // Hide breadcrumbs on dashboard, draft library and simple pages
+  const shouldShowBreadcrumbs = location.pathname !== '/' && location.pathname !== '/settings' && location.pathname !== '/draft-library';
 
   // Check if sidebar is actually collapsed from SidebarNavigation internal state
   const currentSidebarWidth = isMobile ? 0 : (sidebarCollapsed ? COLLAPSED_WIDTH : DRAWER_WIDTH);
@@ -183,42 +182,10 @@ const Layout: React.FC = () => {
           {/* Workflow Progress - Storyboard or Breadcrumbs */}
           {shouldShowBreadcrumbs && (
             <>
-              {(() => {
-                // Check if we're in schedule creation workflow
-                const isScheduleCreationPath = [
-                  '/upload',
-                  '/draft-library',
-                  '/timepoints',
-                  '/block-configuration',
-                  '/block-summary-schedule',
-                  '/connection-schedule'
-                ].some(path => location.pathname.startsWith(path));
-
-                // Show StoryboardProgress for schedule creation with or without active draft
-                if (isScheduleCreationPath) {
-                  return (
-                    <StoryboardProgress
-                      draftId={activeDraftId || undefined}
-                      draftName={activeDraftName || undefined}
-                      compact={false}
-                      onDraftChange={(newDraftId) => {
-                        const workflow = draftService.getWorkflow(newDraftId);
-                        if (workflow) {
-                          setActiveDraftId(newDraftId);
-                          setActiveDraftName(workflow.draftName);
-                        }
-                      }}
-                    />
-                  );
-                } else {
-                  // Show regular breadcrumbs for non-schedule pages
-                  return (
-                    <WorkflowBreadcrumbs 
-                      showWorkflow={shouldShowWorkflow}
-                    />
-                  );
-                }
-              })()}
+              {/* Unified Navigation - Enhanced WorkflowBreadcrumbs for ALL workflows */}
+              <WorkflowBreadcrumbs 
+                showWorkflow={shouldShowWorkflow}
+              />
             </>
           )}
 
@@ -276,6 +243,27 @@ const Layout: React.FC = () => {
           <KeyboardIcon />
         </Fab>
       </Tooltip>
+
+      {/* Floating Action Button for Expanding Sidebar */}
+      {sidebarCollapsed && !isMobile && (
+        <Tooltip title="Expand Navigation">
+          <Fab
+            color="secondary"
+            aria-label="expand navigation"
+            onClick={() => setSidebarCollapsed(false)}
+            sx={{
+              position: 'fixed',
+              bottom: 24,
+              left: 24,
+              zIndex: theme.zIndex.speedDial,
+              width: 48,
+              height: 48
+            }}
+          >
+            <ExpandIcon />
+          </Fab>
+        </Tooltip>
+      )}
 
       {/* Keyboard Shortcuts Help Dialog */}
       <KeyboardShortcutsHelp

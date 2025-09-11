@@ -95,23 +95,6 @@ const SidebarNavigation: React.FC<SidebarNavigationProps> = ({ open, onToggle, c
     localStorage.setItem('recentNavItems', JSON.stringify(recentItems));
   }, [recentItems]);
 
-  const [draftCount, setDraftCount] = React.useState(0);
-
-  // Load draft count for navigation badge
-  React.useEffect(() => {
-    const loadDraftCount = async () => {
-      try {
-        const drafts = await scheduleStorage.getAllDraftSchedules();
-        setDraftCount(drafts.length);
-      } catch (error) {
-        console.warn('Failed to load draft count:', error);
-      }
-    };
-    
-    loadDraftCount();
-    const interval = setInterval(loadDraftCount, 30000);
-    return () => clearInterval(interval);
-  }, []);
 
   const navigationGroups: { [key: string]: NavigationItem[] } = {
     primary: [
@@ -127,8 +110,7 @@ const SidebarNavigation: React.FC<SidebarNavigationProps> = ({ open, onToggle, c
         label: 'Draft Library',
         path: '/draft-library',
         icon: <LibraryIcon />,
-        description: 'Manage all draft working schedules',
-        badge: draftCount > 0 ? draftCount.toString() : undefined
+        description: 'Manage all draft working schedules'
       },
       {
         key: 'upload',

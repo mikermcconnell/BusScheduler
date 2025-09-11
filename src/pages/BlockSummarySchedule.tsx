@@ -26,6 +26,7 @@ import {
 } from '@mui/material';
 import {
   ArrowBack as BackIcon,
+  ArrowForward as ArrowForwardIcon,
   Fullscreen as FullscreenIcon,
   Publish as PublishIcon,
   Schedule as ScheduleIcon,
@@ -296,6 +297,51 @@ const BlockSummarySchedule: React.FC = () => {
   // Master recovery times state for "Apply to All Templates" functionality
   const [masterRecoveryTimes, setMasterRecoveryTimes] = useState<number[]>([0, 1, 1, 2, 3]);
 
+  // Helper function to add minutes to time string (needed for schedule generation)
+  const addMinutesToTime = (timeString: string, minutes: number): string => {
+    const [hours, mins] = timeString.split(':').map(Number);
+    const totalMinutes = hours * 60 + mins + minutes;
+    const newHours = Math.floor(totalMinutes / 60) % 24;
+    const newMins = totalMinutes % 60;
+    return `${newHours.toString().padStart(2, '0')}:${newMins.toString().padStart(2, '0')}`;
+  };
+
+  // Helper function to determine time period from departure time
+  const getTimePeriodForTime = (timeString: string): string => {
+    const [hours, minutes] = timeString.split(':').map(Number);
+    const totalMinutes = hours * 60 + minutes;
+    
+    // Find the 30-minute period this time falls into
+    const periodStart = Math.floor(totalMinutes / 30) * 30;
+    const periodEnd = periodStart + 29;
+    
+    const startHours = Math.floor(periodStart / 60);
+    const startMins = periodStart % 60;
+    const endHours = Math.floor(periodEnd / 60);
+    const endMins = periodEnd % 60;
+    
+    return `${startHours.toString().padStart(2, '0')}:${startMins.toString().padStart(2, '0')} - ${endHours.toString().padStart(2, '0')}:${endMins.toString().padStart(2, '0')}`;
+  };
+
+  // Helper function to determine service band name based on departure time
+  const determineServiceBandForTime = (departureTime: string, timePeriodServiceBands?: { [timePeriod: string]: string }): string => {
+    const timePeriod = getTimePeriodForTime(departureTime);
+    
+    // First try to use the timePeriodServiceBands mapping if available
+    if (timePeriodServiceBands && timePeriodServiceBands[timePeriod]) {
+      return timePeriodServiceBands[timePeriod];
+    }
+    
+    // Fallback logic based on time of day
+    const [hours] = departureTime.split(':').map(Number);
+    
+    if (hours >= 6 && hours < 9) return 'Fast Service';        // Morning
+    if (hours >= 9 && hours < 15) return 'Fastest Service';    // Mid-day
+    if (hours >= 15 && hours < 18) return 'Slow Service';      // Afternoon
+    if (hours >= 18 && hours < 22) return 'Standard Service';  // Evening
+    return 'Slowest Service';                                   // Night
+  };
+
   // Mark the summary step as completed when the component loads
   useEffect(() => {
     draftService.completeStep('summary', {
@@ -303,6 +349,100 @@ const BlockSummarySchedule: React.FC = () => {
       timestamp: new Date().toISOString()
     });
   }, []);
+
+  // Generate schedule from block configuration if coming from Block Configuration page
+  useEffect(() => {
+    // Check if we have block configuration data from navigation
+    if (location.state?.bus_block_configurations && location.state.bus_block_configurations.length > 0) {
+      console.log('📋 Generating schedule from block configurations:', location.state.bus_block_configurations);
+      
+      // Get time point data and service bands from navigation state or draft service
+      const timePointData = location.state?.timePointData || [];
+      const serviceBands = location.state?.serviceBands || [];
+      const timePeriodServiceBands = location.state?.timePeriodServiceBands || {};
+      
+      // Generate trips from block configurations
+      const generatedTrips: Trip[] = [];
+      let tripNumber = 1;
+      
+      location.state.bus_block_configurations.forEach((block: any) => {
+        const blockNumber = block.blockNumber;
+        const startTime = block.startTime;
+        const cycleTime = block.cycleTime || 60; // Default 60 minutes if not specified
+        
+        // Generate trips for this block based on service hours (e.g., 6:00 AM to 10:00 PM)
+        let currentTime = startTime;
+        const endTime = "22:00"; // Default end time
+        
+        while (currentTime < endTime) {
+          // Determine service band for this trip based on departure time
+          const serviceBand = determineServiceBandForTime(currentTime, timePeriodServiceBands);
+          
+          // Create trip with time points
+          const trip: Trip = {
+            tripNumber,
+            blockNumber,
+            departureTime: currentTime,
+            serviceBand: serviceBand as ServiceBand,
+            arrivalTimes: {},
+            departureTimes: {},
+            recoveryTimes: {},
+            recoveryMinutes: 0
+          };
+          
+          // Add times for each time point (simplified - would need actual travel time data)
+          if (timePointData.length > 0) {
+            let accumulatedTime = 0;
+            timePointData.forEach((tp: any, index: number) => {
+              const timePointId = tp.fromTimePoint || tp.id || `tp_${index}`;
+              const arrivalTime = addMinutesToTime(currentTime, accumulatedTime);
+              const recoveryTime = index === 0 ? 0 : (index === timePointData.length - 1 ? 5 : 2);
+              
+              trip.arrivalTimes[timePointId] = arrivalTime;
+              trip.departureTimes[timePointId] = addMinutesToTime(arrivalTime, recoveryTime);
+              trip.recoveryTimes[timePointId] = recoveryTime;
+              trip.recoveryMinutes += recoveryTime;
+              
+              accumulatedTime += 10 + recoveryTime; // Simplified travel time plus recovery
+            });
+          }
+          
+          generatedTrips.push(trip);
+          tripNumber++;
+          
+          // Move to next trip time
+          currentTime = addMinutesToTime(currentTime, cycleTime);
+        }
+      });
+      
+      // Create the schedule object
+      const generatedSchedule: Schedule = {
+        id: `schedule_${Date.now()}`,
+        name: 'Generated Schedule',
+        timePoints: timePointData.map((tp: any) => ({
+          id: tp.fromTimePoint,
+          name: tp.fromTimePoint,
+          isTimingPoint: true
+        })),
+        serviceBands: serviceBands,
+        trips: generatedTrips,
+        updatedAt: new Date().toISOString(),
+        blockConfigurations: location.state.bus_block_configurations,
+        timePointData: timePointData,
+        timePeriodServiceBands: timePeriodServiceBands
+      };
+      
+      // Update schedule state
+      setSchedule(generatedSchedule);
+      
+      // Save to localStorage
+      try {
+        localStorage.setItem('currentSummarySchedule', JSON.stringify(generatedSchedule));
+      } catch (error) {
+        console.warn('Could not save generated schedule to localStorage:', error);
+      }
+    }
+  }, [location.state]);
 
   // Load schedule data from multiple sources with fallback logic
   const [schedule, setSchedule] = useState<Schedule>(() => {
@@ -379,7 +519,7 @@ const BlockSummarySchedule: React.FC = () => {
 
   // Process trips to add service bands based on TimePoints data
   useEffect(() => {
-    if (schedule.trips.length > 0) {
+    if (schedule?.trips && schedule.trips.length > 0) {
       // Update trips with service bands if not already present
       const updatedTrips = schedule.trips.map(trip => ({
         ...trip,
@@ -387,16 +527,19 @@ const BlockSummarySchedule: React.FC = () => {
       }));
       
       // Only update if we actually added service bands
-      if (updatedTrips.some(trip => !schedule.trips.find(t => t.tripNumber === trip.tripNumber)?.serviceBand)) {
+      if (schedule.trips && updatedTrips.some(trip => {
+        const existingTrip = schedule.trips.find(t => t.tripNumber === trip.tripNumber);
+        return existingTrip && !existingTrip.serviceBand;
+      })) {
         // In a real app, we'd update the state/context here
         // For now, we'll handle it in the processing logic below
       }
     }
-  }, [schedule.trips, schedule.timePointData]);
+  }, [schedule?.trips, schedule?.timePointData]);
 
   // Calculate and store original travel times when schedule loads
   useEffect(() => {
-    if (schedule.trips.length > 0) {
+    if (schedule?.trips && schedule.trips.length > 0) {
       const travelTimes: {[tripId: string]: number} = {};
       
       schedule.trips.forEach(trip => {
@@ -448,15 +591,6 @@ const BlockSummarySchedule: React.FC = () => {
     return hours * 60 + minutes;
   };
 
-  // Helper function to add minutes to time string
-  const addMinutesToTime = (timeString: string, minutes: number): string => {
-    const [hours, mins] = timeString.split(':').map(Number);
-    const totalMinutes = hours * 60 + mins + minutes;
-    const newHours = Math.floor(totalMinutes / 60) % 24;
-    const newMins = totalMinutes % 60;
-    return `${newHours.toString().padStart(2, '0')}:${newMins.toString().padStart(2, '0')}`;
-  };
-
   // Helper function to convert minutes to time string
   const minutesToTime = (minutes: number): string => {
     if (typeof minutes !== 'number' || isNaN(minutes)) {
@@ -466,42 +600,6 @@ const BlockSummarySchedule: React.FC = () => {
     const hours = Math.floor(minutes / 60) % 24;
     const mins = minutes % 60;
     return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
-  };
-
-  // Helper function to determine time period from departure time
-  const getTimePeriodForTime = (timeString: string): string => {
-    const [hours, minutes] = timeString.split(':').map(Number);
-    const totalMinutes = hours * 60 + minutes;
-    
-    // Find the 30-minute period this time falls into
-    const periodStart = Math.floor(totalMinutes / 30) * 30;
-    const periodEnd = periodStart + 29;
-    
-    const startHours = Math.floor(periodStart / 60);
-    const startMins = periodStart % 60;
-    const endHours = Math.floor(periodEnd / 60);
-    const endMins = periodEnd % 60;
-    
-    return `${startHours.toString().padStart(2, '0')}:${startMins.toString().padStart(2, '0')} - ${endHours.toString().padStart(2, '0')}:${endMins.toString().padStart(2, '0')}`;
-  };
-
-  // Helper function to determine service band name based on departure time
-  const determineServiceBandForTime = (departureTime: string, timePeriodServiceBands?: { [timePeriod: string]: string }): string => {
-    const timePeriod = getTimePeriodForTime(departureTime);
-    
-    // First try to use the timePeriodServiceBands mapping if available
-    if (timePeriodServiceBands && timePeriodServiceBands[timePeriod]) {
-      return timePeriodServiceBands[timePeriod];
-    }
-    
-    // Fallback logic based on time of day
-    const [hours] = departureTime.split(':').map(Number);
-    
-    if (hours >= 6 && hours < 9) return 'Fast Service';        // Morning
-    if (hours >= 9 && hours < 15) return 'Fastest Service';    // Mid-day
-    if (hours >= 15 && hours < 18) return 'Slow Service';      // Afternoon
-    if (hours >= 18 && hours < 22) return 'Standard Service';  // Evening
-    return 'Slowest Service';                                   // Night
   };
 
   // Recovery time editing functions
@@ -534,7 +632,7 @@ const BlockSummarySchedule: React.FC = () => {
     const tripNumber = parseInt(tripIdStr);
     
     // Calculate recovery difference first
-    const targetTrip = schedule.trips.find(t => t.tripNumber === tripNumber);
+    const targetTrip = schedule.trips?.find(t => t.tripNumber === tripNumber);
     const oldRecoveryTime = targetTrip?.recoveryTimes[timePointId] || 0;
     const recoveryDifference = newRecoveryTime - oldRecoveryTime;
     
@@ -773,7 +871,7 @@ const BlockSummarySchedule: React.FC = () => {
 
     setSchedule(prevSchedule => {
       // Find the target trip to get its block number
-      const targetTrip = prevSchedule.trips.find(t => t.tripNumber === tripNumber);
+      const targetTrip = prevSchedule.trips?.find(t => t.tripNumber === tripNumber);
       if (!targetTrip) return prevSchedule;
 
       const targetBlockNumber = targetTrip.blockNumber;
@@ -837,7 +935,7 @@ const BlockSummarySchedule: React.FC = () => {
           updatedTrip.recoveryTimes = updatedRecoveryTimes;
           
           // Update the trips array with the modified trip
-          const tripIndex = prevSchedule.trips.findIndex(t => t.tripNumber === tripNumber);
+          const tripIndex = prevSchedule.trips?.findIndex(t => t.tripNumber === tripNumber) ?? -1;
           const newTripsArray = [...prevSchedule.trips];
           newTripsArray[tripIndex] = updatedTrip;
           return true; // Keep this trip (but it will be modified)
@@ -924,7 +1022,7 @@ const BlockSummarySchedule: React.FC = () => {
 
     setSchedule(prevSchedule => {
       // Find the target trip to get its block number
-      const targetTrip = prevSchedule.trips.find(t => t.tripNumber === tripNumber);
+      const targetTrip = prevSchedule.trips?.find(t => t.tripNumber === tripNumber);
       if (!targetTrip) return prevSchedule;
 
       const targetBlockNumber = targetTrip.blockNumber;
@@ -1100,8 +1198,8 @@ const BlockSummarySchedule: React.FC = () => {
   
   // Handle adding mid-route trip (between existing trips)
   const handleAddMidRouteTripOpen = useCallback((afterTripNumber: number, beforeTripNumber: number) => {
-    const afterTrip = schedule.trips.find(t => t.tripNumber === afterTripNumber);
-    const beforeTrip = schedule.trips.find(t => t.tripNumber === beforeTripNumber);
+    const afterTrip = schedule.trips?.find(t => t.tripNumber === afterTripNumber);
+    const beforeTrip = schedule.trips?.find(t => t.tripNumber === beforeTripNumber);
     
     if (!afterTrip || !beforeTrip) return;
     
@@ -2228,6 +2326,10 @@ const BlockSummarySchedule: React.FC = () => {
     navigate(-1);
   };
 
+  const handleGoForward = () => {
+    navigate('/connection-schedule', { state: { schedule } });
+  };
+
   const handlePublish = async () => {
     setIsPublishing(true);
     setPublishError(null);
@@ -2317,6 +2419,49 @@ const BlockSummarySchedule: React.FC = () => {
     <>
       <Box sx={{ pr: 3, width: '100%' }}>
         <Box sx={{ py: 4 }}>
+          
+          {/* Workflow Navigation Buttons */}
+          <Box sx={{ 
+            mb: 3, 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'center',
+            p: 2,
+            backgroundColor: 'background.paper',
+            borderRadius: 2,
+            border: '1px solid',
+            borderColor: 'divider'
+          }}>
+            <Button
+              variant="outlined"
+              startIcon={<BackIcon />}
+              onClick={handleBack}
+              size="large"
+              sx={{ minWidth: 180 }}
+            >
+              Back to Blocks
+            </Button>
+            
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography variant="body2" color="text.secondary">
+                Step 4 of 5
+              </Typography>
+              <Typography variant="body1" color="primary" fontWeight="bold">
+                Summary Schedule
+              </Typography>
+            </Box>
+            
+            <Button
+              variant="contained"
+              endIcon={<ArrowForwardIcon />}
+              onClick={handleGoForward}
+              size="large"
+              sx={{ minWidth: 180 }}
+            >
+              Continue to Connections
+            </Button>
+          </Box>
+
           <Card elevation={2}>
             <CardContent sx={{ p: 4 }}>
               <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
@@ -3423,7 +3568,7 @@ const BlockSummarySchedule: React.FC = () => {
           </Typography>
           <Typography variant="body2" color="text.secondary">
             • Removes subsequent stops for this trip<br/>
-            • Removes later trips in Block {schedule.trips.find(t => t.tripNumber === tripEndDialog?.tripNumber)?.blockNumber}
+            • Removes later trips in Block {schedule.trips?.find(t => t.tripNumber === tripEndDialog?.tripNumber)?.blockNumber}
           </Typography>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>

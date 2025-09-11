@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback, memo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import DraftNameHeader from '../components/DraftNameHeader';
 import { 
   Save as SaveIcon, 
   Download as DownloadIcon, 
@@ -8,6 +9,7 @@ import {
   Settings as SettingsIcon, 
   CalendarToday as CalendarIcon, 
   ArrowBack as BackIcon,
+  ArrowForward as ArrowForwardIcon,
   Timeline as TimelineIcon,
   Home as HomeIcon,
   Drafts as DraftIcon,
@@ -625,22 +627,27 @@ export default function BlockConfiguration() {
         { id: 'downtown_return', name: 'Downtown Terminal' }
       ],
       serviceBands: (() => {
-        // Build service bands from TimePoints data if available
-        const timePointsServiceBands = buildServiceBandsFromTimePointsData(timePointData || [], timePeriodServiceBands || {}, deletedPeriods || []);
-        if (timePointsServiceBands && timePointsServiceBands.length > 0) {
-          console.log('✅ Using service bands built from TimePoints data:');
-          console.log(timePointsServiceBands.map(sb => `  - ${sb.name}: ${sb.segmentTimes.length} segments`));
-          return timePointsServiceBands;
+        // Only use location.state data if we actually have it (not when loading from draft)
+        // When loading from draft, the useEffect will populate the service bands
+        
+        // Build service bands from TimePoints data if available in location.state
+        if (timePointData && timePointData.length > 0) {
+          const timePointsServiceBands = buildServiceBandsFromTimePointsData(timePointData, timePeriodServiceBands || {}, deletedPeriods || []);
+          if (timePointsServiceBands && timePointsServiceBands.length > 0) {
+            console.log('✅ Using service bands built from TimePoints data (initial state):');
+            console.log(timePointsServiceBands.map(sb => `  - ${sb.name}: ${sb.segmentTimes.length} segments`));
+            return timePointsServiceBands;
+          }
         }
         
         // Use passed serviceBands from navigation state if available
         if (serviceBands && serviceBands.length > 0) {
-          console.log('✅ Using service bands from navigation state');
+          console.log('✅ Using service bands from navigation state (initial state)');
           return serviceBands;
         }
         
-        // Fallback to hardcoded service bands
-        console.log('⚠️ Using fallback hardcoded service bands');
+        // Fallback to hardcoded service bands (will be replaced by draft data if available)
+        console.log('⚠️ Using fallback hardcoded service bands (will be replaced if draft loads)');
         return [
         // Fallback service bands if no TimePoints data available
         {
@@ -774,6 +781,76 @@ export default function BlockConfiguration() {
       console.log('📦 Using default service band mapping:', defaultMapping);
     }
   }, [location.state]); // React to changes in location.state
+  
+  // Load service band mapping and rebuild service bands from draft if available
+  useEffect(() => {
+    if (!draft) return;
+    
+    // Load TimePoints analysis data
+    if (draft.timepointsAnalysis) {
+      console.log('📚 Loading TimePoints analysis from draft...');
+      const { timePeriodServiceBands, travelTimeData, deletedPeriods: draftDeletedPeriods, serviceBands: draftServiceBands } = draft.timepointsAnalysis;
+      
+      // Update the service band mapping
+      if (timePeriodServiceBands && Object.keys(timePeriodServiceBands).length > 0) {
+        console.log('✅ Loading service band mapping from draft:', timePeriodServiceBands);
+        setServiceBandMapping(timePeriodServiceBands);
+        
+        // Priority 1: Use serviceBands directly from draft if available
+        if (draftServiceBands && draftServiceBands.length > 0) {
+          console.log('✅ Using service bands directly from draft:', draftServiceBands.length, 'bands');
+          const serviceBandsFromDraft = draftServiceBands as any as ServiceBand[];
+          setSchedule(prev => ({
+            ...prev,
+            serviceBands: serviceBandsFromDraft,
+            updatedAt: new Date().toISOString()
+          }));
+        } 
+        // Priority 2: Rebuild service bands from travelTimeData if available
+        else if (travelTimeData && travelTimeData.length > 0) {
+          console.log('🔧 Rebuilding service bands from draft travelTimeData...');
+          const rebuiltServiceBands = buildServiceBandsFromTimePointsData(
+            travelTimeData as any as TimePointData[], 
+            timePeriodServiceBands,
+            draftDeletedPeriods || []
+          );
+          
+          if (rebuiltServiceBands.length > 0) {
+            console.log('✅ Successfully rebuilt', rebuiltServiceBands.length, 'service bands from draft data');
+            setSchedule(prev => ({
+              ...prev,
+              serviceBands: rebuiltServiceBands,
+              updatedAt: new Date().toISOString()
+            }));
+          } else {
+            console.warn('⚠️ Failed to rebuild service bands from draft data');
+          }
+        }
+      } else {
+        console.warn('⚠️ No service band mapping found in draft');
+      }
+    }
+    
+    // Load Block Configuration data if available
+    if (draft.blockConfiguration) {
+      console.log('🚌 Loading block configuration from draft...');
+      const { numberOfBuses, cycleTimeMinutes, automateBlockStartTimes, blockConfigurations } = draft.blockConfiguration;
+      
+      setSchedule(prev => ({
+        ...prev,
+        cycleTimeMinutes: cycleTimeMinutes || prev.cycleTimeMinutes,
+        automateBlockStartTimes: automateBlockStartTimes ?? prev.automateBlockStartTimes,
+        blockConfigurations: blockConfigurations || prev.blockConfigurations,
+        updatedAt: new Date().toISOString()
+      }));
+      
+      console.log('✅ Block configuration loaded from draft:', {
+        buses: numberOfBuses,
+        cycleTime: cycleTimeMinutes,
+        automated: automateBlockStartTimes
+      });
+    }
+  }, [draft]);
   
   // Mouse event handlers for drag scrolling
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -940,7 +1017,7 @@ export default function BlockConfiguration() {
     });
     
     // Auto-save TimePoints data before generating schedule
-    if (updateTimepointsAnalysis && timePointData.length > 0) {
+    if (updateTimepointsAnalysis && timePointData && timePointData.length > 0) {
       console.log('💾 Auto-saving TimePoints analysis before schedule generation...');
       try {
         const saveResult = await updateTimepointsAnalysis({
@@ -1402,10 +1479,47 @@ export default function BlockConfiguration() {
     }
   };
 
+  // Check if schedule has been generated
+  const hasGeneratedSchedule = schedule.trips && schedule.trips.length > 0;
+
+  // Forward navigation function
+  const handleGoForward = () => {
+    if (hasGeneratedSchedule) {
+      // Navigate to summary schedule if already generated
+      const completeSchedule = { 
+        ...schedule, 
+        timePointData: timePointData,
+        timePeriodServiceBands: timePeriodServiceBands,
+        serviceBands: serviceBands,
+        trips: schedule.trips
+      };
+      
+      navigate('/block-summary-schedule', { 
+        state: { 
+          schedule: completeSchedule,
+          draftId: draft?.draftId
+        } 
+      });
+    }
+  };
+
   return (
     <Box sx={{ py: 4, pr: 3, width: '100%' }}>
-      {/* Back Button */}
-      <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+      {/* Draft Name Header */}
+      <DraftNameHeader />
+
+      {/* Workflow Navigation Buttons */}
+      <Box sx={{ 
+        mb: 3, 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        p: 2,
+        backgroundColor: 'background.paper',
+        borderRadius: 2,
+        border: '1px solid',
+        borderColor: 'divider'
+      }}>
         <Button
           variant="outlined"
           startIcon={<BackIcon />}
@@ -1419,9 +1533,30 @@ export default function BlockConfiguration() {
               fileName
             }
           })}
-          sx={{ mr: 2 }}
+          size="large"
+          sx={{ minWidth: 180 }}
         >
-          Back to Timepoints
+          Back to TimePoints
+        </Button>
+        
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography variant="body2" color="text.secondary">
+            Step 3 of 5
+          </Typography>
+          <Typography variant="body1" color="primary" fontWeight="bold">
+            Block Configuration
+          </Typography>
+        </Box>
+        
+        <Button
+          variant={hasGeneratedSchedule ? "contained" : "outlined"}
+          endIcon={<ArrowForwardIcon />}
+          onClick={handleGoForward}
+          disabled={!hasGeneratedSchedule}
+          size="large"
+          sx={{ minWidth: 180 }}
+        >
+          {hasGeneratedSchedule ? "Continue to Summary" : "Generate Schedule First"}
         </Button>
       </Box>
       {/* Configuration Content - No Tabs */}

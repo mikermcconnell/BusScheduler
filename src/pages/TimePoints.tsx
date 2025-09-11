@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import DraftNameHeader from '../components/DraftNameHeader';
 import {
   Typography,
   Card,
@@ -31,25 +32,18 @@ import {
 } from '@mui/material';
 import {
   Timeline as TimelineIcon,
-  ArrowBack as BackIcon,
   CheckCircle as CheckIcon,
   BarChart as ChartIcon,
-  Save as SaveIcon,
-  Edit as EditIcon,
-  Drafts as DraftIcon,
-  NavigateNext as NavigateNextIcon,
-  Home as HomeIcon,
-  Upload as UploadIcon,
   Delete as DeleteIcon,
   Add as AddIcon,
   Warning as WarningIcon,
   Visibility as VisibilityIcon,
   ThumbUp as KeepIcon,
   Clear as RemoveIcon,
-  Schedule as ScheduleIcon,
   ExpandMore as ExpandMoreIcon,
   TableChart as TableIcon,
-  DirectionsBus as BusIcon,
+  ArrowBack as ArrowBackIcon,
+  ArrowForward as ArrowForwardIcon,
 } from '@mui/icons-material';
 import {
   BarChart,
@@ -66,7 +60,6 @@ import { scheduleStorage } from '../services/scheduleStorage';
 import { draftService } from '../services/draftService';
 import { firebaseStorage } from '../services/firebaseStorage';
 import WorkflowBreadcrumbs from '../components/WorkflowBreadcrumbs';
-import ScheduleStatusIndicator from '../components/ScheduleStatusIndicator';
 import { useWorkflowDraft } from '../hooks/useWorkflowDraft';
 import { useFirebaseAuth } from '../hooks/useFirebaseAuth';
 import { 
@@ -75,6 +68,7 @@ import {
   TimepointsModification
 } from '../types/workflow';
 import { ServiceBand as WorkflowServiceBand } from '../types/schedule';
+import { AUTO_SAVE_CONFIG } from '../config/autoSave';
 
 // Local TimePointData interface that's different from workflow
 interface TimePointData {
@@ -129,7 +123,7 @@ const TimePoints: React.FC = () => {
     loading: draftLoading,
     error: draftError,
     isSaving: isDraftSaving
-  } = useWorkflowDraft(locationDraftId);
+  } = useWorkflowDraft(locationDraftId); // Use draft ID from navigation or session
   
   // Firebase authentication status
   const { isAuthenticated: isFirebaseConnected } = useFirebaseAuth();
@@ -142,11 +136,6 @@ const TimePoints: React.FC = () => {
   // Draft management state
   const [fileName, setFileName] = useState<string>('');
   const [originalFileName, setOriginalFileName] = useState<string>('');
-  const [editNameDialogOpen, setEditNameDialogOpen] = useState(false);
-  const [tempFileName, setTempFileName] = useState<string>('');
-  const [saving, setSaving] = useState(false);
-  const [saveSuccess, setSaveSuccess] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
   const [currentDraftId, setCurrentDraftId] = useState<string | null>(null);
   
   // Timeband management state
@@ -185,7 +174,6 @@ const TimePoints: React.FC = () => {
 
   // Get data from location state (passed during navigation)
   const { csvData: initialCsvData, dayType, savedScheduleId } = location.state || {};
-  const [csvData, setCsvData] = useState<ParsedCsvData | null>(initialCsvData || null);
   
   // Auto-save state
   const [lastAutoSave, setLastAutoSave] = useState<Date | null>(null);
@@ -328,11 +316,16 @@ const TimePoints: React.FC = () => {
       try {
         let data: ParsedCsvData | null = null;
         
-        // Check if we have a draft loaded
-        if (draft && draft.originalData && draft.originalData.fileType === 'csv') {
+        // First priority: Check if we have the draft loaded
+        if (draft && draft.originalData && draft.originalData.uploadedData && draft.originalData.fileType === 'csv') {
+          console.log('✅ Loading data from draft:', draft.draftId);
           data = draft.originalData.uploadedData as ParsedCsvData;
-          setFileName(draft.originalData.fileName);
-          setOriginalFileName(draft.originalData.fileName);
+          
+          // Set clean route name from draft
+          const cleanName = draft.originalData.fileName?.replace(/\.[^/.]+$/, '') || 'Route Schedule';
+          setFileName(cleanName);
+          setOriginalFileName(cleanName);
+          setCurrentDraftId(draft.draftId);
           
           // If draft has existing timepoints analysis, load it
           if (draft.timepointsAnalysis) {
@@ -359,69 +352,42 @@ const TimePoints: React.FC = () => {
             }
           }
         }
-        // If we have csvData from navigation state, use it
-        else if (csvData) {
-          data = csvData;
-          setScheduleId(savedScheduleId);
-        } 
-        // Otherwise try to load from storage if we have a scheduleId
-        else if (savedScheduleId) {
-          const schedule = scheduleStorage.getScheduleById(savedScheduleId);
-          if (schedule && schedule.data && 'timePoints' in schedule.data) {
-            data = schedule.data as ParsedCsvData;
+        // Fallback: If we have CSV data from navigation state
+        else if (initialCsvData) {
+          console.log('⚠️ Using CSV data from navigation state');
+          data = initialCsvData;
+          if (savedScheduleId) {
             setScheduleId(savedScheduleId);
           }
-        }
-        // If no data from navigation or specific ID, try to load the most recent draft
-        else if (!draft) {
-          // If no workflow draft is loaded, try the old draft system
-          const drafts = scheduleStorage.getAllDraftSchedules();
-          if (drafts.length > 0) {
-            // Sort by lastModified and get the most recent
-            const mostRecent = drafts.sort((a: any, b: any) => 
-              new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-            )[0];
-            
-            if (mostRecent.uploadedData && 'segments' in mostRecent.uploadedData) {
-              data = mostRecent.uploadedData as ParsedCsvData;
-              setScheduleId(mostRecent.id);
-              setCurrentDraftId(mostRecent.id);
-              
-              // Store CSV data for potential draft creation
-              setCsvData(data);
+        } 
+        // Final fallback: Try to load the draft directly from service if we have a draft ID
+        else if (locationDraftId) {
+          console.log('🔄 Attempting to load draft directly:', locationDraftId);
+          try {
+            const loadedDraft = await draftService.getDraftById(locationDraftId);
+            if (loadedDraft && loadedDraft.originalData && loadedDraft.originalData.uploadedData && loadedDraft.originalData.fileType === 'csv') {
+              data = loadedDraft.originalData.uploadedData as ParsedCsvData;
+              const cleanName = loadedDraft.originalData.fileName?.replace(/\.[^/.]+$/, '') || 'Route Schedule';
+              setFileName(cleanName);
+              setOriginalFileName(cleanName);
+              setCurrentDraftId(loadedDraft.draftId);
+              console.log('✅ Loaded draft data:', loadedDraft.draftId);
             }
+          } catch (draftError) {
+            console.warn('⚠️ Could not load draft:', draftError);
           }
         }
 
-        // Set initial file name based on the loaded data
-        let currentScheduleId = savedScheduleId;
-        if (!currentScheduleId && data) {
-          // If we loaded from most recent draft, use that schedule's ID
-          const drafts = scheduleStorage.getAllDraftSchedules();
-          if (drafts.length > 0) {
-            const mostRecent = drafts.sort((a: any, b: any) => 
-              new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-            )[0];
-            currentScheduleId = mostRecent.id;
-          }
+        // Ensure we have a clean name set if not already done
+        if (!fileName || fileName === 'Draft Schedule') {
+          const cleanName = draft?.originalData?.fileName?.replace(/\.[^/.]+$/, '') || 'Route Schedule';
+          setFileName(cleanName);
+          setOriginalFileName(cleanName);
         }
-
-        if (currentScheduleId) {
-          // Try both regular schedules and draft schedules
-          const schedule = scheduleStorage.getScheduleById(currentScheduleId);
-          const draftSchedule = scheduleStorage.getDraftScheduleById(currentScheduleId);
-          
-          const name = schedule?.summarySchedule?.routeName || 
-                      schedule?.fileName || 
-                      draftSchedule?.fileName || 
-                      'Untitled Schedule';
-          setFileName(name);
-          setOriginalFileName(name);
-          setScheduleId(currentScheduleId);
-        } else {
-          const name = 'Draft Schedule';
-          setFileName(name);
-          setOriginalFileName(name);
+        
+        // Set schedule ID if available
+        if (savedScheduleId) {
+          setScheduleId(savedScheduleId);
         }
 
         if (!data) {
@@ -464,7 +430,7 @@ const TimePoints: React.FC = () => {
     };
 
     loadTimePointData();
-  }, [csvData, dayType, savedScheduleId, draft]);
+  }, [initialCsvData, dayType, savedScheduleId, draft, locationDraftId]);
 
   // Recalculate timebands when deletedPeriods changes
   useEffect(() => {
@@ -477,7 +443,7 @@ const TimePoints: React.FC = () => {
   // Auto-save functionality - triggers on page load and when key data changes
   useEffect(() => {
     const performAutoSave = async () => {
-      // Skip auto-save if we're already saving or don't have data
+      // Skip auto-save if we're already saving, don't have a draft, or don't have data
       if (isAutoSaving || !draft || timePointData.length === 0) {
         return;
       }
@@ -557,7 +523,7 @@ const TimePoints: React.FC = () => {
     // Perform auto-save on initial load (after data is loaded)
     const autoSaveTimer = setTimeout(() => {
       performAutoSave();
-    }, 1000); // Small delay to ensure data is fully loaded
+    }, AUTO_SAVE_CONFIG.FORM_INPUT_SAVE); // 2s delay for initial load
     
     return () => clearTimeout(autoSaveTimer);
   }, []); // Run once on mount
@@ -649,40 +615,19 @@ const TimePoints: React.FC = () => {
     // Debounce auto-save to avoid too frequent saves
     const autoSaveTimer = setTimeout(() => {
       performAutoSave();
-    }, 2000); // 2 second delay after changes
+    }, AUTO_SAVE_CONFIG.USER_TYPING_DEBOUNCE); // 1.5s optimal debounce
     
     return () => clearTimeout(autoSaveTimer);
   }, [deletedPeriods, serviceBandDataAssignments, removedOutliers, timeBands]);
 
-  const handleGoBack = () => {
-    navigate('/upload');
-  };
 
   const handleGenerateSummary = async () => {
     let workingDraftId = draft?.draftId;
     
-    // If no draft exists but we have data, create one
-    if (!draft && csvData) {
-      console.log('No workflow draft found, creating one from current data...');
-      const createResult = await createDraftFromUpload(
-        fileName || 'Untitled Schedule',
-        'csv',
-        csvData
-      );
-      if (createResult.success && createResult.draftId) {
-        console.log('✅ Created workflow draft:', createResult.draftId);
-        workingDraftId = createResult.draftId;
-      } else {
-        console.error('Failed to create workflow draft:', createResult.error);
-        setSaveError(createResult.error || 'Failed to create draft');
-        return;
-      }
-    }
-    
-    // Check if we have either a draft or just created one
+    // Ensure we have a draft ID to work with
     if (!workingDraftId) {
-      console.error('No draft available to continue');
-      setSaveError('No data available. Please upload a CSV file first.');
+      console.log('⚠️ No draft ID available');
+      setError('No draft found. Please start from the upload page.');
       return;
     }
     
@@ -755,6 +700,9 @@ const TimePoints: React.FC = () => {
       localStorage.setItem('currentTimePointData', JSON.stringify(timePointData));
       localStorage.setItem('currentServiceBands', JSON.stringify(timeBands));
       
+      // Mark timepoints step as completed
+      draftService.updateStepStatus(workingDraftId, 'timepoints', 'completed');
+      
       // Pass draft ID and analysis data to BlockConfiguration
       navigate('/block-configuration', {
         state: {
@@ -769,7 +717,7 @@ const TimePoints: React.FC = () => {
       });
     } else {
       console.error('Failed to save timepoints analysis:', result.error);
-      setSaveError(result.error || 'Failed to save analysis');
+      setError(result.error || 'Failed to save analysis');
     }
   };
 
@@ -777,132 +725,7 @@ const TimePoints: React.FC = () => {
     setDetailedTableExpanded(!detailedTableExpanded);
   };
 
-  const handleEditFileName = () => {
-    setTempFileName(fileName);
-    setEditNameDialogOpen(true);
-  };
 
-  const handleFileNameSave = async () => {
-    if (tempFileName.trim()) {
-      const newFileName = tempFileName.trim();
-      setFileName(newFileName);
-      
-      // Update the draft with the new name if we have an active draft
-      if (draft) {
-        setSaving(true);
-        try {
-          const result = await draftService.updateDraftFileName(
-            draft.draftId,
-            newFileName
-          );
-          
-          if (!result.success) {
-            console.error('Failed to update draft name:', result.error);
-            setSaveError('Failed to update file name');
-            // Revert the name change on failure
-            setFileName(originalFileName);
-          } else {
-            // Update the original file name on success
-            setOriginalFileName(newFileName);
-            console.log('✅ File name updated successfully');
-          }
-        } catch (error) {
-          console.error('Error updating file name:', error);
-          setSaveError('Failed to update file name');
-          setFileName(originalFileName);
-        } finally {
-          setSaving(false);
-        }
-      }
-      
-      setEditNameDialogOpen(false);
-    }
-  };
-
-  const handleFileNameCancel = () => {
-    setTempFileName('');
-    setEditNameDialogOpen(false);
-  };
-
-  const handleSaveDraft = async () => {
-    if (!draft) {
-      setSaveError('No draft available to save');
-      return;
-    }
-
-    setSaving(true);
-    setSaveError(null);
-
-    try {
-      // Create time period to service band mapping
-      const timePeriodServiceBands: { [timePeriod: string]: string } = {};
-      chartData.forEach(item => {
-        if (!item.isDeleted) {
-          timePeriodServiceBands[item.timePeriod] = item.timebandName;
-        }
-      });
-      
-      // Convert local TimePointData to workflow format
-      const workflowTimePointData: WorkflowTimePointData[] = timePointData.map(tp => ({
-        timePeriod: tp.timePeriod,
-        from: tp.fromTimePoint,
-        to: tp.toTimePoint,
-        percentile25: tp.percentile50 * 0.9, // Approximate since we don't have this data
-        percentile50: tp.percentile50,
-        percentile75: tp.percentile80,
-        percentile90: tp.percentile80 * 1.1, // Approximate since we don't have this data
-        isOutlier: tp.isOutlier,
-        outlierType: tp.outlierType
-      }));
-      
-      // Convert outliers to OutlierData format
-      const workflowOutliers: OutlierData[] = outliers
-        .filter(o => !removedOutliers.has(`${o.timePeriod}-${o.fromTimePoint}-${o.toTimePoint}`))
-        .map(o => ({
-          timePeriod: o.timePeriod,
-          segment: `${o.fromTimePoint} to ${o.toTimePoint}`,
-          value: o.percentile50,
-          deviation: o.outlierDeviation || 0,
-          type: o.outlierType || 'high'
-        }));
-      
-      // Convert TimeBand to ServiceBand format
-      const workflowServiceBands: WorkflowServiceBand[] = timeBands.map(tb => ({
-        id: tb.id,
-        name: tb.name,
-        startTime: tb.startTime,
-        endTime: tb.endTime,
-        travelTimeMultiplier: tb.travelTimeMultiplier,
-        color: tb.color,
-        description: tb.description
-      }));
-      
-      // Prepare analysis data from current state
-      const analysisData = {
-        serviceBands: workflowServiceBands,
-        travelTimeData: workflowTimePointData,
-        outliers: workflowOutliers,
-        userModifications: [] as TimepointsModification[],
-        deletedPeriods: Array.from(deletedPeriods),
-        timePeriodServiceBands
-      };
-
-      // Update the workflow draft with analysis data
-      const result = await updateTimepointsAnalysis(analysisData);
-
-      if (result.success) {
-        console.log('✅ Draft saved successfully through workflow system');
-        setSaveSuccess(true);
-        setTimeout(() => setSaveSuccess(false), 3000);
-      } else {
-        setSaveError(result.error || 'Failed to save draft');
-      }
-    } catch (error) {
-      setSaveError('Failed to save draft');
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const handleTimebandClick = (timeband: TimeBand) => {
     setSelectedTimeband(timeband);
@@ -1046,6 +869,23 @@ const TimePoints: React.FC = () => {
   const handleClosePeriodDialog = () => {
     setPeriodDialogOpen(false);
     setSelectedPeriod(null);
+  };
+
+  // Workflow navigation functions
+  const handleGoBack = () => {
+    // Navigate to the previous step in workflow (Upload Schedule)
+    navigate('/upload', {
+      state: {
+        // Pass current state if needed
+        returnFrom: 'timepoints'
+      }
+    });
+  };
+
+  const handleGoForward = () => {
+    // Navigate to the next step in workflow (Block Configuration)
+    // This uses the same logic as handleGenerateSummary
+    handleGenerateSummary();
   };
 
   const formatTime = (minutes: number): string => {
@@ -1255,123 +1095,78 @@ const TimePoints: React.FC = () => {
         <Alert severity="error" sx={{ mb: 3 }}>
           {error}
         </Alert>
-        <Button
-          variant="outlined"
-          startIcon={<BackIcon />}
-          onClick={handleGoBack}
-        >
-          Back to Upload
-        </Button>
       </Box>
     );
   }
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+      {/* Draft Name Header */}
+      <DraftNameHeader />
+
+      {/* Simplified Header */}
+      <Box sx={{ mb: 3 }}>
+        <Typography variant="h5" component="h1" gutterBottom>
+          TimePoints Analysis
+        </Typography>
+        <Typography variant="subtitle1" color="text.secondary">
+          {dayType && (
+            <Chip 
+              label={dayType.charAt(0).toUpperCase() + dayType.slice(1)} 
+              color="primary" 
+              size="small"
+              sx={{ mr: 1 }}
+            />
+          )}
+          Review travel times between consecutive timepoints
+        </Typography>
+      </Box>
+
+      {/* Workflow Navigation Buttons */}
+      <Box sx={{ 
+        mb: 3, 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        p: 2,
+        backgroundColor: 'background.paper',
+        borderRadius: 2,
+        border: '1px solid',
+        borderColor: 'divider'
+      }}>
         <Button
           variant="outlined"
-          startIcon={<BackIcon />}
+          startIcon={<ArrowBackIcon />}
           onClick={handleGoBack}
-          sx={{ mr: 2 }}
+          size="large"
+          sx={{ minWidth: 140 }}
         >
           Back to Upload
         </Button>
-        <Box sx={{ flex: 1 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
-            <Typography variant="h5" component="h1">
-              Timepoint Page
-            </Typography>
-            {/* Schedule Status Indicator */}
-            <ScheduleStatusIndicator
-              isDraft={true}
-              isPublished={false}
-              isSyncing={saving || isDraftSaving || isAutoSaving}
-              isFirebaseConnected={isFirebaseConnected}
-              lastSaved={lastAutoSave ? lastAutoSave.toISOString() : draft?.metadata?.lastModifiedAt || null}
-              scheduleName={fileName}
-            />
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <TextField
-                variant="outlined"
-                size="small"
-                value={fileName}
-                disabled
-                sx={{ minWidth: 200 }}
-              />
-              <Button
-                variant="outlined"
-                size="small"
-                startIcon={<EditIcon />}
-                onClick={handleEditFileName}
-              >
-                Edit Name
-              </Button>
-              <Button
-                variant="outlined"
-                startIcon={<DraftIcon />}
-                onClick={handleSaveDraft}
-                disabled={saving || isDraftSaving}
-                sx={{ ml: 1 }}
-title="Save current progress - your timepoint analysis and service band configurations will be preserved"
-              >
-{saving ? 'Saving...' : isDraftSaving ? 'Auto-Saving...' : 'Save Progress'}
-              </Button>
-              <Button
-                variant="contained"
-                color="primary"
-                startIcon={<ScheduleIcon />}
-                onClick={handleGenerateSummary}
-                sx={{ ml: 1 }}
-                title="Continue to configure trip details and generate schedule"
-              >
-                Continue to Trip Details
-              </Button>
-              {/* Auto-save indicator */}
-              {(isAutoSaving || lastAutoSave) && (
-                <Box sx={{ display: 'flex', alignItems: 'center', ml: 2 }}>
-                  {isAutoSaving ? (
-                    <>
-                      <CircularProgress size={16} sx={{ mr: 0.5 }} />
-                      <Typography variant="caption" color="text.secondary">
-                        Auto-saving...
-                      </Typography>
-                    </>
-                  ) : lastAutoSave ? (
-                    <Typography variant="caption" color="success.main">
-                      ✓ Auto-saved
-                    </Typography>
-                  ) : null}
-                </Box>
-              )}
-            </Box>
-          </Box>
-          <Typography variant="subtitle1" color="text.secondary">
-            {dayType && (
-              <Chip 
-                label={dayType.charAt(0).toUpperCase() + dayType.slice(1)} 
-                color="primary" 
-                size="small"
-                sx={{ mr: 1 }}
-              />
-            )}
-            Review travel times between consecutive timepoints
+        
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography variant="body2" color="text.secondary">
+            Step 2 of 5
+          </Typography>
+          <Typography variant="body1" color="primary" fontWeight="bold">
+            Timepoint Analysis
           </Typography>
         </Box>
+        
+        <Button
+          variant="contained"
+          endIcon={<ArrowForwardIcon />}
+          onClick={handleGoForward}
+          size="large"
+          sx={{ minWidth: 160 }}
+          disabled={timePointData.length === 0}
+        >
+          Continue to Blocks
+        </Button>
       </Box>
 
       <Card>
         <CardContent>
-          <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-            {scheduleId && (
-              <Chip 
-                icon={<CheckIcon />}
-                label="Saved"
-                color="success" 
-                size="small"
-              />
-            )}
-          </Box>
 
           {/* Chart/Table Section with Tabs */}
           {chartData.length > 0 && (
@@ -1991,51 +1786,6 @@ title="Save current progress - your timepoint analysis and service band configur
         </CardContent>
       </Card>
 
-      {/* Edit File Name Dialog */}
-      <Dialog open={editNameDialogOpen} onClose={handleFileNameCancel}>
-        <DialogTitle>Edit File Name</DialogTitle>
-        <DialogContent>
-          <TextField
-            autoFocus
-            margin="dense"
-            label="File Name"
-            fullWidth
-            variant="outlined"
-            value={tempFileName}
-            onChange={(e) => setTempFileName(e.target.value)}
-            sx={{ mt: 2 }}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleFileNameCancel}>Cancel</Button>
-          <Button onClick={handleFileNameSave} variant="contained">
-            Save
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Success Snackbar */}
-      <Snackbar
-        open={saveSuccess}
-        autoHideDuration={3000}
-        onClose={() => setSaveSuccess(false)}
-      >
-        <Alert severity="success" sx={{ width: '100%' }}>
-          <strong>Draft saved successfully!</strong> Your schedule "{fileName}" has been saved as a draft. 
-          It will remain in draft status until you publish it from the Summary Schedule page.
-        </Alert>
-      </Snackbar>
-
-      {/* Error Snackbar */}
-      <Snackbar
-        open={!!saveError}
-        autoHideDuration={6000}
-        onClose={() => setSaveError(null)}
-      >
-        <Alert severity="error" sx={{ width: '100%' }}>
-          {saveError}
-        </Alert>
-      </Snackbar>
 
       {/* Timeband Edit Dialog */}
       <Dialog 

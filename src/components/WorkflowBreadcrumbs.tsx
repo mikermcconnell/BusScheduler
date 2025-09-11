@@ -11,7 +11,14 @@ import {
   useTheme,
   useMediaQuery,
   Paper,
-  Tooltip
+  Tooltip,
+  LinearProgress,
+  alpha,
+  Menu,
+  MenuItem,
+  Snackbar,
+  Alert,
+  keyframes
 } from '@mui/material';
 import {
   Home as HomeIcon,
@@ -25,10 +32,26 @@ import {
   RadioButtonUnchecked as PendingIcon,
   PlayArrow as ActiveIcon,
   Info as InfoIcon,
-  SwapVert as SwapVertIcon
+  SwapVert as SwapVertIcon,
+  Edit as EditIcon,
+  Celebration as CelebrationIcon
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { draftService } from '../services/draftService';
+import { subscribe, unsubscribe } from '../services/workspaceEventBus';
+
+// Animation keyframes (from StoryboardProgress)
+const pulse = keyframes`
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+`;
+
+const glow = keyframes`
+  0% { box-shadow: 0 0 5px rgba(0, 123, 255, 0.5); }
+  50% { box-shadow: 0 0 20px rgba(0, 123, 255, 0.8); }
+  100% { box-shadow: 0 0 5px rgba(0, 123, 255, 0.5); }
+`;
 
 interface WorkflowStep {
   key: string;
@@ -63,29 +86,25 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [persistentWorkflow, setPersistentWorkflow] = useState<any>(null);
+  const [draftWorkflow, setDraftWorkflow] = useState<any>(null);
+  const [draftMenuAnchor, setDraftMenuAnchor] = useState<null | HTMLElement>(null);
+  const [allWorkflows, setAllWorkflows] = useState<any[]>([]);
+  const [celebrationMessage, setCelebrationMessage] = useState<string | null>(null);
 
   // Define workflow steps for different contexts
   const workflows = {
     'schedule-creation': [
       {
         key: 'upload',
-        label: 'Upload Data',
+        label: 'Load Data',
         path: '/upload',
         icon: <UploadIcon />,
         description: 'Import Excel/CSV schedule data',
         status: 'completed' as const
       },
       {
-        key: 'drafts',
-        label: 'Draft Review',
-        path: '/drafts',
-        icon: <DraftsIcon />,
-        description: 'Review and manage draft schedules',
-        status: 'completed' as const
-      },
-      {
         key: 'timepoints',
-        label: 'TimePoints Analysis',
+        label: 'Optimize Timing',
         path: '/timepoints',
         icon: <TimelineIcon />,
         description: 'Analyze travel times and service bands',
@@ -93,7 +112,7 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
       },
       {
         key: 'block-config',
-        label: 'Block Configuration',
+        label: 'Plan Blocks',
         path: '/block-configuration',
         icon: <ConfigIcon />,
         description: 'Configure bus blocks and timing',
@@ -101,7 +120,7 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
       },
       {
         key: 'summary',
-        label: 'Base Schedule',
+        label: 'Build Schedule',
         path: '/block-summary-schedule',
         icon: <SummaryIcon />,
         description: 'Generate base schedule with best practice recovery times',
@@ -109,7 +128,7 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
       },
       {
         key: 'connections',
-        label: 'Connection Schedule',
+        label: 'Create Connections',
         path: '/connection-schedule',
         icon: <SwapVertIcon />,
         description: 'Configure connections to GO trains, schools, and other routes',
@@ -158,7 +177,7 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
   const detectWorkflowContext = (): string | null => {
     const path = location.pathname;
     
-    if (['/upload', '/drafts', '/timepoints', '/block-configuration', '/block-summary-schedule'].includes(path)) {
+    if (['/upload', '/timepoints', '/block-configuration', '/block-summary-schedule', '/connection-schedule'].includes(path)) {
       return 'schedule-creation';
     }
     if (['/routes'].includes(path)) {
@@ -205,6 +224,142 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
     }
   }, [currentWorkflowContext, location.pathname]);
 
+  // Load draft workflow for progress tracking with Firebase sync
+  useEffect(() => {
+    const loadDraftWorkflow = async () => {
+      // Try to get current session draft
+      const sessionDraftId = draftService.getCurrentSessionDraftId();
+      if (sessionDraftId) {
+        try {
+          // Get actual draft data from Firebase first
+          const firebaseDraft = await draftService.getDraftByIdUnified(sessionDraftId);
+          
+          if (firebaseDraft) {
+            // Get existing localStorage workflow data
+            let localWorkflow = draftService.getWorkflow(sessionDraftId);
+            
+            // Sync localStorage with Firebase data
+            const shouldSync = !localWorkflow || 
+              localWorkflow.currentStep !== firebaseDraft.currentStep ||
+              localWorkflow.overallProgress !== firebaseDraft.progress;
+            
+            if (shouldSync) {
+              console.log('🔄 Syncing workflow data from Firebase draft:', {
+                draftId: sessionDraftId,
+                firebaseStep: firebaseDraft.currentStep,
+                localStep: localWorkflow?.currentStep || 'none',
+                firebaseProgress: firebaseDraft.progress,
+                localProgress: localWorkflow?.overallProgress || 0
+              });
+              
+              // Create or update workflow to match Firebase draft
+              localWorkflow = draftService.getOrCreateWorkflow(
+                sessionDraftId, 
+                firebaseDraft.draftName
+              );
+              
+              // Sync workflow state with Firebase draft data
+              localWorkflow.currentStep = firebaseDraft.currentStep;
+              localWorkflow.overallProgress = firebaseDraft.progress;
+              localWorkflow.draftName = firebaseDraft.draftName;
+              localWorkflow.lastModified = firebaseDraft.metadata.lastModifiedAt;
+              
+              // Update step completion status based on Firebase currentStep
+              const stepOrder = ['upload', 'timepoints', 'block-config', 'summary', 'connections'];
+              const currentStepIndex = stepOrder.indexOf(firebaseDraft.currentStep === 'blocks' ? 'block-config' : 
+                                                      firebaseDraft.currentStep === 'ready-to-publish' ? 'summary' : 
+                                                      firebaseDraft.currentStep);
+              
+              localWorkflow.steps.forEach((step, index) => {
+                if (index < currentStepIndex) {
+                  step.status = 'completed';
+                } else if (index === currentStepIndex) {
+                  step.status = 'in-progress';
+                } else {
+                  step.status = 'not-started';
+                }
+              });
+              
+              // Store any relevant step data from Firebase
+              if (firebaseDraft.stepData) {
+                if (!localWorkflow.stepData) {
+                  localWorkflow.stepData = {};
+                }
+                
+                if (firebaseDraft.stepData.timepoints) {
+                  localWorkflow.stepData.timepoints = firebaseDraft.stepData.timepoints;
+                }
+                if (firebaseDraft.stepData.blockConfiguration) {
+                  localWorkflow.stepData.blockConfiguration = firebaseDraft.stepData.blockConfiguration;
+                }
+                if (firebaseDraft.stepData.summarySchedule) {
+                  localWorkflow.stepData.summarySchedule = firebaseDraft.stepData.summarySchedule;
+                }
+              }
+              
+              // Save the synced workflow
+              draftService.saveWorkflow(localWorkflow);
+            }
+            
+            setDraftWorkflow(localWorkflow);
+          } else {
+            // Fallback to local workflow if Firebase draft not found
+            const localWorkflow = draftService.getOrCreateWorkflow(sessionDraftId);
+            if (localWorkflow) {
+              setDraftWorkflow(localWorkflow);
+            }
+          }
+          
+          // Load all workflows for draft selector
+          const allWorkflowsData = draftService.getAllWorkflows();
+          setAllWorkflows(allWorkflowsData);
+        } catch (error) {
+          console.warn('Could not load draft workflow for progress tracking:', error);
+          
+          // Fallback to existing method if sync fails
+          try {
+            const localWorkflow = draftService.getOrCreateWorkflow(sessionDraftId);
+            if (localWorkflow) {
+              setDraftWorkflow(localWorkflow);
+            }
+            const allWorkflowsData = draftService.getAllWorkflows();
+            setAllWorkflows(allWorkflowsData);
+          } catch (fallbackError) {
+            console.warn('Fallback workflow loading also failed:', fallbackError);
+          }
+        }
+      }
+    };
+
+    // Load on mount and when location changes
+    loadDraftWorkflow();
+  }, [location.pathname]);
+
+  // Subscribe to workflow progress events for real-time check mark updates
+  useEffect(() => {
+    const handleWorkflowProgressUpdate = (event: any) => {
+      console.log('📈 WorkflowBreadcrumbs received workflow-progress event:', event);
+      
+      // Update draft workflow state with new progress data
+      const sessionDraftId = draftService.getCurrentSessionDraftId();
+      if (sessionDraftId && event.payload.draftId === sessionDraftId) {
+        // Get updated workflow data
+        const updatedWorkflow = draftService.getWorkflow(sessionDraftId);
+        if (updatedWorkflow) {
+          console.log('✅ Refreshing workflow breadcrumbs with updated data');
+          setDraftWorkflow({...updatedWorkflow}); // Force state update
+        }
+      }
+    };
+
+    // Subscribe to workflow-progress events
+    const subscriptionId = subscribe('workflow-progress', handleWorkflowProgressUpdate);
+
+    return () => {
+      unsubscribe(subscriptionId);
+    };
+  }, []);
+
   // Update workflow status based on persistent state and current path
   const updateWorkflowStatus = (steps: WorkflowStep[]): WorkflowStep[] => {
     if (!steps || !Array.isArray(steps)) {
@@ -220,10 +375,10 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
         
         // Check if this step matches the current path
         const isCurrentPage = step.path === currentPath || 
-                            (currentPath.startsWith('/drafts') && step.key === 'drafts') ||
                             (currentPath.includes('timepoints') && step.key === 'timepoints') ||
                             (currentPath.includes('block-configuration') && step.key === 'block-config') ||
                             (currentPath.includes('block-summary-schedule') && step.key === 'summary') ||
+                            (currentPath.includes('connection-schedule') && step.key === 'connections') ||
                             (currentPath.includes('upload') && step.key === 'upload');
         
         // Mark current step as active while preserving completion status
@@ -249,43 +404,51 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
       });
     }
     
-    // Fallback to localStorage-based logic if no persistent workflow
-    const hasScheduleData = localStorage.getItem('currentSummarySchedule');
-    const hasDraftData = localStorage.getItem('currentSchedule');
-    const busScheduleData = localStorage.getItem('busSchedule');
+    // Use draftService-based logic instead of localStorage
+    const hasWorkflowData = !!draftWorkflow;
+    const workflowProgress = draftWorkflow?.overallProgress || 0;
+    const workflowSteps = draftWorkflow?.steps || [];
     
     return steps.map((step, index) => {
       // Check if this step matches the current path
       const isCurrentPage = step.path === currentPath || 
-                          (currentPath.startsWith('/drafts') && step.key === 'drafts') ||
                           (currentPath.includes('timepoints') && step.key === 'timepoints') ||
                           (currentPath.includes('block-configuration') && step.key === 'block-config') ||
                           (currentPath.includes('block-summary-schedule') && step.key === 'summary') ||
+                          (currentPath.includes('connection-schedule') && step.key === 'connections') ||
                           (currentPath.includes('upload') && step.key === 'upload');
       
       // Mark completed steps based on data availability and path progression
       let isCompleted = false;
       
-      switch (step.key) {
-        case 'upload':
-          isCompleted = !!hasDraftData || !!busScheduleData;
-          break;
-        case 'drafts':
-          isCompleted = (!!hasDraftData || !!busScheduleData) && !['/upload', '/drafts'].includes(currentPath);
-          break;
-        case 'timepoints':
-          isCompleted = (!!hasDraftData || !!busScheduleData) && ['/block-configuration', '/block-summary-schedule'].includes(currentPath);
-          break;
-        case 'block-config':
-          isCompleted = (!!hasScheduleData || !!busScheduleData) && currentPath === '/block-summary-schedule';
-          break;
-        case 'summary':
-          isCompleted = false; // Only completed when we're done with the entire workflow
-          break;
-        default:
-          // For other workflows, use simple path-based completion
-          const currentStepIndex = steps.findIndex(s => s.path === currentPath);
-          isCompleted = currentStepIndex > index;
+      // Use draftService workflow step status if available
+      if (hasWorkflowData) {
+        const draftStep = workflowSteps.find((s: any) => s.key === step.key);
+        if (draftStep) {
+          isCompleted = draftStep.status === 'completed';
+        } else {
+          // Fallback to progress-based completion
+          switch (step.key) {
+            case 'upload':
+              isCompleted = workflowProgress > 0;
+              break;
+            case 'timepoints':
+              isCompleted = workflowProgress >= 40;
+              break;
+            case 'block-config':
+              isCompleted = workflowProgress >= 60;
+              break;
+            case 'summary':
+              isCompleted = workflowProgress >= 80;
+              break;
+            default:
+              isCompleted = false;
+          }
+        }
+      } else {
+        // Fallback for when no workflow data available
+        const currentStepIndex = steps.findIndex(s => s.path === currentPath);
+        isCompleted = currentStepIndex > index;
       }
       
       return {
@@ -318,12 +481,11 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
     ];
 
     const pathMappings: { [key: string]: { label: string; icon?: React.ReactNode } } = {
-      'upload': { label: 'Create Draft Schedule', icon: <UploadIcon /> },
-      'drafts': { label: 'Draft Schedules', icon: <DraftsIcon /> },
-      'timepoints': { label: 'TimePoints Analysis', icon: <TimelineIcon /> },
-      'block-configuration': { label: 'Block Configuration', icon: <ConfigIcon /> },
-      'block-summary-schedule': { label: 'Base Schedule', icon: <SummaryIcon /> },
-      'connection-schedule': { label: 'Connection Schedule', icon: <SwapVertIcon /> },
+      'upload': { label: 'Load Data', icon: <UploadIcon /> },
+      'timepoints': { label: 'Optimize Timing', icon: <TimelineIcon /> },
+      'block-configuration': { label: 'Plan Blocks', icon: <ConfigIcon /> },
+      'block-summary-schedule': { label: 'Build Schedule', icon: <SummaryIcon /> },
+      'connection-schedule': { label: 'Create Connections', icon: <SwapVertIcon /> },
       'schedules': { label: 'View Schedules', icon: <SummaryIcon /> },
       'routes': { label: 'Manage Routes', icon: <ConfigIcon /> },
       'tod-shifts': { label: 'Tod Shifts', icon: <ConfigIcon /> },
@@ -391,36 +553,83 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
       // NOTE: navigateToStep requires draftId, skipping for now
     }
     
-    // Preserve state data when navigating between workflow steps
+    // Preserve state data from draftService workflow
     let timePointData = null;
     let serviceBands = null;
+    let blockConfiguration = null;
     
     try {
-      timePointData = localStorage.getItem('currentTimePointData') ? JSON.parse(localStorage.getItem('currentTimePointData')!) : null;
-      serviceBands = localStorage.getItem('currentServiceBands') ? JSON.parse(localStorage.getItem('currentServiceBands')!) : null;
+      // Get data from draftWorkflow instead of localStorage
+      if (draftWorkflow && draftWorkflow.stepData) {
+        timePointData = draftWorkflow.stepData.timepoints?.travelTimeData || null;
+        serviceBands = draftWorkflow.stepData.timepoints?.serviceBands || null;
+        blockConfiguration = draftWorkflow.stepData.blockConfiguration || null;
+      }
     } catch (error) {
-      console.warn('Error parsing localStorage data:', error);
+      console.warn('Error accessing draftWorkflow data:', error);
     }
     
     const scheduleState = location.state;
     
-    const navigationState = {
+    const navigationState: any = {
       timePointData: scheduleState?.timePointData || timePointData,
       serviceBands: scheduleState?.serviceBands || serviceBands,
       deletedPeriods: scheduleState?.deletedPeriods || [],
       timePeriodServiceBands: scheduleState?.timePeriodServiceBands || {},
       scheduleId: scheduleState?.scheduleId,
-      fileName: scheduleState?.fileName
+      fileName: scheduleState?.fileName,
+      blockConfiguration: scheduleState?.blockConfiguration || blockConfiguration,
+      fromWorkflowNavigation: true
     };
     
+    // Special handling for Build Schedule page
+    if (path === '/block-summary-schedule' && blockConfiguration) {
+      // Pass the block configuration data specifically for the Build Schedule page
+      navigationState.bus_block_configurations = blockConfiguration.blocks || [];
+    }
+    
     // Only pass state for workflow pages that need it
-    const workflowPages = ['/timepoints', '/block-configuration', '/block-summary-schedule'];
+    const workflowPages = ['/timepoints', '/block-configuration', '/block-summary-schedule', '/connection-schedule'];
     if (workflowPages.includes(path)) {
       navigate(path, { state: navigationState });
     } else {
       navigate(path);
     }
   };
+
+  // Handle draft selection (from StoryboardProgress)
+  const handleDraftSelect = (selectedWorkflow: any) => {
+    setDraftMenuAnchor(null);
+    setDraftWorkflow(selectedWorkflow);
+    if (selectedWorkflow.draftId) {
+      draftService.setCurrentSessionDraft(selectedWorkflow.draftId);
+    }
+  };
+
+  // Celebration system (from StoryboardProgress)
+  const triggerCelebration = (message: string) => {
+    setCelebrationMessage(message);
+    // Auto-hide after 5 seconds
+    setTimeout(() => setCelebrationMessage(null), 5000);
+  };
+
+  // Monitor progress for celebrations
+  React.useEffect(() => {
+    if (draftWorkflow && draftWorkflow.overallProgress) {
+      const progress = draftWorkflow.overallProgress;
+      
+      // Check for milestone celebrations
+      if (progress === 100) {
+        if (draftService.shouldShowStoryboardCelebration && draftService.shouldShowStoryboardCelebration(draftWorkflow, 'complete')) {
+          triggerCelebration('🎉 Schedule Complete! You\'re a scheduling wizard!');
+        }
+      } else if (progress >= 50 && progress < 60) {
+        if (draftService.shouldShowStoryboardCelebration && draftService.shouldShowStoryboardCelebration(draftWorkflow, 'halfway')) {
+          triggerCelebration('🌟 Halfway there! You\'re doing amazing!');
+        }
+      }
+    }
+  }, [draftWorkflow?.overallProgress]);
 
   return (
     <Paper 
@@ -489,90 +698,214 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
               sx={{ textTransform: 'capitalize' }}
             />
           )}
+          
+          {/* Draft Selector (from StoryboardProgress) */}
+          {draftWorkflow && (
+            <Chip
+              label={draftWorkflow.draftName || 'Draft'}
+              onClick={(e) => setDraftMenuAnchor(e.currentTarget)}
+              onDelete={(e) => setDraftMenuAnchor(e.currentTarget as HTMLElement)}
+              deleteIcon={<EditIcon />}
+              size="small"
+              color="secondary"
+              variant="outlined"
+              sx={{ cursor: 'pointer' }}
+            />
+          )}
         </Box>
 
-        {/* Workflow Stepper */}
+        {/* Enhanced Progress Tracking (from StoryboardProgress) */}
         {showWorkflow && workflowSteps && workflowSteps.length > 0 && (
           <Box>
+            {/* Progress Header */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
               <Typography variant="subtitle2" color="text.secondary">
                 Workflow Progress
               </Typography>
+              {draftWorkflow && (
+                <Typography variant="body2" fontWeight="bold" color="primary" sx={{ ml: 'auto' }}>
+                  {draftWorkflow.overallProgress || 0}%
+                </Typography>
+              )}
               <Tooltip title="This shows your progress through the current workflow">
                 <InfoIcon fontSize="small" color="action" />
               </Tooltip>
             </Box>
-            
-            {isMobile ? (
-              // Mobile: Show current step and navigation
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                {workflowSteps.map((step, index) => {
-                  if (step.status !== 'active') return null;
-                  
-                  return (
-                    <Box key={step.key} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      {getStepIcon(step)}
-                      <Typography variant="body2" fontWeight="medium">
-                        {step.label}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        ({index + 1} of {workflowSteps.length})
-                      </Typography>
-                    </Box>
-                  );
-                })}
+
+            {/* Progress Message */}
+            {draftWorkflow && (
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                  {draftService.getStoryboardProgressMessage(draftWorkflow.overallProgress || 0)}
+                </Typography>
+                <LinearProgress
+                  variant="determinate"
+                  value={draftWorkflow.overallProgress || 0}
+                  sx={{
+                    height: 8,
+                    borderRadius: 4,
+                    backgroundColor: alpha(theme.palette.primary.main, 0.1),
+                    '& .MuiLinearProgress-bar': {
+                      borderRadius: 4,
+                      background: `linear-gradient(90deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`
+                    }
+                  }}
+                />
               </Box>
-            ) : (
-              // Desktop: Full stepper
-              <Stepper activeStep={workflowSteps.findIndex(s => s && s.status === 'active')} alternativeLabel>
-                {workflowSteps.map((step) => (
-                  <Step 
-                    key={step.key} 
-                    completed={step.status === 'completed'}
-                    active={step.status === 'active'}
-                  >
-                    <StepLabel
-                      StepIconComponent={() => getStepIcon(step)}
-                      onClick={() => {
-                        // Allow navigation to completed or active steps
-                        const canNavigate = (step.status === 'completed' || step.status === 'active');
-                        
-                        if (canNavigate) {
-                          handleNavigation(step.path);
-                        }
-                      }}
-                      sx={{
-                        cursor: step.status !== 'pending' ? 'pointer' : 'default',
-                        '& .MuiStepLabel-label': {
-                          fontSize: '0.875rem',
-                          fontWeight: step.status === 'active' ? 'medium' : 'normal'
-                        }
-                      }}
-                    >
-                      <Box>
-                        <Typography 
-                          variant="body2" 
-                          fontWeight={step.isCurrentPage ? 'bold' : (step.status === 'active' ? 'medium' : 'normal')}
-                          color={step.isCurrentPage ? 'primary' : 'inherit'}
-                        >
-                          {step.label}
-                          {step.isCurrentPage && (
-                            <Typography component="span" variant="caption" color="primary" sx={{ ml: 1 }}>
-                              (Current)
-                            </Typography>
-                          )}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {step.description}
-                        </Typography>
-                      </Box>
-                    </StepLabel>
-                  </Step>
-                ))}
-              </Stepper>
             )}
+
+            {/* Step Tips */}
+            {draftWorkflow && (
+              (() => {
+                const currentStep = draftWorkflow.steps?.find((s: any) => s.key === draftWorkflow.currentStep);
+                const currentTip = currentStep ? draftService.getStepTip(currentStep.key) : '';
+                
+                return currentTip ? (
+                  <Box sx={{ 
+                    p: 1.5, 
+                    mb: 2, 
+                    backgroundColor: alpha(theme.palette.info.main, 0.05),
+                    border: `1px solid ${alpha(theme.palette.info.main, 0.2)}`,
+                    borderRadius: 2 
+                  }}>
+                    <Typography variant="caption" color="info.main" fontStyle="italic">
+                      💡 {currentTip}
+                    </Typography>
+                  </Box>
+                ) : null;
+              })()
+            )}
+
+            {/* Compact Step Navigation */}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+              {workflowSteps.map((step, index) => (
+                <Box 
+                  key={step.key}
+                  onClick={() => {
+                    // Special case: Allow navigation to Build Schedule if block config exists
+                    const hasBlockConfig = draftWorkflow?.stepData?.blockConfiguration?.blocks?.length > 0;
+                    const canNavigateToBuildSchedule = step.key === 'summary' && hasBlockConfig;
+                    
+                    const canNavigate = (step.status === 'completed' || step.status === 'active' || canNavigateToBuildSchedule);
+                    if (canNavigate) {
+                      handleNavigation(step.path);
+                    }
+                  }}
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 0.5,
+                    p: 1,
+                    borderRadius: 2,
+                    cursor: (() => {
+                      const hasBlockConfig = draftWorkflow?.stepData?.blockConfiguration?.blocks?.length > 0;
+                      const canNavigateToBuildSchedule = step.key === 'summary' && hasBlockConfig;
+                      return (step.status !== 'pending' || canNavigateToBuildSchedule) ? 'pointer' : 'default';
+                    })(),
+                    backgroundColor: step.isCurrentPage 
+                      ? alpha(theme.palette.primary.main, 0.1)
+                      : 'transparent',
+                    border: step.isCurrentPage
+                      ? `1px solid ${theme.palette.primary.main}`
+                      : '1px solid transparent',
+                    transition: 'all 0.2s ease',
+                    opacity: (() => {
+                      const hasBlockConfig = draftWorkflow?.stepData?.blockConfiguration?.blocks?.length > 0;
+                      const canNavigateToBuildSchedule = step.key === 'summary' && hasBlockConfig;
+                      return (step.status === 'pending' && !canNavigateToBuildSchedule) ? 0.6 : 1;
+                    })(),
+                    animation: step.status === 'active' ? `${pulse} 2s infinite` : 'none',
+                    '&:hover': {
+                      backgroundColor: (() => {
+                        const hasBlockConfig = draftWorkflow?.stepData?.blockConfiguration?.blocks?.length > 0;
+                        const canNavigateToBuildSchedule = step.key === 'summary' && hasBlockConfig;
+                        return (step.status !== 'pending' || canNavigateToBuildSchedule)
+                          ? alpha(theme.palette.primary.main, 0.05)
+                          : 'transparent';
+                      })(),
+                      transform: (() => {
+                        const hasBlockConfig = draftWorkflow?.stepData?.blockConfiguration?.blocks?.length > 0;
+                        const canNavigateToBuildSchedule = step.key === 'summary' && hasBlockConfig;
+                        return (step.status !== 'pending' || canNavigateToBuildSchedule) ? 'translateY(-2px)' : 'none';
+                      })(),
+                      boxShadow: (() => {
+                        const hasBlockConfig = draftWorkflow?.stepData?.blockConfiguration?.blocks?.length > 0;
+                        const canNavigateToBuildSchedule = step.key === 'summary' && hasBlockConfig;
+                        return (step.status !== 'pending' || canNavigateToBuildSchedule)
+                          ? `0 4px 8px ${alpha(theme.palette.primary.main, 0.2)}`
+                          : 'none';
+                      })(),
+                    }
+                  }}
+                >
+                  {getStepIcon(step)}
+                  <Typography 
+                    variant="caption" 
+                    fontWeight={step.isCurrentPage ? 'bold' : 'medium'}
+                    color={step.isCurrentPage ? 'primary' : 'text.primary'}
+                  >
+                    {step.label}
+                  </Typography>
+                  {index < workflowSteps.length - 1 && (
+                    <NavigateNextIcon fontSize="small" color="disabled" sx={{ mx: 0.5 }} />
+                  )}
+                </Box>
+              ))}
+            </Box>
           </Box>
         )}
+
+        {/* Draft selector menu (from StoryboardProgress) */}
+        <Menu
+          anchorEl={draftMenuAnchor}
+          open={Boolean(draftMenuAnchor)}
+          onClose={() => setDraftMenuAnchor(null)}
+        >
+          <MenuItem disabled>
+            <Typography variant="caption" color="text.secondary">
+              Recent Schedules
+            </Typography>
+          </MenuItem>
+          {allWorkflows.map((w) => (
+            <MenuItem
+              key={w.draftId}
+              onClick={() => handleDraftSelect(w)}
+              selected={w.draftId === draftWorkflow?.draftId}
+            >
+              <Box>
+                <Typography variant="body2">{w.draftName}</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {w.overallProgress || 0}% complete
+                </Typography>
+              </Box>
+            </MenuItem>
+          ))}
+        </Menu>
+
+        {/* Celebration Snackbar (from StoryboardProgress) */}
+        <Snackbar
+          open={celebrationMessage !== null}
+          autoHideDuration={5000}
+          onClose={() => setCelebrationMessage(null)}
+          anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+        >
+          <Alert 
+            onClose={() => setCelebrationMessage(null)} 
+            severity="success"
+            icon={<CelebrationIcon />}
+            sx={{ 
+              fontSize: '1.1rem',
+              alignItems: 'center',
+              background: `linear-gradient(45deg, ${theme.palette.success.main} 30%, ${theme.palette.primary.main} 90%)`,
+              color: 'white',
+              '& .MuiAlert-icon': {
+                color: 'white'
+              }
+            }}
+          >
+            {celebrationMessage}
+          </Alert>
+        </Snackbar>
       </Box>
     </Paper>
   );

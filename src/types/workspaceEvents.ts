@@ -185,6 +185,23 @@ export interface KeyboardShortcutEvent extends BaseWorkspaceEvent {
 }
 
 /**
+ * Draft update events - when draft names or metadata change
+ */
+export interface DraftUpdateEvent extends BaseWorkspaceEvent {
+  type: 'draft-update';
+  payload: {
+    draftId: string;
+    draftName: string;
+    previousName?: string;
+    updateType: 'name' | 'content' | 'metadata';
+    metadata?: {
+      lastModified: string;
+      modifiedBy?: string;
+    };
+  };
+}
+
+/**
  * Union type of all workspace events
  */
 export type WorkspaceEvent = 
@@ -198,7 +215,8 @@ export type WorkspaceEvent =
   | PerformanceEvent
   | NotificationEvent
   | ContextMenuEvent
-  | KeyboardShortcutEvent;
+  | KeyboardShortcutEvent
+  | DraftUpdateEvent;
 
 /**
  * Event input type for emit function - preserves discriminated union
@@ -215,7 +233,8 @@ export type WorkspaceEventInput =
   | Omit<PerformanceEvent, 'id' | 'timestamp'>
   | Omit<NotificationEvent, 'id' | 'timestamp'>
   | Omit<ContextMenuEvent, 'id' | 'timestamp'>
-  | Omit<KeyboardShortcutEvent, 'id' | 'timestamp'>;
+  | Omit<KeyboardShortcutEvent, 'id' | 'timestamp'>
+  | Omit<DraftUpdateEvent, 'id' | 'timestamp'>;
 
 /**
  * Event handler type

@@ -23,6 +23,7 @@ import { WorkspaceEvent, WorkspaceEventInput } from '../types/workspaceEvents';
 import { ValidationResult } from '../utils/validator';
 import { useAuth } from './AuthContext';
 import { useFeatureFlags } from './FeatureFlagContext';
+import { AUTO_SAVE_CONFIG, AUTO_SAVE_CONTEXTS } from '../config/autoSave';
 
 /**
  * Panel state management
@@ -104,6 +105,7 @@ type WorkspaceAction =
   | { type: 'UPDATE_PANEL_POSITION'; payload: { id: string; position: PanelState['position'] } }
   | { type: 'SET_SCHEDULE_DATA'; payload: Partial<ScheduleDataState> }
   | { type: 'SET_CURRENT_DRAFT'; payload: UnifiedDraftCompat | null }
+  | { type: 'UPDATE_DRAFT_NAME'; payload: { draftId: string; draftName: string } }
   | { type: 'SET_VALIDATION_STATE'; payload: Partial<WorkspaceValidationState> }
   | { type: 'SET_WORKFLOW_STEP'; payload: { step: WorkspaceState['currentStep']; progress: number; canProceed: boolean } }
   | { type: 'SET_LAYOUT'; payload: 'wizard' | 'command-center' }
@@ -249,6 +251,17 @@ function workspaceReducer(state: WorkspaceState, action: WorkspaceAction): Works
         scheduleData: {
           ...state.scheduleData,
           currentDraft: action.payload
+        }
+      };
+      
+    case 'UPDATE_DRAFT_NAME':
+      return {
+        ...state,
+        scheduleData: {
+          ...state.scheduleData,
+          currentDraft: state.scheduleData.currentDraft?.draftId === action.payload.draftId
+            ? { ...state.scheduleData.currentDraft, draftName: action.payload.draftName }
+            : state.scheduleData.currentDraft
         }
       };
       
@@ -438,19 +451,34 @@ export const WorkspaceProvider: React.FC<WorkspaceProviderProps> = ({ children }
       })
     );
 
+    // Subscribe to draft update events
+    subscriptions.push(
+      subscribe('draft-update', (event) => {
+        if (event.type === 'draft-update' && event.payload.updateType === 'name') {
+          dispatch({ 
+            type: 'UPDATE_DRAFT_NAME', 
+            payload: { 
+              draftId: event.payload.draftId, 
+              draftName: event.payload.draftName 
+            } 
+          });
+        }
+      })
+    );
+
     return () => {
       subscriptions.forEach(id => unsubscribe(id));
     };
   }, []);
 
   /**
-   * Auto-save functionality
+   * Auto-save functionality with optimized timing
    */
   useEffect(() => {
     if (state.scheduleData.isDirty && state.scheduleData.autoSaveEnabled) {
       const autoSaveTimer = setTimeout(() => {
         saveDraft();
-      }, 5000); // Auto-save after 5 seconds of inactivity
+      }, AUTO_SAVE_CONFIG.NAVIGATION_AUTO_SAVE); // 3s optimal interval
 
       return () => clearTimeout(autoSaveTimer);
     }

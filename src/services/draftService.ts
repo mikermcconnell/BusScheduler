@@ -33,6 +33,7 @@ import { ParsedExcelData } from '../utils/excelParser';
 import { ParsedCsvData } from '../utils/csvParser';
 import { ValidationResult } from '../utils/validator';
 import { sanitizeText } from '../utils/inputSanitizer';
+import { emit } from './workspaceEventBus';
 
 // Enhanced draft interface for compatibility with unifiedDraftService
 export interface UnifiedDraftCompat {
@@ -157,6 +158,7 @@ export interface DraftWorkflowState {
   lastModified: string;
   createdAt: string;
   celebrationsShown?: string[]; // Track which celebrations have been shown
+  stepData?: any; // Store step-specific data synced from Firebase
 }
 
 // Fun messages for different progress levels
@@ -355,6 +357,14 @@ class UnifiedDraftService {
       await this.saveDraftInternal(unifiedDraft);
       this.setCurrentSessionDraft(draftId);
       
+      // Mark upload step as completed in workflow progress
+      this.updateStepStatus(draftId, 'upload', 'completed', 100, {
+        uploadCompleted: true,
+        fileName: fileName,
+        fileType: fileType,
+        dataSize: uploadedData ? Object.keys(uploadedData).length : 0
+      });
+      
       return { success: true, draftId };
     } catch (error: any) {
       console.error('Draft creation failed:', error);
@@ -430,6 +440,13 @@ class UnifiedDraftService {
       const serializedDraft = this.serializeForFirebase(updatedDraft);
       await setDoc(draftRef, serializedDraft);
       
+      // Mark timepoints step as completed in workflow progress
+      this.updateStepStatus(draftId, 'timepoints', 'completed', 100, {
+        analysisCompleted: true,
+        serviceBandsCount: analysisData.serviceBands?.length || 0,
+        travelTimeDataCount: analysisData.travelTimeData?.length || 0
+      });
+      
       console.log('🔥 Successfully updated timepoints in Firebase');
       return { 
         success: true, 
@@ -483,6 +500,14 @@ class UnifiedDraftService {
       const serializedDraft = this.serializeForFirebase(updatedDraft);
       await setDoc(draftRef, serializedDraft);
       
+      // Mark blocks step as completed in workflow progress
+      this.updateStepStatus(draftId, 'blocks', 'completed', 100, {
+        configurationCompleted: true,
+        numberOfBuses: blockConfig.numberOfBuses,
+        cycleTimeMinutes: blockConfig.cycleTimeMinutes,
+        blockCount: blockConfig.blockConfigurations?.length || 0
+      });
+      
       console.log('🔥 Updated block configuration in Firebase');
       return { 
         success: true, 
@@ -534,6 +559,13 @@ class UnifiedDraftService {
       const serializedDraft = this.serializeForFirebase(updatedDraft);
       await setDoc(draftRef, serializedDraft);
       
+      // Mark summary step as completed in workflow progress
+      this.updateStepStatus(draftId, 'summary', 'completed', 100, {
+        scheduleGenerated: true,
+        tripCount: summaryData.metadata?.performanceMetrics?.tripCount || 0,
+        generationTimeMs: summaryData.metadata?.performanceMetrics?.generationTimeMs || 0
+      });
+      
       console.log('🔥 Updated summary schedule in Firebase');
       return { 
         success: true, 
@@ -569,12 +601,21 @@ class UnifiedDraftService {
         
         // Deserialize uploaded data to restore nested arrays
         if (data.originalData?.uploadedData) {
+          console.log('🔥 Deserializing uploadedData for draft:', draftId);
           data.originalData.uploadedData = this.deserializeFromFirebase(data.originalData.uploadedData);
+        }
+        
+        // Also deserialize timepointsAnalysis data if present
+        if (data.timepointsAnalysis?.travelTimeData) {
+          data.timepointsAnalysis.travelTimeData = this.deserializeFromFirebase(data.timepointsAnalysis.travelTimeData);
+        }
+        if (data.timepointsAnalysis?.serviceBands) {
+          data.timepointsAnalysis.serviceBands = this.deserializeFromFirebase(data.timepointsAnalysis.serviceBands);
         }
         
         // Ensure draft has all required unified fields
         const unifiedDraft = this.ensureUnifiedFormat(data);
-        console.log('🔥 Unified draft loaded from Firebase:', draftId);
+        console.log('🔥 Unified draft loaded from Firebase:', draftId, 'has uploadedData:', !!unifiedDraft.originalData?.uploadedData);
         return unifiedDraft;
       }
       
@@ -986,6 +1027,15 @@ class UnifiedDraftService {
   setCurrentSessionDraft(draftId: string): void {
     sessionStorage.setItem(this.SESSION_KEY, draftId);
     localStorage.setItem(this.SESSION_KEY, draftId); // Backup in localStorage
+    console.log('📝 Set current session draft to:', draftId);
+  }
+  
+  /**
+   * Force set the session to use the working draft for consolidation
+   */
+  forceWorkingDraftSession(workingDraftId: string): void {
+    console.log('🔧 Forcing session to use working draft:', workingDraftId);
+    this.setCurrentSessionDraft(workingDraftId);
   }
   
   clearCurrentSessionDraft(): void {
@@ -1051,6 +1101,8 @@ class UnifiedDraftService {
       hasDraftName: !!data.draftName,
       hasCurrentStep: !!data.currentStep,
       hasOriginalData: !!data.originalData,
+      hasUploadedData: !!data.originalData?.uploadedData,
+      uploadedDataKeys: data.originalData?.uploadedData ? Object.keys(data.originalData.uploadedData).slice(0, 5) : [],
       originalFileName: data.originalData?.fileName,
       currentStep: data.currentStep
     });
@@ -1060,10 +1112,20 @@ class UnifiedDraftService {
     // If it's already a WorkflowDraftState, convert it
     if (data.currentStep && data.originalData && data.metadata && !data.draftName) {
       console.log('🔧 Converting WorkflowDraftState to UnifiedDraftCompat');
+      
+      // Preserve the originalData with all its contents including uploadedData
+      const originalData = { ...data.originalData };
+      
+      // Make sure uploadedData is preserved
+      if (data.originalData.uploadedData) {
+        originalData.uploadedData = data.originalData.uploadedData;
+        console.log('🔧 Preserving uploadedData in conversion, data exists:', !!originalData.uploadedData);
+      }
+      
       return {
         draftId: data.draftId,
         draftName: data.originalData.fileName?.replace(/\.[^/.]+$/, '') || 'Draft',
-        originalData: data.originalData,
+        originalData: originalData, // Use the preserved originalData
         currentStep: data.currentStep === 'ready-to-publish' ? 'ready' : data.currentStep,
         progress: this.calculateProgress(data.currentStep),
         stepData: {
@@ -1123,6 +1185,7 @@ class UnifiedDraftService {
       draftName: draft.draftName,
       currentStep: draft.currentStep,
       hasOriginalData: !!draft.originalData,
+      hasUploadedData: !!draft.originalData?.uploadedData,
       originalFileName: draft.originalData?.fileName
     });
 
@@ -1143,11 +1206,11 @@ class UnifiedDraftService {
       }
     };
 
-    // Ensure originalData exists and has required properties
+    // Preserve originalData exactly as it is - don't create empty fallback
     const safeOriginalData = draft.originalData || {
       fileName: draft.draftName || 'Unknown Draft',
       fileType: 'csv' as const,
-      uploadedData: {} as any,
+      uploadedData: null as any, // Don't create empty object, use null
       uploadTimestamp: draft.metadata.createdAt
     };
 
@@ -1224,7 +1287,7 @@ class UnifiedDraftService {
       {
         key: 'upload',
         title: 'Upload Data',
-        funTitle: 'Start Your Journey',
+        funTitle: 'Load Data',
         description: 'Drop your schedule data here and let\'s begin crafting something amazing!',
         icon: 'CloudUpload',
         color: '#E3E8F0',
@@ -1234,7 +1297,7 @@ class UnifiedDraftService {
       {
         key: 'drafts',
         title: 'Draft Review',
-        funTitle: 'Preview the Blueprint',
+        funTitle: 'Draft Review',
         description: 'Take a peek at what we\'ve discovered in your data',
         icon: 'Drafts',
         color: '#E8D5F2',
@@ -1244,7 +1307,7 @@ class UnifiedDraftService {
       {
         key: 'timepoints',
         title: 'TimePoints Analysis',
-        funTitle: 'Find Your Rhythm',
+        funTitle: 'Review Times',
         description: 'Let\'s discover the perfect timing for your routes',
         icon: 'Timeline',
         color: '#FFE4D1',
@@ -1254,7 +1317,7 @@ class UnifiedDraftService {
       {
         key: 'block-config',
         title: 'Block Configuration',
-        funTitle: 'Build Your Fleet',
+        funTitle: 'Plan Blocks',
         description: 'Arrange your buses like pieces on a chess board',
         icon: 'Build',
         color: '#D4F1E4',
@@ -1264,7 +1327,7 @@ class UnifiedDraftService {
       {
         key: 'summary',
         title: 'Base Schedule',
-        funTitle: 'Bring It to Life',
+        funTitle: 'Build Schedule',
         description: 'Watch your schedule come together like magic',
         icon: 'ViewList',
         color: '#D1E7FF',
@@ -1274,7 +1337,7 @@ class UnifiedDraftService {
       {
         key: 'connections',
         title: 'Connection Schedule',
-        funTitle: 'Connect the Dots',
+        funTitle: 'Add Connections',
         description: 'Make sure every passenger can get where they need to go',
         icon: 'SwapVert',
         color: '#FFE8B8',
@@ -1340,13 +1403,13 @@ class UnifiedDraftService {
   /**
    * Update step status with animations and celebrations
    */
-  updateStepStatus(
+  async updateStepStatus(
     draftId: string,
     stepKey: string,
     status: 'not-started' | 'in-progress' | 'completed',
     progress?: number,
     metadata?: any
-  ): DraftWorkflowState | null {
+  ): Promise<DraftWorkflowState | null> {
     const workflow = this.getWorkflow(draftId);
     if (!workflow) return null;
 
@@ -1381,6 +1444,62 @@ class UnifiedDraftService {
     workflow.overallProgress = this.calculateWorkflowProgress(workflow.steps);
 
     this.saveWorkflow(workflow);
+    
+    // Also persist to Firebase for proper sync
+    try {
+      const draftRef = doc(db, this.COLLECTION_NAME, draftId);
+      const draftSnap = await getDoc(draftRef);
+      
+      if (draftSnap.exists()) {
+        // Update the Firebase draft with step completion status
+        const updateData: any = {
+          currentStep: workflow.currentStep,
+          progress: workflow.overallProgress,
+          'metadata.lastModifiedAt': serverTimestamp(),
+          'metadata.lastModifiedStep': stepKey
+        };
+        
+        // Store step completion data
+        if (!draftSnap.data().stepData) {
+          updateData.stepData = {};
+        }
+        
+        updateData[`stepData.${stepKey}`] = {
+          status,
+          completedAt: status === 'completed' ? new Date().toISOString() : null,
+          progress: progress || 0,
+          metadata
+        };
+        
+        await setDoc(draftRef, updateData, { merge: true });
+        console.log(`✅ Step ${stepKey} status (${status}) persisted to Firebase`);
+      }
+    } catch (error) {
+      console.error('Failed to persist step status to Firebase:', error);
+      // Don't fail the operation if Firebase update fails - localStorage is still updated
+    }
+
+    // Emit workflow progress event for real-time UI updates
+    try {
+      // Map workflow step keys to expected values
+      const currentStepMapped = workflow.currentStep === 'block-config' ? 'blocks' : 
+                               workflow.currentStep === 'ready-to-publish' ? 'summary' : 
+                               workflow.currentStep as 'upload' | 'timepoints' | 'blocks' | 'summary' | 'ready-to-publish';
+      
+      emit({
+        type: 'workflow-progress',
+        source: 'DraftService',
+        priority: 1,
+        payload: {
+          currentStep: currentStepMapped,
+          progress: workflow.overallProgress || 0,
+          canProceed: status === 'completed'
+        }
+      });
+    } catch (eventError) {
+      console.warn('Failed to emit workflow progress event:', eventError);
+    }
+    
     return workflow;
   }
 
@@ -1476,14 +1595,14 @@ class UnifiedDraftService {
   /**
    * Complete current step and move to next (UI workflow)
    */
-  completeCurrentStep(draftId: string, metadata?: any): DraftWorkflowState | null {
+  async completeCurrentStep(draftId: string, metadata?: any): Promise<DraftWorkflowState | null> {
     const workflow = this.getWorkflow(draftId);
     if (!workflow) return null;
 
     const currentStep = workflow.steps.find(s => s.key === workflow.currentStep);
     if (!currentStep) return null;
 
-    return this.updateStepStatus(draftId, currentStep.key, 'completed', 100, metadata);
+    return await this.updateStepStatus(draftId, currentStep.key, 'completed', 100, metadata);
   }
 
   /**
@@ -1554,10 +1673,10 @@ class UnifiedDraftService {
   /**
    * Complete step (compatibility with old workflowStateService)
    */
-  completeStep(stepKey: string, data?: any): any {
+  async completeStep(stepKey: string, data?: any): Promise<any> {
     const draftId = this.getCurrentSessionDraftId();
     if (draftId) {
-      return this.completeCurrentStep(draftId, data);
+      return await this.completeCurrentStep(draftId, data);
     }
     return null;
   }

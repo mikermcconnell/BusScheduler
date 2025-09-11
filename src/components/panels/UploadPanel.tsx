@@ -57,6 +57,7 @@ import { scheduleService, ScheduleGenerationOptions } from '../../services/sched
 import { SummarySchedule } from '../../types/schedule';
 import { CalculationResults, TimeBand } from '../../utils/calculator';
 import { useWorkflowDraft } from '../../hooks/useWorkflowDraft';
+import { AUTO_SAVE_CONFIG } from '../../config/autoSave';
 import { draftService } from '../../services/draftService';
 import DraftNamingDialog, { DraftNamingResult } from '../DraftNamingDialog';
 import { useWorkspace } from '../../contexts/WorkspaceContext';
@@ -168,7 +169,7 @@ export const UploadPanel: React.FC<PanelProps> = ({ panelId, data, onClose, onMi
 
     autoSaveTimeoutRef.current = setTimeout(() => {
       autoSaveDraft();
-    }, 5000); // 5 second delay
+    }, AUTO_SAVE_CONFIG.NAVIGATION_AUTO_SAVE); // 3s optimal auto-save delay
 
     return () => {
       if (autoSaveTimeoutRef.current) {

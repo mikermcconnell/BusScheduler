@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import DraftNameHeader from '../components/DraftNameHeader';
 import {
   Typography,
   Card,
@@ -115,6 +116,9 @@ const SummarySchedule: React.FC = () => {
 
   return (
     <Box>
+      {/* Draft Name Header */}
+      <DraftNameHeader />
+
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
         <Box>
           <Button

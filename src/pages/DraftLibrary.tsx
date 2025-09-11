@@ -3,120 +3,76 @@ import {
   Box,
   Container,
   Typography,
-  TextField,
-  InputAdornment,
+  Alert,
+  Grid,
+  Card,
+  CardContent,
+  CardActions,
+  Button,
+  Chip,
+  LinearProgress,
+  Skeleton,
+  Paper,
+  Stack,
+  Divider,
   IconButton,
   Menu,
   MenuItem,
-  Chip,
-  Paper,
-  CircularProgress,
-  Alert,
-  Fab,
-  Tooltip,
-  FormControl,
-  InputLabel,
-  Select,
-  SelectChangeEvent
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField
 } from '@mui/material';
 import {
-  Search as SearchIcon,
-  FilterList as FilterListIcon,
-  Sort as SortIcon,
-  Add as AddIcon,
-  Refresh as RefreshIcon,
-  GridView as GridViewIcon,
-  ViewList as ViewListIcon
+  PlayArrow as OpenIcon,
+  Delete as DeleteIcon,
+  Edit as EditIcon,
+  MoreVert as MoreVertIcon,
+  FolderOpen as FolderIcon,
+  Schedule as ScheduleIcon,
+  CloudUpload as UploadIcon,
+  Refresh as RefreshIcon
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
-import { WorkflowDraftState } from '../types/workflow';
-import { draftService } from '../services/draftService';
-import DraftLibraryCard from '../components/DraftLibraryCard';
-import DraftUploadZone from '../components/DraftUploadZone';
-
-type SortBy = 'name' | 'created' | 'modified' | 'progress';
-type FilterBy = 'all' | 'upload' | 'timepoints' | 'blocks' | 'summary' | 'ready-to-publish';
-type ViewMode = 'grid' | 'list';
+import { draftService, UnifiedDraftCompat } from '../services/draftService';
 
 const DraftLibrary: React.FC = () => {
   const navigate = useNavigate();
-  const [drafts, setDrafts] = useState<WorkflowDraftState[]>([]);
-  const [filteredDrafts, setFilteredDrafts] = useState<WorkflowDraftState[]>([]);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [sortBy, setSortBy] = useState<SortBy>('modified');
-  const [filterBy, setFilterBy] = useState<FilterBy>('all');
-  const [viewMode, setViewMode] = useState<ViewMode>('grid');
-  const [showUploadZone, setShowUploadZone] = useState(false);
-  const [sortMenuAnchor, setSortMenuAnchor] = useState<null | HTMLElement>(null);
+  const [loading, setLoading] = useState(true);
+  const [drafts, setDrafts] = useState<UnifiedDraftCompat[]>([]);
+  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [selectedDraft, setSelectedDraft] = useState<UnifiedDraftCompat | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [newDraftName, setNewDraftName] = useState('');
 
-  // Load drafts from Firebase
+  // Load drafts on component mount
+  useEffect(() => {
+    loadDrafts();
+  }, []);
+
   const loadDrafts = async () => {
-    setLoading(true);
-    setError(null);
     try {
-      const loadedDrafts = await draftService.getAllDrafts();
-      setDrafts(loadedDrafts);
-      setFilteredDrafts(loadedDrafts);
-    } catch (err: any) {
-      setError('Failed to load drafts: ' + err.message);
+      setLoading(true);
+      const allDrafts = await draftService.getAllDraftsUnified();
+      setDrafts(allDrafts);
+      setError(null);
+    } catch (err) {
+      setError('Failed to load drafts. Please try again.');
+      console.error('Error loading drafts:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  // Initial load
-  useEffect(() => {
-    loadDrafts();
-  }, []);
-
-  // Filter and sort drafts
-  useEffect(() => {
-    let filtered = [...drafts];
-
-    // Apply search filter
-    if (searchTerm) {
-      filtered = filtered.filter(draft =>
-        draft.originalData.fileName.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    }
-
-    // Apply status filter
-    if (filterBy !== 'all') {
-      filtered = filtered.filter(draft => draft.currentStep === filterBy);
-    }
-
-    // Apply sorting
-    filtered.sort((a, b) => {
-      switch (sortBy) {
-        case 'name':
-          return a.originalData.fileName.localeCompare(b.originalData.fileName);
-        case 'created':
-          return new Date(b.metadata.createdAt).getTime() - new Date(a.metadata.createdAt).getTime();
-        case 'modified':
-          return new Date(b.metadata.lastModifiedAt).getTime() - new Date(a.metadata.lastModifiedAt).getTime();
-        case 'progress':
-          const stepOrder = ['upload', 'timepoints', 'blocks', 'summary', 'ready-to-publish'];
-          return stepOrder.indexOf(b.currentStep) - stepOrder.indexOf(a.currentStep);
-        default:
-          return 0;
-      }
-    });
-
-    setFilteredDrafts(filtered);
-  }, [drafts, searchTerm, sortBy, filterBy]);
-
-  // Handle draft actions
-  const handleOpenDraft = async (draft: WorkflowDraftState) => {
-    // Set as current session draft
+  const handleOpenDraft = (draft: UnifiedDraftCompat) => {
+    // Set as current session draft and navigate to appropriate step
     draftService.setCurrentSessionDraft(draft.draftId);
     
-    // Navigate to appropriate workflow step
+    // Navigate based on current step
     switch (draft.currentStep) {
-      case 'upload':
-        navigate('/upload');
-        break;
       case 'timepoints':
         navigate('/timepoints');
         break;
@@ -128,166 +84,142 @@ const DraftLibrary: React.FC = () => {
         navigate('/summary-schedule');
         break;
       default:
-        navigate('/upload');
+        navigate('/timepoints'); // Default to timepoints for any draft
     }
   };
 
-  const handleDeleteDraft = async (draftId: string) => {
-    if (window.confirm('Are you sure you want to delete this draft?')) {
-      try {
-        await draftService.deleteDraft(draftId);
-        await loadDrafts(); // Reload the list
-      } catch (err: any) {
-        setError('Failed to delete draft: ' + err.message);
-      }
-    }
+  const handleMenuClick = (event: React.MouseEvent<HTMLElement>, draft: UnifiedDraftCompat) => {
+    setAnchorEl(event.currentTarget);
+    setSelectedDraft(draft);
   };
 
-  const handleDuplicateDraft = async (draft: WorkflowDraftState) => {
+  const handleMenuClose = () => {
+    setAnchorEl(null);
+    setSelectedDraft(null);
+  };
+
+  const handleDeleteClick = () => {
+    handleMenuClose();
+    setDeleteDialogOpen(true);
+  };
+
+  const handleRenameClick = () => {
+    if (selectedDraft) {
+      setNewDraftName(selectedDraft.draftName);
+      setRenameDialogOpen(true);
+    }
+    handleMenuClose();
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!selectedDraft) return;
+    
     try {
-      // Create a new draft with the same data
-      const result = await draftService.createDraftFromUpload(
-        draft.originalData.fileName + ' (Copy)',
-        draft.originalData.fileType,
-        draft.originalData.uploadedData
-      );
-      
+      const result = await draftService.deleteDraft(selectedDraft.draftId);
       if (result.success) {
-        await loadDrafts(); // Reload the list
+        // Remove from local state
+        setDrafts(prev => prev.filter(d => d.draftId !== selectedDraft.draftId));
+        setError(null);
       } else {
-        setError('Failed to duplicate draft: ' + result.error);
+        setError(result.error || 'Failed to delete draft');
       }
-    } catch (err: any) {
-      setError('Failed to duplicate draft: ' + err.message);
+    } catch (err) {
+      setError('Failed to delete draft. Please try again.');
+    } finally {
+      setDeleteDialogOpen(false);
+      setSelectedDraft(null);
     }
   };
 
-  const handleUploadComplete = async () => {
-    setShowUploadZone(false);
-    await loadDrafts();
+  const handleRenameConfirm = async () => {
+    if (!selectedDraft || !newDraftName.trim()) return;
+    
+    try {
+      const draft = { ...selectedDraft, draftName: newDraftName.trim() };
+      const result = await draftService.saveDraft(draft, 'current-user');
+      if (result.success) {
+        // Update local state
+        setDrafts(prev => prev.map(d => 
+          d.draftId === selectedDraft.draftId ? draft : d
+        ));
+        setError(null);
+      } else {
+        setError(result.error || 'Failed to rename draft');
+      }
+    } catch (err) {
+      setError('Failed to rename draft. Please try again.');
+    } finally {
+      setRenameDialogOpen(false);
+      setSelectedDraft(null);
+      setNewDraftName('');
+    }
   };
 
-  const getStepProgress = (step: WorkflowDraftState['currentStep']): number => {
-    const progressMap = {
-      'upload': 20,
-      'timepoints': 40,
-      'blocks': 60,
-      'summary': 80,
-      'ready-to-publish': 100
-    };
-    return progressMap[step] || 0;
-  };
-
-  const getStepLabel = (step: WorkflowDraftState['currentStep']): string => {
-    const labelMap = {
+  const getStepDisplayName = (step: string) => {
+    const stepNames = {
       'upload': 'Uploaded',
-      'timepoints': 'Timepoints Analyzed',
-      'blocks': 'Blocks Configured',
-      'summary': 'Summary Generated',
+      'timepoints': 'TimePoints Analysis',
+      'blocks': 'Block Configuration',
+      'summary': 'Summary Schedule',
       'ready-to-publish': 'Ready to Publish'
     };
-    return labelMap[step] || 'Unknown';
+    return stepNames[step as keyof typeof stepNames] || step;
   };
 
+  const getStepColor = (step: string) => {
+    const colors = {
+      'upload': 'default',
+      'timepoints': 'primary',
+      'blocks': 'secondary',
+      'summary': 'success',
+      'ready-to-publish': 'warning'
+    };
+    return colors[step as keyof typeof colors] || 'default';
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+
   return (
-    <Container maxWidth="xl" sx={{ py: 4 }}>
+    <Container maxWidth="lg" sx={{ py: 4 }}>
       {/* Header */}
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Typography variant="h4" fontWeight="bold" color="primary">
-          📚 Draft Library
-        </Typography>
-        <Box display="flex" gap={1}>
-          <Tooltip title="Refresh drafts">
-            <IconButton onClick={loadDrafts} color="primary">
-              <RefreshIcon />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title={viewMode === 'grid' ? 'List view' : 'Grid view'}>
-            <IconButton 
-              onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
-              color="primary"
+      <Box mb={4}>
+        <Box display="flex" justifyContent="space-between" alignItems="flex-start">
+          <Box>
+            <Typography variant="h4" fontWeight="bold" color="primary" gutterBottom>
+              Draft Library
+            </Typography>
+            <Typography variant="body1" color="text.secondary">
+              View and manage your schedule drafts. Continue working on existing drafts or start fresh.
+            </Typography>
+          </Box>
+          <Box display="flex" gap={1}>
+            <Button
+              variant="outlined"
+              startIcon={<RefreshIcon />}
+              onClick={loadDrafts}
+              disabled={loading}
             >
-              {viewMode === 'grid' ? <ViewListIcon /> : <GridViewIcon />}
-            </IconButton>
-          </Tooltip>
+              Refresh
+            </Button>
+            <Button
+              variant="contained"
+              startIcon={<UploadIcon />}
+              onClick={() => navigate('/upload')}
+            >
+              New Schedule
+            </Button>
+          </Box>
         </Box>
       </Box>
-
-      {/* Description */}
-      <Typography variant="body1" color="text.secondary" mb={3}>
-        Manage all your draft schedules in one place. Upload new files, continue working on existing drafts, or organize your schedule library.
-      </Typography>
-
-      {/* Upload Zone */}
-      {showUploadZone && (
-        <Box mb={3}>
-          <DraftUploadZone 
-            onUploadComplete={handleUploadComplete}
-            onCancel={() => setShowUploadZone(false)}
-          />
-        </Box>
-      )}
-
-      {/* Search and Filter Bar */}
-      <Paper elevation={1} sx={{ p: 2, mb: 3 }}>
-        <Box display="flex" flexWrap="wrap" gap={2} alignItems="center">
-          <Box flex={{ xs: '1 1 100%', md: '1 1 33%' }}>
-            <TextField
-              fullWidth
-              size="small"
-              placeholder="Search drafts..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchIcon />
-                  </InputAdornment>
-                ),
-              }}
-            />
-          </Box>
-          <Box flex={{ xs: '1 1 48%', md: '1 1 24%' }}>
-            <FormControl fullWidth size="small">
-              <InputLabel>Filter by Status</InputLabel>
-              <Select
-                value={filterBy}
-                label="Filter by Status"
-                onChange={(e: SelectChangeEvent) => setFilterBy(e.target.value as FilterBy)}
-              >
-                <MenuItem value="all">All Drafts</MenuItem>
-                <MenuItem value="upload">Uploaded</MenuItem>
-                <MenuItem value="timepoints">Timepoints</MenuItem>
-                <MenuItem value="blocks">Blocks</MenuItem>
-                <MenuItem value="summary">Summary</MenuItem>
-                <MenuItem value="ready-to-publish">Ready</MenuItem>
-              </Select>
-            </FormControl>
-          </Box>
-          <Box flex={{ xs: '1 1 48%', md: '1 1 24%' }}>
-            <FormControl fullWidth size="small">
-              <InputLabel>Sort by</InputLabel>
-              <Select
-                value={sortBy}
-                label="Sort by"
-                onChange={(e: SelectChangeEvent) => setSortBy(e.target.value as SortBy)}
-              >
-                <MenuItem value="modified">Last Modified</MenuItem>
-                <MenuItem value="created">Date Created</MenuItem>
-                <MenuItem value="name">Name</MenuItem>
-                <MenuItem value="progress">Progress</MenuItem>
-              </Select>
-            </FormControl>
-          </Box>
-          <Box flex={{ xs: '1 1 100%', md: '0 0 auto' }}>
-            <Chip 
-              label={`${filteredDrafts.length} drafts`}
-              color="primary"
-              variant="outlined"
-            />
-          </Box>
-        </Box>
-      </Paper>
 
       {/* Error Display */}
       {error && (
@@ -297,73 +229,206 @@ const DraftLibrary: React.FC = () => {
       )}
 
       {/* Loading State */}
-      {loading && (
-        <Box display="flex" justifyContent="center" py={8}>
-          <CircularProgress />
-        </Box>
-      )}
-
-      {/* Drafts Grid/List */}
-      {!loading && filteredDrafts.length === 0 && (
-        <Paper sx={{ p: 8, textAlign: 'center' }}>
-          <Typography variant="h6" color="text.secondary" gutterBottom>
-            {searchTerm || filterBy !== 'all' 
-              ? 'No drafts match your search criteria'
-              : 'No drafts yet'}
-          </Typography>
-          <Typography variant="body2" color="text.secondary" mb={3}>
-            {searchTerm || filterBy !== 'all'
-              ? 'Try adjusting your filters'
-              : 'Upload a CSV file to create your first draft'}
-          </Typography>
-          {!searchTerm && filterBy === 'all' && (
-            <Box mt={2}>
-              <Fab
-                variant="extended"
-                color="primary"
-                onClick={() => setShowUploadZone(true)}
-              >
-                <AddIcon sx={{ mr: 1 }} />
-                Upload CSV
-              </Fab>
-            </Box>
-          )}
-        </Paper>
-      )}
-
-      {!loading && filteredDrafts.length > 0 && (
-        <Box display="flex" flexWrap="wrap" gap={3}>
-          {filteredDrafts.map((draft) => (
-            <Box key={draft.draftId} sx={{ flex: { xs: '1 1 100%', sm: '1 1 45%', md: '1 1 30%' } }}>
-              <DraftLibraryCard
-                draft={draft}
-                onOpen={() => handleOpenDraft(draft)}
-                onDelete={() => handleDeleteDraft(draft.draftId)}
-                onDuplicate={() => handleDuplicateDraft(draft)}
-                progress={getStepProgress(draft.currentStep)}
-                statusLabel={getStepLabel(draft.currentStep)}
-                viewMode={viewMode}
-              />
-            </Box>
+      {loading ? (
+        <Grid container spacing={3}>
+          {[1, 2, 3].map((i) => (
+            <Grid key={i} size={{ xs: 12, sm: 6, md: 4 }}>
+              <Card>
+                <CardContent>
+                  <Skeleton variant="text" height={32} sx={{ mb: 1 }} />
+                  <Skeleton variant="text" height={20} sx={{ mb: 2 }} />
+                  <Skeleton variant="rectangular" height={60} sx={{ mb: 1 }} />
+                  <Skeleton variant="text" height={20} />
+                </CardContent>
+              </Card>
+            </Grid>
           ))}
-        </Box>
-      )}
-
-      {/* Floating Action Button */}
-      {!showUploadZone && (
-        <Fab
-          color="primary"
-          aria-label="add"
-          onClick={() => setShowUploadZone(true)}
-          sx={{
-            position: 'fixed',
-            bottom: 24,
-            right: 24,
+        </Grid>
+      ) : drafts.length === 0 ? (
+        /* Empty State */
+        <Paper 
+          sx={{ 
+            p: 6, 
+            textAlign: 'center',
+            backgroundColor: 'grey.50',
+            border: '2px dashed',
+            borderColor: 'grey.300'
           }}
         >
-          <AddIcon />
-        </Fab>
+          <FolderIcon sx={{ fontSize: 64, color: 'grey.400', mb: 2 }} />
+          <Typography variant="h5" color="text.secondary" gutterBottom>
+            No Drafts Found
+          </Typography>
+          <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+            You haven't created any schedule drafts yet. Start by uploading your first schedule file.
+          </Typography>
+          <Button
+            variant="contained"
+            startIcon={<UploadIcon />}
+            onClick={() => navigate('/upload')}
+            size="large"
+          >
+            Upload First Schedule
+          </Button>
+        </Paper>
+      ) : (
+        /* Drafts Grid */
+        <Grid container spacing={3}>
+          {drafts.map((draft) => (
+            <Grid key={draft.draftId} size={{ xs: 12, sm: 6, md: 4 }}>
+              <Card 
+                sx={{ 
+                  height: '100%',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  transition: 'transform 0.2s, box-shadow 0.2s',
+                  '&:hover': {
+                    transform: 'translateY(-2px)',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                  }
+                }}
+              >
+                <CardContent sx={{ flexGrow: 1 }}>
+                  {/* Header with menu */}
+                  <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={2}>
+                    <Box flexGrow={1}>
+                      <Typography variant="h6" component="h3" noWrap title={draft.draftName}>
+                        {draft.draftName}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {draft.originalData.fileName}
+                      </Typography>
+                    </Box>
+                    <IconButton 
+                      size="small" 
+                      onClick={(e) => handleMenuClick(e, draft)}
+                      sx={{ ml: 1 }}
+                    >
+                      <MoreVertIcon />
+                    </IconButton>
+                  </Box>
+
+                  {/* Progress and Status */}
+                  <Box mb={2}>
+                    <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
+                      <Chip 
+                        label={getStepDisplayName(draft.currentStep)}
+                        color={getStepColor(draft.currentStep) as any}
+                        size="small"
+                      />
+                      <Typography variant="body2" color="text.secondary">
+                        {draft.progress}%
+                      </Typography>
+                    </Box>
+                    <LinearProgress 
+                      variant="determinate" 
+                      value={draft.progress} 
+                      sx={{ 
+                        height: 6,
+                        borderRadius: 3,
+                        backgroundColor: 'grey.200'
+                      }} 
+                    />
+                  </Box>
+
+                  {/* Draft Info */}
+                  <Stack spacing={1}>
+                    <Box display="flex" justifyContent="space-between">
+                      <Typography variant="body2" color="text.secondary">
+                        Created:
+                      </Typography>
+                      <Typography variant="body2">
+                        {formatDate(draft.metadata.createdAt)}
+                      </Typography>
+                    </Box>
+                    <Box display="flex" justifyContent="space-between">
+                      <Typography variant="body2" color="text.secondary">
+                        Modified:
+                      </Typography>
+                      <Typography variant="body2">
+                        {formatDate(draft.metadata.lastModifiedAt)}
+                      </Typography>
+                    </Box>
+                    {draft.metadata.isPublished && (
+                      <Chip 
+                        label="Published" 
+                        color="success" 
+                        size="small" 
+                        sx={{ alignSelf: 'flex-start' }}
+                      />
+                    )}
+                  </Stack>
+                </CardContent>
+
+                <Divider />
+                
+                <CardActions sx={{ p: 2 }}>
+                  <Button
+                    fullWidth
+                    variant="contained"
+                    startIcon={<OpenIcon />}
+                    onClick={() => handleOpenDraft(draft)}
+                  >
+                    Open Draft
+                  </Button>
+                </CardActions>
+              </Card>
+            </Grid>
+          ))}
+        </Grid>
       )}
+
+      {/* Context Menu */}
+      <Menu
+        anchorEl={anchorEl}
+        open={Boolean(anchorEl)}
+        onClose={handleMenuClose}
+      >
+        <MenuItem onClick={handleRenameClick}>
+          <EditIcon sx={{ mr: 1 }} fontSize="small" />
+          Rename
+        </MenuItem>
+        <MenuItem onClick={handleDeleteClick} sx={{ color: 'error.main' }}>
+          <DeleteIcon sx={{ mr: 1 }} fontSize="small" />
+          Delete
+        </MenuItem>
+      </Menu>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
+        <DialogTitle>Delete Draft</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to delete "{selectedDraft?.draftName}"? This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
+          <Button onClick={handleDeleteConfirm} color="error">
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Rename Dialog */}
+      <Dialog open={renameDialogOpen} onClose={() => setRenameDialogOpen(false)}>
+        <DialogTitle>Rename Draft</DialogTitle>
+        <DialogContent>
+          <TextField
+            fullWidth
+            label="Draft Name"
+            value={newDraftName}
+            onChange={(e) => setNewDraftName(e.target.value)}
+            sx={{ mt: 1 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRenameDialogOpen(false)}>Cancel</Button>
+          <Button onClick={handleRenameConfirm} disabled={!newDraftName.trim()}>
+            Rename
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 };

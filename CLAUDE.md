@@ -17,6 +17,7 @@
 - **Processing**: xlsx library for Excel/CSV handling
 - **Testing**: Jest + React Testing Library v16, Vitest v3
 - **Storage**: localStorage + Firebase Cloud Firestore
+- **Target Platform**: Web-based only (desktop browsers, no mobile support required)
 
 ```bash
 npm start          # Development server (localhost:3000)
@@ -335,6 +336,139 @@ Always include:
 
 ---
 
+## Clarification Protocol - No Assumptions Policy
+
+### Core Principle: **ASK DON'T ASSUME**
+
+When any agent or Claude encounters ambiguity, uncertainty, or missing information, **ALWAYS clarify with the user** instead of making assumptions.
+
+### When to Request Clarification
+
+#### 1. **Technical Ambiguity**
+```bash
+❌ BAD: "I'll assume you want the latest version"
+✅ GOOD: "Which version would you like me to install - latest stable (7.3.2) or keep current (7.3.1)?"
+
+❌ BAD: "I'll use the default configuration"  
+✅ GOOD: "Should I use the existing configuration or would you prefer different settings?"
+```
+
+#### 2. **Scope Uncertainty** 
+```bash
+❌ BAD: "I'll update all related files"
+✅ GOOD: "I found 5 related files. Should I update all of them or specific ones?"
+
+❌ BAD: "I'll implement this feature completely"
+✅ GOOD: "This feature has multiple parts (UI, API, tests). Which parts should I focus on?"
+```
+
+#### 3. **User Intent**
+```bash
+❌ BAD: "I'll fix this the standard way"
+✅ GOOD: "I see two approaches: quick fix vs comprehensive refactor. Which do you prefer?"
+
+❌ BAD: "I'll add the typical security measures"
+✅ GOOD: "What level of security should I implement - basic validation or comprehensive hardening?"
+```
+
+#### 4. **Breaking Changes**
+```bash
+❌ BAD: "This might break compatibility but I'll proceed"
+✅ GOOD: "This change could affect X, Y, Z. Should I proceed or use a safer approach?"
+
+❌ BAD: "I'll migrate to the new API"
+✅ GOOD: "Migrating to the new API will change how authentication works. Is this the right time?"
+```
+
+### Clarification Templates
+
+#### For Technical Decisions:
+```
+"I need to clarify: [specific technical choice]. 
+Options: 
+A) [Option 1 with pros/cons]
+B) [Option 2 with pros/cons]
+Which would you prefer?"
+```
+
+#### For Scope Questions:
+```
+"I found [number] of [items] that could be affected:
+- [List items]
+Should I update all of these or just specific ones?"
+```
+
+#### For Risk Assessment:
+```
+"This change could impact:
+- [Impact 1]
+- [Impact 2]
+Risk level: [High/Medium/Low]
+Should I proceed or explore alternatives?"
+```
+
+### Implementation Rules
+
+#### For All Agents:
+1. **Pause before assumptions** - If uncertain, stop and ask
+2. **Be specific** - Ask about exact requirements, not general intent
+3. **Provide context** - Explain why the clarification is needed
+4. **Offer options** - Give 2-3 clear alternatives when possible
+5. **Acknowledge uncertainty** - It's better to be honest about limits
+
+#### For Complex Tasks:
+1. **Break down ambiguity** - Identify each unclear aspect
+2. **Prioritize questions** - Ask most critical clarifications first
+3. **Suggest defaults** - "If no preference, I recommend X because..."
+4. **Confirm understanding** - Repeat back what you understood
+
+### Examples in Practice
+
+#### Dependency Updates:
+```
+❌ "I'll update all your dependencies to the latest versions"
+✅ "I found 15 packages that can be updated. Should I:
+   A) Update only patch versions (safer)
+   B) Update minor versions (new features)
+   C) Let you review each one individually?"
+```
+
+#### Code Changes:
+```
+❌ "I'll refactor this to use modern patterns"
+✅ "I can refactor this using:
+   A) React hooks (requires testing changes)
+   B) Keep class components (minimal changes)
+   Which fits your timeline better?"
+```
+
+#### File Operations:
+```
+❌ "I'll create the necessary files"
+✅ "I need to create files for this feature. Should I:
+   - Create in src/components/ (standard location)
+   - Create in src/features/newFeature/ (organized approach)
+   - Check with you on the structure first?"
+```
+
+### Override Conditions
+
+**Only make assumptions when:**
+1. **Explicitly documented** - CLAUDE.md has clear guidance
+2. **Industry standard** - Universally accepted best practice
+3. **No risk** - Cannot break anything or cause issues
+4. **Time critical** - User indicated urgency and provided constraints
+
+**Always clarify when:**
+- User requirements are ambiguous
+- Multiple valid approaches exist
+- Changes could affect other parts of the system
+- Breaking changes are involved
+- Security implications exist
+- Performance trade-offs are required
+
+---
+
 ## TypeScript Architecture & Agent Guidelines
 
 ### Type Architecture Overview
@@ -486,6 +620,60 @@ Add these to package.json:
 3. Update context provider patterns  
 4. Establish type coverage baseline
 5. Prevent regression with CI checks
+
+---
+
+## Learn-While-Building System 🎓
+
+### The "Code Whisper" Learning Mode
+
+**Trigger**: Say "enable learning mode" to activate seamless education without interrupting flow.
+
+**Core Concept**: After every completed task, get a 2-3 sentence explanation of what just happened - like having a coding mentor whispering insights without slowing you down.
+
+#### Format Structure
+```
+🔧 **What We Just Did**: [Brief action]
+💡 **Why It Matters**: [Core concept]  
+⚡ **Level Up**: [Next skill to notice]
+```
+
+#### Progressive Learning Levels
+
+**Level 1: Visual Patterns (Weeks 1-2)**
+- Spot file structures and naming conventions
+- Recognize component layouts and UI patterns
+- Notice data flow patterns between components
+
+**Level 2: Logic Connections (Weeks 3-4)**
+- Understand cause-and-effect in code changes
+- See how user actions trigger state changes
+- Grasp React hooks and state management basics
+
+**Level 3: Architecture Thinking (Weeks 5-6)**
+- Connect multiple files working together
+- Understand service layers and separation of concerns
+- Recognize design patterns (CRUD, Observer, etc.)
+
+**Level 4: System Design (Weeks 7+)**
+- See full application data flow
+- Understand performance implications and optimization
+- Grasp security considerations and best practices
+
+#### Smart Context System
+- **Task-specific**: Explanations match what we just built
+- **Skill-aware**: Adjusts to your growing knowledge level
+- **Pattern-focused**: Highlights reusable concepts you'll see again  
+- **Flow-preserving**: Never interrupts active building sessions
+
+#### Example Learning Whisper
+```
+🔧 **What We Just Did**: Added navigation buttons to TimePoints page with workflow state management
+💡 **Why It Matters**: This demonstrates React's unidirectional data flow - user clicks trigger functions that update state and navigate with preserved context
+⚡ **Level Up**: Next time, notice how navigate() accepts state objects that persist data across page transitions
+```
+
+**Status**: Ready to activate on-demand | **Learning Style**: Vibe Coding Education
 
 ---
 **Version**: 2.1.0 | **Status**: Production Ready | **Updated**: January 2025

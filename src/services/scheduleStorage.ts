@@ -10,6 +10,7 @@ import { ParsedExcelData } from '../utils/excelParser';
 import { ParsedCsvData } from '../utils/csvParser';
 import { ValidationResult } from '../utils/validator';
 import { googleDriveStorage } from './googleDriveStorage';
+import { AUTO_SAVE_CONFIG } from '../config/autoSave';
 
 export interface SavedSchedule {
   id: string;
@@ -69,8 +70,8 @@ const SESSION_STORAGE_KEY_PREFIX = 'scheduler2_current_session';
 const MAX_SCHEDULES = 50; // Limit number of saved schedules
 const MAX_DRAFTS = 20; // Limit number of draft schedules
 const MAX_SCHEDULE_SIZE = 5 * 1024 * 1024; // 5MB limit per schedule
-const DRAFT_AUTO_SAVE_INTERVAL = 30000; // Auto-save drafts every 30 seconds
-const GOOGLE_DRIVE_SYNC_INTERVAL = 60000; // Sync to Google Drive every 60 seconds
+const DRAFT_AUTO_SAVE_INTERVAL = AUTO_SAVE_CONFIG.BACKGROUND_SYNC; // 45s optimized background sync
+const GOOGLE_DRIVE_SYNC_INTERVAL = 90000; // 90s for Google Drive sync (less frequent)
 
 class ScheduleStorageService {
   private googleDriveSyncEnabled: boolean = false;
