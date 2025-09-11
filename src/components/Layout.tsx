@@ -43,7 +43,7 @@ import Settings from '../pages/Settings';
 import NotFound from '../pages/NotFound';
 
 const DRAWER_WIDTH = 280;
-const COLLAPSED_WIDTH = 72;
+const COLLAPSED_WIDTH = 200; // Increased to show icons + labels
 
 const Layout: React.FC = () => {
   const location = useLocation();

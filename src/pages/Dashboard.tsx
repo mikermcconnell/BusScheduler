@@ -172,6 +172,21 @@ const Dashboard: React.FC = () => {
           {error}
         </Alert>
       )}
+      
+      {/* Specific draft loading error if present */}
+      {metrics?.draftLoadError && (
+        <Alert severity="warning" sx={{ mb: 3 }}>
+          <Typography variant="body2" fontWeight="medium">
+            Draft Loading Issue
+          </Typography>
+          <Typography variant="body2">
+            {metrics.draftLoadError}
+          </Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+            This may be a temporary issue. Your local drafts are still available.
+          </Typography>
+        </Alert>
+      )}
 
       {/* Schedule Health Metrics */}
       <Typography variant="h6" gutterBottom sx={{ mt: 2, mb: 2 }}>

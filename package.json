@@ -50,12 +50,13 @@
   },
   "devDependencies": {
     "@types/express": "^5.0.3",
+    "cross-env": "^10.0.0",
     "html-webpack-plugin": "^5.6.4",
     "vitest": "^3.2.4",
     "webpack": "^5.101.3"
   },
   "scripts": {
-    "start": "set PORT=3050 && set NODE_NO_WARNINGS=1 && react-scripts start",
+    "start": "cross-env PORT=3050 HOST=0.0.0.0 NODE_NO_WARNINGS=1 react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject",

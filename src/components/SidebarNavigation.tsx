@@ -42,7 +42,7 @@ import { scheduleStorage } from '../services/scheduleStorage';
 import ContextualActions from './ContextualActions';
 
 const DRAWER_WIDTH = 280;
-const COLLAPSED_WIDTH = 72;
+const COLLAPSED_WIDTH = 200; // Increased to show icons + labels
 
 interface NavigationItem {
   key: string;
@@ -219,12 +219,8 @@ const SidebarNavigation: React.FC<SidebarNavigationProps> = ({ open, onToggle, c
   };
 
   const getGroupIcon = (groupKey: string) => {
-    const icons = {
-      primary: <DashboardIcon />,
-      advanced: <ConfigIcon />,
-      settings: <SettingsIcon />
-    };
-    return icons[groupKey as keyof typeof icons] || <DashboardIcon />;
+    // Return null to avoid duplicate icons with navigation items
+    return null;
   };
 
   // Filter items based on search
@@ -349,33 +345,25 @@ const SidebarNavigation: React.FC<SidebarNavigationProps> = ({ open, onToggle, c
               >
                 <ListItemButton
                   onClick={() => handleGroupToggle(groupKey)}
+                  disabled={collapsed}
                   sx={{
                     borderRadius: 1,
-                    minHeight: collapsed ? 48 : 40,
-                    justifyContent: collapsed ? 'center' : 'flex-start'
+                    minHeight: collapsed ? 0 : 40,
+                    justifyContent: 'flex-start',
+                    display: collapsed ? 'none' : 'flex'
                   }}
                 >
-                  <ListItemIcon sx={{ 
-                    minWidth: collapsed ? 'auto' : 40,
-                    color: 'primary.main'
-                  }}>
-                    {getGroupIcon(groupKey)}
-                  </ListItemIcon>
-                  {!collapsed && (
-                    <>
-                      <ListItemText
-                        primary={getGroupLabel(groupKey)}
-                        primaryTypographyProps={{
-                          fontWeight: 'medium',
-                          fontSize: '0.875rem',
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.5px',
-                          color: 'primary.main'
-                        }}
-                      />
-                      {isExpanded ? <ExpandLess /> : <ExpandMore />}
-                    </>
-                  )}
+                  <ListItemText
+                    primary={getGroupLabel(groupKey)}
+                    primaryTypographyProps={{
+                      fontWeight: 'medium',
+                      fontSize: '0.875rem',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
+                      color: 'primary.main'
+                    }}
+                  />
+                  {isExpanded ? <ExpandLess /> : <ExpandMore />}
                 </ListItemButton>
               </ListItem>
 
@@ -389,7 +377,7 @@ const SidebarNavigation: React.FC<SidebarNavigationProps> = ({ open, onToggle, c
                       sx={{ mb: 0.5 }}
                     >
                       <Tooltip 
-                        title={collapsed ? `${item.label}${item.description ? ` - ${item.description}` : ''}` : ''}
+                        title={collapsed ? item.description : ''}
                         placement="right"
                         arrow
                       >
@@ -410,43 +398,40 @@ const SidebarNavigation: React.FC<SidebarNavigationProps> = ({ open, onToggle, c
                                 backgroundColor: 'primary.dark'
                               }
                             },
-                            justifyContent: collapsed ? 'center' : 'flex-start',
+                            justifyContent: 'flex-start',
                             px: collapsed ? 1 : 2
                           }}
                         >
                           <ListItemIcon sx={{ 
-                            minWidth: collapsed ? 'auto' : 40,
+                            minWidth: collapsed ? 32 : 40,
                             color: isActive(item.path) ? 'white' : 'action.active'
                           }}>
                             {item.icon}
                           </ListItemIcon>
-                          {!collapsed && (
-                            <>
-                              <ListItemText
-                                primary={item.label}
-                                secondary={item.description}
-                                primaryTypographyProps={{
-                                  fontWeight: isActive(item.path) ? 'medium' : 'normal',
-                                  fontSize: '0.875rem'
-                                }}
-                                secondaryTypographyProps={{
-                                  fontSize: '0.75rem',
-                                  color: isActive(item.path) ? 'rgba(255,255,255,0.7)' : 'text.secondary'
-                                }}
-                              />
-                              {item.badge && (
-                                <Chip
-                                  label={item.badge}
-                                  size="small"
-                                  sx={{
-                                    height: 20,
-                                    fontSize: '0.625rem',
-                                    backgroundColor: 'secondary.main',
-                                    color: 'secondary.contrastText'
-                                  }}
-                                />
-                              )}
-                            </>
+                          <ListItemText
+                            primary={item.label}
+                            secondary={!collapsed ? item.description : undefined}
+                            primaryTypographyProps={{
+                              fontWeight: isActive(item.path) ? 'medium' : 'normal',
+                              fontSize: collapsed ? '0.75rem' : '0.875rem',
+                              noWrap: collapsed
+                            }}
+                            secondaryTypographyProps={{
+                              fontSize: '0.75rem',
+                              color: isActive(item.path) ? 'rgba(255,255,255,0.7)' : 'text.secondary'
+                            }}
+                          />
+                          {!collapsed && item.badge && (
+                            <Chip
+                              label={item.badge}
+                              size="small"
+                              sx={{
+                                height: 20,
+                                fontSize: '0.625rem',
+                                backgroundColor: 'secondary.main',
+                                color: 'secondary.contrastText'
+                              }}
+                            />
                           )}
                         </ListItemButton>
                       </Tooltip>

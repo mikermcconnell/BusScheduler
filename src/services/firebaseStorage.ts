@@ -204,8 +204,15 @@ class FirebaseStorageService {
    */
   private requireAuth(): boolean {
     if (!this.currentUser) {
-      throw new Error('User must be authenticated to perform this operation');
+      console.warn('🔥 Firebase Storage: No authenticated user, operations may fail');
+      // For anonymous users, we might not have currentUser immediately
+      // Return false instead of throwing to allow graceful degradation
+      return false;
     }
+    console.log('🔥 Firebase Storage: User authenticated', {
+      uid: this.currentUser.uid,
+      isAnonymous: this.currentUser.isAnonymous
+    });
     return true;
   }
 
@@ -281,7 +288,9 @@ class FirebaseStorageService {
     rawData?: any
   ): Promise<{ success: boolean; error?: string; scheduleId?: string }> {
     try {
-      this.requireAuth();
+      if (!this.requireAuth()) {
+        return { success: false, error: 'Authentication required for saving schedules' };
+      }
 
       // Validate input
       const validationError = this.validateScheduleData(summarySchedule);
@@ -354,7 +363,10 @@ class FirebaseStorageService {
    */
   async getAllSchedules(): Promise<SavedSchedule[]> {
     try {
-      this.requireAuth();
+      if (!this.requireAuth()) {
+        console.warn('🔥 Firebase Storage: Not authenticated, returning empty schedule list');
+        return [];
+      }
 
       const q = query(
         collection(db, COLLECTIONS.SCHEDULES),
@@ -395,7 +407,10 @@ class FirebaseStorageService {
    */
   async getScheduleById(id: string): Promise<SavedSchedule | null> {
     try {
-      this.requireAuth();
+      if (!this.requireAuth()) {
+        console.warn('🔥 Firebase Storage: Not authenticated, cannot get schedule by ID');
+        return null;
+      }
 
       const docRef = doc(db, COLLECTIONS.SCHEDULES, id);
       const docSnap = await getDoc(docRef);
@@ -425,7 +440,9 @@ class FirebaseStorageService {
    */
   async deleteSchedule(id: string): Promise<{ success: boolean; error?: string }> {
     try {
-      this.requireAuth();
+      if (!this.requireAuth()) {
+        return { success: false, error: 'Authentication required for deleting schedules' };
+      }
 
       const docRef = doc(db, COLLECTIONS.SCHEDULES, id);
       await deleteDoc(docRef);
@@ -451,7 +468,9 @@ class FirebaseStorageService {
     fileName?: string
   ): Promise<{ success: boolean; error?: string }> {
     try {
-      this.requireAuth();
+      if (!this.requireAuth()) {
+        return { success: false, error: 'Authentication required for updating schedules' };
+      }
 
       // Validate input
       const validationError = this.validateScheduleData(summarySchedule);
@@ -527,7 +546,9 @@ class FirebaseStorageService {
     } = {}
   ): Promise<{ success: boolean; error?: string; draftId?: string }> {
     try {
-      this.requireAuth();
+      if (!this.requireAuth()) {
+        return { success: false, error: 'Authentication required for saving drafts' };
+      }
 
       // Check data size
       const dataSize = JSON.stringify(uploadedData).length;
@@ -590,7 +611,10 @@ class FirebaseStorageService {
    */
   async getAllDraftSchedules(): Promise<DraftSchedule[]> {
     try {
-      this.requireAuth();
+      if (!this.requireAuth()) {
+        console.warn('🔥 Firebase Storage: Not authenticated, returning empty draft list');
+        return [];
+      }
 
       const q = query(
         collection(db, COLLECTIONS.DRAFTS),
@@ -612,7 +636,10 @@ class FirebaseStorageService {
    */
   async getDraftScheduleById(id: string): Promise<DraftSchedule | null> {
     try {
-      this.requireAuth();
+      if (!this.requireAuth()) {
+        console.warn('🔥 Firebase Storage: Not authenticated, cannot get draft by ID');
+        return null;
+      }
 
       const docRef = doc(db, COLLECTIONS.DRAFTS, id);
       const docSnap = await getDoc(docRef);
@@ -642,7 +669,9 @@ class FirebaseStorageService {
    */
   async deleteDraftSchedule(id: string): Promise<{ success: boolean; error?: string }> {
     try {
-      this.requireAuth();
+      if (!this.requireAuth()) {
+        return { success: false, error: 'Authentication required for deleting drafts' };
+      }
 
       const docRef = doc(db, COLLECTIONS.DRAFTS, id);
       await deleteDoc(docRef);

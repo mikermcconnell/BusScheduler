@@ -70,6 +70,9 @@ export interface DashboardMetrics {
     dataIntegrityScore: number; // 0-100 based on validation success
   };
   
+  // Draft loading status (for debugging production issues)
+  draftLoadError?: string | null;
+  
   lastUpdated: number;
 }
 
@@ -460,21 +463,31 @@ export class DashboardMetricsService {
 
     // Start with localStorage drafts
     let firebaseDrafts: any[] = [];
+    let draftLoadError: string | null = null;
 
     try {
       // Get Firebase drafts with timeout
       const firebaseDraftsPromise = draftService.getAllDraftsUnified();
       const timeoutPromise = new Promise<any[]>((resolve) => 
         setTimeout(() => {
-          console.warn('Firebase drafts timeout - using localStorage only');
+          console.warn('⚠️ Firebase drafts timeout - using localStorage only');
+          draftLoadError = 'Cloud draft sync timed out - showing local drafts only';
           resolve([]);
         }, 5000)
       );
       
       firebaseDrafts = await Promise.race([firebaseDraftsPromise, timeoutPromise]) || [];
+      
+      // Log Firebase auth status for debugging
+      console.log('🔥 Firebase draft load status:', {
+        draftsLoaded: firebaseDrafts.length,
+        hasLocalDrafts: localDrafts.length > 0,
+        timestamp: new Date().toISOString()
+      });
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      console.warn('Failed to load Firebase drafts for metrics:', errorMessage);
+      console.error('❌ Failed to load Firebase drafts for metrics:', errorMessage);
+      draftLoadError = `Failed to load cloud drafts: ${errorMessage}`;
     }
 
     // Calculate all metrics
@@ -535,6 +548,7 @@ export class DashboardMetricsService {
         averageProcessingTime: eventBusStats.averageProcessingTime,
         dataIntegrityScore
       },
+      draftLoadError,
       lastUpdated
     };
   }

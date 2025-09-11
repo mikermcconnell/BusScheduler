@@ -4,6 +4,8 @@
  */
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { signInAnonymously } from 'firebase/auth';
+import { auth } from '../config/firebase';
 
 interface User {
   id: string;
@@ -38,21 +40,45 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   // Initialize Google API or bypass
   useEffect(() => {
-    // For production or when bypass is enabled, use anonymous auth
-    if (bypassAuth || !process.env.REACT_APP_GOOGLE_CLIENT_ID) {
-      // Create a mock user for development/production without Google OAuth
-      const mockUser: User = {
-        id: 'anonymous_user',
-        email: 'user@scheduler.app',
-        name: 'Schedule User',
-        picture: '',
-        accessToken: 'anonymous_token'
-      };
-      setUser(mockUser);
-      setIsLoading(false);
-    } else {
-      initializeGoogleAPI();
-    }
+    const setupAuth = async () => {
+      // For production or when bypass is enabled, use anonymous auth
+      if (bypassAuth || !process.env.REACT_APP_GOOGLE_CLIENT_ID) {
+        console.log('🔓 Auth bypass mode enabled - signing in anonymously with Firebase');
+        
+        try {
+          // Sign in anonymously with Firebase Auth
+          const result = await signInAnonymously(auth);
+          console.log('🔥 Signed in anonymously with Firebase:', result.user.uid);
+          
+          // Create mock user with Firebase anonymous UID
+          const mockUser: User = {
+            id: result.user.uid || 'anonymous_user',
+            email: 'user@scheduler.app',
+            name: 'Schedule User',
+            picture: '',
+            accessToken: 'anonymous_token'
+          };
+          setUser(mockUser);
+        } catch (error) {
+          console.error('Failed to sign in anonymously with Firebase:', error);
+          // Fallback to local mock user if Firebase anonymous sign-in fails
+          const mockUser: User = {
+            id: 'anonymous_user',
+            email: 'user@scheduler.app',
+            name: 'Schedule User',
+            picture: '',
+            accessToken: 'anonymous_token'
+          };
+          setUser(mockUser);
+        }
+        
+        setIsLoading(false);
+      } else {
+        initializeGoogleAPI();
+      }
+    };
+    
+    setupAuth();
   }, [bypassAuth]);
 
   const initializeGoogleAPI = async () => {
