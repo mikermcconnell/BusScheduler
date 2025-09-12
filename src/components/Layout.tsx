@@ -35,7 +35,6 @@ import ManageRoutes from '../pages/ManageRoutes';
 import TimePoints from '../pages/TimePoints';
 import BlockConfiguration from '../pages/BlockConfiguration';
 import BlockSummarySchedule from '../pages/BlockSummarySchedule';
-import ConnectionSchedule from '../pages/ConnectionSchedule';
 import TodShifts from '../pages/TodShifts';
 import DraftLibrary from '../pages/DraftLibrary';
 import Settings from '../pages/Settings';
@@ -128,7 +127,6 @@ const Layout: React.FC = () => {
     '/timepoints',
     '/block-configuration',
     '/block-summary-schedule',
-    '/connection-schedule',
     '/routes',
     '/tod-shifts'
   ].some(path => location.pathname.startsWith(path));
@@ -201,7 +199,6 @@ const Layout: React.FC = () => {
             <Route path="/draft-library" element={<DraftLibrary />} />
             <Route path="/block-configuration" element={<BlockConfiguration />} />
             <Route path="/block-summary-schedule" element={<BlockSummarySchedule />} />
-            <Route path="/connection-schedule" element={<ConnectionSchedule />} />
             <Route path="/tod-shifts" element={<TodShifts />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<NotFound />} />

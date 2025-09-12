@@ -125,14 +125,6 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
         icon: <SummaryIcon />,
         description: 'Generate base schedule with best practice recovery times',
         status: 'pending' as const
-      },
-      {
-        key: 'connections',
-        label: 'Create Connections',
-        path: '/connection-schedule',
-        icon: <SwapVertIcon />,
-        description: 'Configure connections to GO trains, schools, and other routes',
-        status: 'pending' as const
       }
     ],
     'route-management': [
@@ -177,7 +169,7 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
   const detectWorkflowContext = (): string | null => {
     const path = location.pathname;
     
-    if (['/upload', '/timepoints', '/block-configuration', '/block-summary-schedule', '/connection-schedule'].includes(path)) {
+    if (['/upload', '/timepoints', '/block-configuration', '/block-summary-schedule'].includes(path)) {
       return 'schedule-creation';
     }
     if (['/routes'].includes(path)) {
@@ -265,7 +257,7 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
               localWorkflow.lastModified = firebaseDraft.metadata.lastModifiedAt;
               
               // Update step completion status based on Firebase currentStep
-              const stepOrder = ['upload', 'timepoints', 'block-config', 'summary', 'connections'];
+              const stepOrder = ['upload', 'timepoints', 'block-config', 'summary'];
               const currentStepIndex = stepOrder.indexOf(firebaseDraft.currentStep === 'blocks' ? 'block-config' : 
                                                       firebaseDraft.currentStep === 'ready-to-publish' ? 'summary' : 
                                                       firebaseDraft.currentStep);
@@ -378,7 +370,6 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
                             (currentPath.includes('timepoints') && step.key === 'timepoints') ||
                             (currentPath.includes('block-configuration') && step.key === 'block-config') ||
                             (currentPath.includes('block-summary-schedule') && step.key === 'summary') ||
-                            (currentPath.includes('connection-schedule') && step.key === 'connections') ||
                             (currentPath.includes('upload') && step.key === 'upload');
         
         // Mark current step as active while preserving completion status
@@ -415,7 +406,6 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
                           (currentPath.includes('timepoints') && step.key === 'timepoints') ||
                           (currentPath.includes('block-configuration') && step.key === 'block-config') ||
                           (currentPath.includes('block-summary-schedule') && step.key === 'summary') ||
-                          (currentPath.includes('connection-schedule') && step.key === 'connections') ||
                           (currentPath.includes('upload') && step.key === 'upload');
       
       // Mark completed steps based on data availability and path progression
@@ -485,7 +475,6 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
       'timepoints': { label: 'Optimize Timing', icon: <TimelineIcon /> },
       'block-configuration': { label: 'Plan Blocks', icon: <ConfigIcon /> },
       'block-summary-schedule': { label: 'Build Schedule', icon: <SummaryIcon /> },
-      'connection-schedule': { label: 'Create Connections', icon: <SwapVertIcon /> },
       'schedules': { label: 'View Schedules', icon: <SummaryIcon /> },
       'routes': { label: 'Manage Routes', icon: <ConfigIcon /> },
       'tod-shifts': { label: 'Tod Shifts', icon: <ConfigIcon /> },
@@ -589,7 +578,7 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
     }
     
     // Only pass state for workflow pages that need it
-    const workflowPages = ['/timepoints', '/block-configuration', '/block-summary-schedule', '/connection-schedule'];
+    const workflowPages = ['/timepoints', '/block-configuration', '/block-summary-schedule'];
     if (workflowPages.includes(path)) {
       navigate(path, { state: navigationState });
     } else {

@@ -2326,9 +2326,6 @@ const BlockSummarySchedule: React.FC = () => {
     navigate(-1);
   };
 
-  const handleGoForward = () => {
-    navigate('/connection-schedule', { state: { schedule } });
-  };
 
   const handlePublish = async () => {
     setIsPublishing(true);
@@ -2450,16 +2447,6 @@ const BlockSummarySchedule: React.FC = () => {
                 Summary Schedule
               </Typography>
             </Box>
-            
-            <Button
-              variant="contained"
-              endIcon={<ArrowForwardIcon />}
-              onClick={handleGoForward}
-              size="large"
-              sx={{ minWidth: 180 }}
-            >
-              Continue to Connections
-            </Button>
           </Box>
 
           <Card elevation={2}>
@@ -2518,14 +2505,6 @@ const BlockSummarySchedule: React.FC = () => {
                     size="small"
                   >
                     Back
-                  </Button>
-                  <Button
-                    variant="contained"
-                    color="primary"
-                    onClick={() => navigate('/connection-schedule', { state: { schedule } })}
-                    size="small"
-                  >
-                    Continue to Connections →
                   </Button>
                 </Box>
               </Box>
