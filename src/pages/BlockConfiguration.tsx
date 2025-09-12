@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback, memo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import DraftNameHeader from '../components/DraftNameHeader';
+import { SaveToDraft, AutoSaveStatus } from '../components/SaveToDraft';
 import { 
   Save as SaveIcon, 
   Download as DownloadIcon, 
@@ -1416,11 +1417,17 @@ export default function BlockConfiguration() {
         localStorage.setItem('currentSummarySchedule', JSON.stringify(completeSchedule));
         console.log('💾 Summary schedule saved to localStorage for persistence');
         
-        // Mark the Block Configuration step as complete
-        draftService.completeStep('block-config', {
-          schedule: completeSchedule,
-          trips: updatedSchedule.trips
-        });
+        // Mark the Block Configuration step as complete with full block configuration data
+        if (draft?.draftId) {
+          await draftService.updateStepStatus(draft.draftId, 'blocks', 'completed', 100, {
+            numberOfBuses: schedule.blockConfigurations.length,
+            cycleTimeMinutes: schedule.cycleTimeMinutes,
+            automateBlockStartTimes: schedule.automateBlockStartTimes,
+            blockConfigurations: schedule.blockConfigurations,
+            schedule: completeSchedule,
+            trips: updatedSchedule.trips
+          });
+        }
         
         // Navigate to BlockSummarySchedule page with the generated schedule and draft ID
         navigate('/block-summary-schedule', { 
@@ -1441,10 +1448,16 @@ export default function BlockConfiguration() {
         console.log('💾 Summary schedule saved to localStorage for persistence (save failed)');
         
         // Mark the Block Configuration step as complete even if save failed
-        draftService.completeStep('block-config', {
-          schedule: completeSchedule,
-          trips: updatedSchedule.trips
-        });
+        if (draft?.draftId) {
+          await draftService.updateStepStatus(draft.draftId, 'blocks', 'completed', 100, {
+            numberOfBuses: schedule.blockConfigurations.length,
+            cycleTimeMinutes: schedule.cycleTimeMinutes,
+            automateBlockStartTimes: schedule.automateBlockStartTimes,
+            blockConfigurations: schedule.blockConfigurations,
+            schedule: completeSchedule,
+            trips: updatedSchedule.trips
+          });
+        }
         
         navigate('/block-summary-schedule', { 
           state: { 
@@ -1466,10 +1479,16 @@ export default function BlockConfiguration() {
       console.log('💾 Summary schedule saved to localStorage for persistence (catch error)');
       
       // Mark the Block Configuration step as complete even in error case
-      draftService.completeStep('block-config', {
-        schedule: completeSchedule,
-        trips: updatedSchedule.trips
-      });
+      if (draft?.draftId) {
+        await draftService.updateStepStatus(draft.draftId, 'blocks', 'completed', 100, {
+          numberOfBuses: schedule.blockConfigurations.length,
+          cycleTimeMinutes: schedule.cycleTimeMinutes,
+          automateBlockStartTimes: schedule.automateBlockStartTimes,
+          blockConfigurations: schedule.blockConfigurations,
+          schedule: completeSchedule,
+          trips: updatedSchedule.trips
+        });
+      }
       
       navigate('/block-summary-schedule', { 
         state: { 
@@ -1539,13 +1558,17 @@ export default function BlockConfiguration() {
           Back to TimePoints
         </Button>
         
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Typography variant="body2" color="text.secondary">
-            Step 3 of 5
-          </Typography>
-          <Typography variant="body1" color="primary" fontWeight="bold">
-            Block Configuration
-          </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <SaveToDraft variant="outlined" size="medium" />
+          <AutoSaveStatus />
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="body2" color="text.secondary">
+              Step 3 of 5
+            </Typography>
+            <Typography variant="body1" color="primary" fontWeight="bold">
+              Block Configuration
+            </Typography>
+          </Box>
         </Box>
         
         <Button

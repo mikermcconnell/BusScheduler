@@ -711,7 +711,7 @@ class ExportService {
   }
 
   private async exportToExcel(options: ExportOptions, dataBundle: ExportDataBundle, exportId: string): Promise<ExportResult> {
-    // Implement Excel export logic using existing utilities
+    // Implement Excel export logic using actual schedule data
     this.updateProgress(exportId, {
       stage: 'formatting',
       progress: 50,
@@ -722,10 +722,12 @@ class ExportService {
     });
 
     const workbook = XLSX.utils.book_new();
-    const sampleData = this.generateSampleData(options, dataBundle, 1000);
+    
+    // Use actual schedule data instead of sample data
+    const { headers, rows } = this.generateActualScheduleData(dataBundle);
     
     // Create main sheet
-    const wsData = [sampleData.headers, ...sampleData.rows];
+    const wsData = [headers, ...rows];
     const worksheet = XLSX.utils.aoa_to_sheet(wsData);
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Schedule');
 
@@ -759,8 +761,8 @@ class ExportService {
       exportedAt: new Date(),
       processingTime: 0,
       stats: {
-        totalRecords: sampleData.rows.length,
-        recordsByType: { 'trips': sampleData.rows.length },
+        totalRecords: rows.length,
+        recordsByType: { 'trips': rows.length },
         uncompressedSize: blob.size,
         compressedSize: blob.size,
         compressionRatio: 1.0,
@@ -768,6 +770,100 @@ class ExportService {
         validationIssues: []
       }
     };
+  }
+
+  private generateActualScheduleData(dataBundle: ExportDataBundle): { headers: string[], rows: any[][] } {
+    const headers: string[] = [];
+    const rows: any[][] = [];
+
+    if (!dataBundle.summarySchedule) {
+      // Fallback to basic headers if no schedule data
+      return { headers: ['Trip', 'Block', 'Start Time'], rows: [] };
+    }
+
+    const schedule = dataBundle.summarySchedule;
+    
+    // Create headers: Trip info + Timepoint columns
+    headers.push('Trip', 'Block', 'Day Type');
+    
+    if (schedule.timePoints && schedule.timePoints.length > 0) {
+      schedule.timePoints.forEach(tp => {
+        headers.push(tp.name);
+      });
+    }
+
+    // Process weekday trips
+    if (schedule.weekday && schedule.weekday.length > 0) {
+      schedule.weekday.forEach((tripTimes, tripIndex) => {
+        const row = [
+          tripIndex + 1, // Trip number
+          Math.ceil((tripIndex + 1) / 3), // Block number (assuming 3 trips per block)
+          'Weekday' // Day type
+        ];
+        
+        // Add time for each timepoint
+        if (Array.isArray(tripTimes)) {
+          tripTimes.forEach(time => {
+            row.push(time || '');
+          });
+        } else {
+          // Handle case where tripTimes might not be an array
+          schedule.timePoints?.forEach(() => {
+            row.push('');
+          });
+        }
+        
+        rows.push(row);
+      });
+    }
+
+    // Process Saturday trips (if available)
+    if (schedule.saturday && schedule.saturday.length > 0) {
+      schedule.saturday.forEach((tripTimes, tripIndex) => {
+        const row = [
+          tripIndex + 1,
+          Math.ceil((tripIndex + 1) / 3),
+          'Saturday'
+        ];
+        
+        if (Array.isArray(tripTimes)) {
+          tripTimes.forEach(time => {
+            row.push(time || '');
+          });
+        } else {
+          schedule.timePoints?.forEach(() => {
+            row.push('');
+          });
+        }
+        
+        rows.push(row);
+      });
+    }
+
+    // Process Sunday trips (if available)
+    if (schedule.sunday && schedule.sunday.length > 0) {
+      schedule.sunday.forEach((tripTimes, tripIndex) => {
+        const row = [
+          tripIndex + 1,
+          Math.ceil((tripIndex + 1) / 3),
+          'Sunday'
+        ];
+        
+        if (Array.isArray(tripTimes)) {
+          tripTimes.forEach(time => {
+            row.push(time || '');
+          });
+        } else {
+          schedule.timePoints?.forEach(() => {
+            row.push('');
+          });
+        }
+        
+        rows.push(row);
+      });
+    }
+
+    return { headers, rows };
   }
 
   private async exportToJson(options: ExportOptions, dataBundle: ExportDataBundle, exportId: string): Promise<ExportResult> {
