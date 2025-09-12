@@ -18,7 +18,7 @@ import {
   serverTimestamp,
   runTransaction
 } from 'firebase/firestore';
-import { db, auth } from '../config/firebase';
+import { db } from '../config/firebase';
 import { 
   WorkflowDraftState,
   WorkflowDraftResult,
@@ -710,12 +710,11 @@ class UnifiedDraftService {
    */
   async getAllDraftsUnified(): Promise<UnifiedDraftCompat[]> {
     try {
-      // Check authentication state before loading
-      const authState = auth.currentUser;
+      // No authentication needed
       console.log('🔥 Loading all unified drafts from Firebase', {
-        isAuthenticated: !!authState,
-        userId: authState?.uid || 'none',
-        isAnonymous: authState?.isAnonymous || false,
+        isAuthenticated: false,
+        userId: 'anonymous',
+        isAnonymous: true,
         timestamp: new Date().toISOString()
       });
       const draftsRef = collection(db, this.COLLECTION_NAME);

@@ -5,7 +5,6 @@
 
 import { initializeApp } from 'firebase/app';
 import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
-import { getAuth, connectAuthEmulator } from 'firebase/auth';
 import { getFunctions, connectFunctionsEmulator } from 'firebase/functions';
 import { getAnalytics } from 'firebase/analytics';
 
@@ -29,7 +28,6 @@ const app = initializeApp(firebaseConfig);
 
 // Initialize Firebase services
 export const db = getFirestore(app);
-export const auth = getAuth(app);
 export const functions = getFunctions(app);
 
 // Initialize Analytics only in production with valid config
@@ -50,16 +48,6 @@ if (process.env.NODE_ENV === 'development' && process.env.REACT_APP_USE_FIREBASE
     } catch (error: any) {
       // Already connected error is expected on hot reload
       if (!error.message?.includes('already started')) {
-        throw error;
-      }
-    }
-    
-    // Auth emulator - connect without checking internal state
-    try {
-      connectAuthEmulator(auth, 'http://localhost:9099', { disableWarnings: true });
-    } catch (error: any) {
-      // Already connected error is expected on hot reload
-      if (!error.message?.includes('already initialized')) {
         throw error;
       }
     }
@@ -92,7 +80,7 @@ export const getFirebaseErrorMessage = (error: any): string => {
     case 'unavailable':
       return 'Firebase service is currently unavailable. Please try again later.';
     case 'unauthenticated':
-      return 'Please sign in to continue.';
+      return 'Authentication required for this operation.';
     case 'not-found':
       return 'The requested document was not found.';
     case 'already-exists':

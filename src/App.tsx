@@ -4,11 +4,8 @@ import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import Layout from './components/Layout';
 import ErrorBoundary from './components/ErrorBoundary';
-import { AuthProvider } from './contexts/AuthContext';
-import ProtectedRoute from './components/ProtectedRoute';
-import EmailLinkHandler from './components/EmailLinkHandler';
 import { securityInitializer } from './utils/securityInitializer';
-import { db, auth } from './config/firebase'; // Initialize Firebase
+import { db } from './config/firebase'; // Initialize Firebase
 import './utils/testUnifiedStorage'; // Test utilities for storage verification
 import './utils/createTestDraft'; // Test draft creation utilities
 import './utils/debugDraftStorage'; // Debug draft storage utilities
@@ -76,16 +73,7 @@ function App() {
       console.log('🔥 Firestore database connected');
     }
     
-    // Monitor auth state
-    const unsubscribe = auth.onAuthStateChanged((user) => {
-      if (user) {
-        console.log('🔥 Firebase user authenticated:', user.uid);
-      } else {
-        console.log('🔥 Firebase user signed out (anonymous mode)');
-      }
-    });
-
-    return () => unsubscribe();
+    // No authentication needed
   }, []);
 
   return (
@@ -93,19 +81,9 @@ function App() {
       <ThemeProvider theme={theme}>
         <CssBaseline />
         <Router>
-          <AuthProvider>
-            <Routes>
-              {/* Email link handler route - accessible without authentication */}
-              <Route path="/auth/email-link" element={<EmailLinkHandler />} />
-              
-              {/* All other routes require authentication */}
-              <Route path="/*" element={
-                <ProtectedRoute>
-                  <Layout />
-                </ProtectedRoute>
-              } />
-            </Routes>
-          </AuthProvider>
+          <Routes>
+            <Route path="/*" element={<Layout />} />
+          </Routes>
         </Router>
       </ThemeProvider>
     </ErrorBoundary>

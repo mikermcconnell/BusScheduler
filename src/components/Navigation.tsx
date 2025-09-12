@@ -15,23 +15,19 @@ import {
 } from '@mui/material';
 import { Menu as MenuIcon, Schedule as ScheduleIcon } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
 import { scheduleStorage } from '../services/scheduleStorage';
-import UserProfile from './UserProfile';
 
 const Navigation: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
-  const { user } = useAuth();
-
   const [draftCount, setDraftCount] = React.useState(0);
 
-  // Set user ID in storage service when user changes
+  // No user ID needed without authentication
   React.useEffect(() => {
-    scheduleStorage.setUserId(user?.id || null);
-  }, [user]);
+    scheduleStorage.setUserId(null);
+  }, []);
 
   // Load draft count for badge
   React.useEffect(() => {
@@ -100,7 +96,6 @@ const Navigation: React.FC = () => {
         {isMobile ? (
           <>
             <Box sx={{ flexGrow: 1 }} />
-            <UserProfile />
             <IconButton
               size="large"
               edge="end"
@@ -225,7 +220,6 @@ const Navigation: React.FC = () => {
                 );
               })}
             </Box>
-            <UserProfile />
           </>
         )}
       </Toolbar>

@@ -12,7 +12,6 @@ import {
 } from '@mui/material';
 import { Settings as SettingsIcon } from '@mui/icons-material';
 import Layout from '../components/Layout';
-import GoogleDriveSettings from '../components/GoogleDriveSettings';
 
 const Settings: React.FC = () => {
   return (
@@ -31,7 +30,6 @@ const Settings: React.FC = () => {
       <Grid container spacing={3}>
         {/* Google Drive Settings */}
         <Grid size={12}>
-          <GoogleDriveSettings />
         </Grid>
 
         {/* Future Settings Sections */}

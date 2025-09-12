@@ -62,7 +62,6 @@ import { draftService } from '../services/draftService';
 import { firebaseStorage } from '../services/firebaseStorage';
 import WorkflowBreadcrumbs from '../components/WorkflowBreadcrumbs';
 import { useWorkflowDraft } from '../hooks/useWorkflowDraft';
-import { useFirebaseAuth } from '../hooks/useFirebaseAuth';
 import { 
   TimePointData as WorkflowTimePointData,
   OutlierData,
@@ -126,8 +125,8 @@ const TimePoints: React.FC = () => {
     isSaving: isDraftSaving
   } = useWorkflowDraft(locationDraftId); // Use draft ID from navigation or session
   
-  // Firebase authentication status
-  const { isAuthenticated: isFirebaseConnected } = useFirebaseAuth();
+  // Firebase connection status
+  const isFirebaseConnected = false; // No auth needed
   
   const [timePointData, setTimePointData] = useState<TimePointData[]>([]);
   const [loading, setLoading] = useState(true);

@@ -20,7 +20,6 @@ import {
 import SidebarNavigation from './SidebarNavigation';
 import WorkflowBreadcrumbs from './WorkflowBreadcrumbs';
 import KeyboardShortcutsHelp from './KeyboardShortcutsHelp';
-import UserProfile from './UserProfile';
 import AppHeader from './AppHeader';
 import useKeyboardShortcuts from '../hooks/useKeyboardShortcuts';
 import { draftService } from '../services/draftService';
@@ -41,7 +40,6 @@ import TodShifts from '../pages/TodShifts';
 import DraftLibrary from '../pages/DraftLibrary';
 import Settings from '../pages/Settings';
 import NotFound from '../pages/NotFound';
-import EmailLinkHandler from './EmailLinkHandler';
 
 const DRAWER_WIDTH = 280;
 const COLLAPSED_WIDTH = 200; // Increased to show icons + labels

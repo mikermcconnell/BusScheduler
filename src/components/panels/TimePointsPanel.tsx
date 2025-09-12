@@ -80,7 +80,6 @@ import {
 import { ParsedCsvData } from '../../utils/csvParser';
 import { draftService } from '../../services/draftService';
 import { useWorkflowDraft } from '../../hooks/useWorkflowDraft';
-import { useFirebaseAuth } from '../../hooks/useFirebaseAuth';
 import { useWorkspace } from '../../contexts/WorkspaceContext';
 import { emit, subscribe, unsubscribe } from '../../services/workspaceEventBus';
 import { 
@@ -164,8 +163,8 @@ export const TimePointsPanel: React.FC<PanelProps> = ({ panelId, data, onClose, 
     isSaving: isDraftSaving
   } = useWorkflowDraft();
   
-  // Firebase authentication status
-  const { isAuthenticated: isFirebaseConnected } = useFirebaseAuth();
+  // Firebase connection status
+  const isFirebaseConnected = false; // No auth needed
   
   // Core data states - preserve original functionality
   const [timePointData, setTimePointData] = useState<TimePointData[]>([]);

@@ -5,7 +5,6 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { featureFlags, FeatureFlag, isCommandCenterMode } from '../utils/featureFlags';
-import { useAuth } from './AuthContext';
 
 /**
  * Feature Flag Context Type
@@ -47,7 +46,6 @@ interface FeatureFlagProviderProps {
  * Feature Flag Provider Component
  */
 export const FeatureFlagProvider: React.FC<FeatureFlagProviderProps> = ({ children }) => {
-  const { user } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
   
   // Feature flag states
@@ -67,8 +65,8 @@ export const FeatureFlagProvider: React.FC<FeatureFlagProviderProps> = ({ childr
       setIsLoading(true);
       
       try {
-        // Initialize with user ID (or null for anonymous)
-        await featureFlags.initialize(user?.id || null);
+        // Initialize without user ID
+        await featureFlags.initialize(null);
         
         // Update all flag states
         updateAllFlagStates();
@@ -80,7 +78,7 @@ export const FeatureFlagProvider: React.FC<FeatureFlagProviderProps> = ({ childr
     };
     
     initializeFlags();
-  }, [user?.id]);
+  }, []);
 
   /**
    * Update all flag states from the feature flag manager

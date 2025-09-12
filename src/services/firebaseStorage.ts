@@ -25,8 +25,7 @@ import {
   FieldValue
 } from 'firebase/firestore';
 
-import { User, onAuthStateChanged } from 'firebase/auth';
-import { db, auth, getFirebaseErrorMessage } from '../config/firebase';
+import { db, getFirebaseErrorMessage } from '../config/firebase';
 import { SummarySchedule } from '../types/schedule';
 import { sanitizeText, sanitizeFileName } from '../utils/inputSanitizer';
 import { TimeBand, DayType } from '../utils/calculator';
@@ -43,13 +42,13 @@ import {
 
 // Firebase-specific extensions
 export interface FirebaseSchedule extends Omit<SavedSchedule, 'createdAt' | 'updatedAt'> {
-  userId: string;
+  userId?: string; // Optional now that auth is removed
   createdAt: Timestamp | FieldValue;
   updatedAt: Timestamp | FieldValue;
 }
 
 export interface FirebaseDraftSchedule extends Omit<DraftSchedule, 'createdAt' | 'updatedAt'> {
-  userId: string;
+  userId?: string; // Optional now that auth is removed
   createdAt: Timestamp | FieldValue;
   updatedAt: Timestamp | FieldValue;
 }
@@ -66,8 +65,6 @@ const MAX_DRAFTS = 50; // Increased for cloud storage
 const MAX_SCHEDULE_SIZE = 10 * 1024 * 1024; // 10MB for cloud storage
 
 class FirebaseStorageService {
-  private currentUser: User | null = null;
-  private authUnsubscribe: Unsubscribe | null = null;
   private schedulesListener: Unsubscribe | null = null;
   private draftsListener: Unsubscribe | null = null;
   
@@ -76,37 +73,19 @@ class FirebaseStorageService {
   private onDraftsChange: ((drafts: DraftSchedule[]) => void) | null = null;
 
   constructor() {
-    this.initializeAuth();
-  }
-
-  /**
-   * Initialize authentication listener
-   */
-  private initializeAuth(): void {
-    this.authUnsubscribe = onAuthStateChanged(auth, (user) => {
-      this.currentUser = user;
-      
-      if (user) {
-        console.log('🔥 Firebase user authenticated:', user.uid);
-        this.setupRealtimeListeners();
-      } else {
-        console.log('🔥 Firebase user signed out');
-        this.cleanupListeners();
-      }
-    });
+    // Setup listeners immediately without auth
+    this.setupRealtimeListeners();
   }
 
   /**
    * Setup real-time listeners for schedules and drafts
    */
   private setupRealtimeListeners(): void {
-    if (!this.currentUser) return;
-
-    // Listen to schedules
+    // Listen to schedules (no user filtering)
     const schedulesQuery = query(
       collection(db, COLLECTIONS.SCHEDULES),
-      where('userId', '==', this.currentUser.uid),
-      orderBy('updatedAt', 'desc')
+      orderBy('updatedAt', 'desc'),
+      limit(MAX_SCHEDULES)
     );
 
     this.schedulesListener = onSnapshot(schedulesQuery, (snapshot) => {
@@ -118,11 +97,11 @@ class FirebaseStorageService {
       console.error('Schedules listener error:', error);
     });
 
-    // Listen to drafts
+    // Listen to drafts (no user filtering)
     const draftsQuery = query(
       collection(db, COLLECTIONS.DRAFTS),
-      where('userId', '==', this.currentUser.uid),
-      orderBy('updatedAt', 'desc')
+      orderBy('updatedAt', 'desc'),
+      limit(MAX_DRAFTS)
     );
 
     this.draftsListener = onSnapshot(draftsQuery, (snapshot) => {
@@ -202,17 +181,11 @@ class FirebaseStorageService {
   /**
    * Check if user is authenticated
    */
-  private requireAuth(): boolean {
-    if (!this.currentUser) {
-      console.warn('🔥 Firebase Storage: No authenticated user, operations may fail');
-      // For anonymous users, we might not have currentUser immediately
-      // Return false instead of throwing to allow graceful degradation
+  private requireFirebase(): boolean {
+    if (!db) {
+      console.warn('🔥 Firebase Storage: Database not initialized');
       return false;
     }
-    console.log('🔥 Firebase Storage: User authenticated', {
-      uid: this.currentUser.uid,
-      isAnonymous: this.currentUser.isAnonymous
-    });
     return true;
   }
 
@@ -288,7 +261,7 @@ class FirebaseStorageService {
     rawData?: any
   ): Promise<{ success: boolean; error?: string; scheduleId?: string }> {
     try {
-      if (!this.requireAuth()) {
+      if (!this.requireFirebase()) {
         return { success: false, error: 'Authentication required for saving schedules' };
       }
 
@@ -312,7 +285,7 @@ class FirebaseStorageService {
       const now = serverTimestamp();
       
       const firebaseSchedule: Omit<FirebaseSchedule, 'id'> = {
-        userId: this.currentUser!.uid,
+        userId: 'anonymous', // No auth required
         routeName: sanitizeText(summarySchedule.routeName),
         direction: sanitizeText(summarySchedule.direction),
         effectiveDate: summarySchedule.effectiveDate instanceof Date 
@@ -363,14 +336,14 @@ class FirebaseStorageService {
    */
   async getAllSchedules(): Promise<SavedSchedule[]> {
     try {
-      if (!this.requireAuth()) {
+      if (!this.requireFirebase()) {
         console.warn('🔥 Firebase Storage: Not authenticated, returning empty schedule list');
         return [];
       }
 
       const q = query(
         collection(db, COLLECTIONS.SCHEDULES),
-        where('userId', '==', this.currentUser!.uid),
+        // No user filtering needed
         orderBy('updatedAt', 'desc')
       );
 
@@ -407,7 +380,7 @@ class FirebaseStorageService {
    */
   async getScheduleById(id: string): Promise<SavedSchedule | null> {
     try {
-      if (!this.requireAuth()) {
+      if (!this.requireFirebase()) {
         console.warn('🔥 Firebase Storage: Not authenticated, cannot get schedule by ID');
         return null;
       }
@@ -440,7 +413,7 @@ class FirebaseStorageService {
    */
   async deleteSchedule(id: string): Promise<{ success: boolean; error?: string }> {
     try {
-      if (!this.requireAuth()) {
+      if (!this.requireFirebase()) {
         return { success: false, error: 'Authentication required for deleting schedules' };
       }
 
@@ -468,7 +441,7 @@ class FirebaseStorageService {
     fileName?: string
   ): Promise<{ success: boolean; error?: string }> {
     try {
-      if (!this.requireAuth()) {
+      if (!this.requireFirebase()) {
         return { success: false, error: 'Authentication required for updating schedules' };
       }
 
@@ -546,7 +519,7 @@ class FirebaseStorageService {
     } = {}
   ): Promise<{ success: boolean; error?: string; draftId?: string }> {
     try {
-      if (!this.requireAuth()) {
+      if (!this.requireFirebase()) {
         return { success: false, error: 'Authentication required for saving drafts' };
       }
 
@@ -580,7 +553,7 @@ class FirebaseStorageService {
       }
 
       const firebaseDraft: Omit<FirebaseDraftSchedule, 'id'> = {
-        userId: this.currentUser!.uid,
+        userId: 'anonymous', // No auth required
         fileName: sanitizeText(fileName),
         fileType,
         uploadedData,
@@ -611,14 +584,14 @@ class FirebaseStorageService {
    */
   async getAllDraftSchedules(): Promise<DraftSchedule[]> {
     try {
-      if (!this.requireAuth()) {
+      if (!this.requireFirebase()) {
         console.warn('🔥 Firebase Storage: Not authenticated, returning empty draft list');
         return [];
       }
 
       const q = query(
         collection(db, COLLECTIONS.DRAFTS),
-        where('userId', '==', this.currentUser!.uid),
+        // No user filtering needed
         orderBy('updatedAt', 'desc')
       );
 
@@ -636,7 +609,7 @@ class FirebaseStorageService {
    */
   async getDraftScheduleById(id: string): Promise<DraftSchedule | null> {
     try {
-      if (!this.requireAuth()) {
+      if (!this.requireFirebase()) {
         console.warn('🔥 Firebase Storage: Not authenticated, cannot get draft by ID');
         return null;
       }
@@ -669,7 +642,7 @@ class FirebaseStorageService {
    */
   async deleteDraftSchedule(id: string): Promise<{ success: boolean; error?: string }> {
     try {
-      if (!this.requireAuth()) {
+      if (!this.requireFirebase()) {
         return { success: false, error: 'Authentication required for deleting drafts' };
       }
 
@@ -765,23 +738,20 @@ class FirebaseStorageService {
    */
   destroy(): void {
     this.cleanupListeners();
-    if (this.authUnsubscribe) {
-      this.authUnsubscribe();
-    }
   }
 
   /**
-   * Get current user information
+   * Get current user information (returns null - no auth)
    */
-  getCurrentUser(): User | null {
-    return this.currentUser;
+  getCurrentUser(): null {
+    return null;
   }
 
   /**
-   * Check if user is authenticated
+   * Check if user is authenticated (always false - no auth)
    */
   isAuthenticated(): boolean {
-    return this.currentUser !== null;
+    return false;
   }
 }
 

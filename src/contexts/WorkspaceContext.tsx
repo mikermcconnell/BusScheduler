@@ -21,7 +21,6 @@ import { WorkflowDraftState } from '../types/workflow';
 import { Schedule, SummarySchedule, ServiceBand } from '../types/schedule';
 import { WorkspaceEvent, WorkspaceEventInput } from '../types/workspaceEvents';
 import { ValidationResult } from '../utils/validator';
-import { useAuth } from './AuthContext';
 import { useFeatureFlags } from './FeatureFlagContext';
 import { AUTO_SAVE_CONFIG, AUTO_SAVE_CONTEXTS } from '../config/autoSave';
 
@@ -379,7 +378,6 @@ interface WorkspaceProviderProps {
  * Workspace Provider Component
  */
 export const WorkspaceProvider: React.FC<WorkspaceProviderProps> = ({ children }) => {
-  const { user } = useAuth();
   const { isCommandCenter } = useFeatureFlags();
   const [state, dispatch] = useReducer(workspaceReducer, initialState);
 
@@ -565,12 +563,10 @@ export const WorkspaceProvider: React.FC<WorkspaceProviderProps> = ({ children }
   }, []);
 
   const loadDraft = useCallback(async (draftId: string) => {
-    if (!user) return;
-    
     dispatch({ type: 'SET_LOADING', payload: true });
     
     try {
-      const draft = await draftService.getDraft(draftId, user.id);
+      const draft = await draftService.getDraft(draftId, 'anonymous');
       if (draft) {
         setCurrentDraft(draft);
         
@@ -601,13 +597,13 @@ export const WorkspaceProvider: React.FC<WorkspaceProviderProps> = ({ children }
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
     }
-  }, [user, setCurrentDraft]);
+  }, [setCurrentDraft]);
 
   const saveDraft = useCallback(async () => {
-    if (!user || !state.scheduleData.currentDraft) return;
+    if (!state.scheduleData.currentDraft) return;
     
     try {
-      await draftService.saveDraft(state.scheduleData.currentDraft, user.id);
+      await draftService.saveDraft(state.scheduleData.currentDraft, 'anonymous');
       
       dispatch({
         type: 'SET_SCHEDULE_DATA',
@@ -641,7 +637,7 @@ export const WorkspaceProvider: React.FC<WorkspaceProviderProps> = ({ children }
         }
       });
     }
-  }, [user, state.scheduleData.currentDraft]);
+  }, [state.scheduleData.currentDraft]);
 
   /**
    * Validation actions
