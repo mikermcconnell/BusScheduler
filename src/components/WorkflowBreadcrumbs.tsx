@@ -861,7 +861,7 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
         {/* Celebration Snackbar (from StoryboardProgress) */}
         <Snackbar
           open={celebrationMessage !== null}
-          autoHideDuration={5000}
+          autoHideDuration={3000}
           onClose={() => setCelebrationMessage(null)}
           anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
         >

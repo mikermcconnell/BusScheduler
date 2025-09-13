@@ -69,6 +69,7 @@ export const SyncStatusIndicator: React.FC<SyncStatusIndicatorProps> = ({
   
   const [showErrorSnackbar, setShowErrorSnackbar] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [showSuccessSnackbar, setShowSuccessSnackbar] = useState(false);
   
   useEffect(() => {
     // Subscribe to offline queue status
@@ -80,6 +81,11 @@ export const SyncStatusIndicator: React.FC<SyncStatusIndicatorProps> = ({
       if (newStatus.state === 'error' && !showErrorSnackbar) {
         setErrorMessage(customError || queueStatus.lastError || 'Sync failed');
         setShowErrorSnackbar(true);
+      }
+
+      // Show success snackbar when sync completes
+      if (newStatus.state === 'saved' && newStatus.queueSize === 0 && !showSuccessSnackbar) {
+        setShowSuccessSnackbar(true);
       }
     });
     
@@ -100,7 +106,7 @@ export const SyncStatusIndicator: React.FC<SyncStatusIndicatorProps> = ({
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  }, [showErrorSnackbar, customError]);
+  }, [showErrorSnackbar, showSuccessSnackbar, customError]);
   
   const mapQueueStatusToSyncStatus = (queueStatus: QueueStatus): SyncStatus => {
     const { isOnline, queueSize, processing, lastSyncTime, lastError } = queueStatus;
@@ -263,7 +269,7 @@ export const SyncStatusIndicator: React.FC<SyncStatusIndicatorProps> = ({
       <Snackbar
         open={showErrorSnackbar && syncStatus.state === 'error'}
         onClose={() => setShowErrorSnackbar(false)}
-        autoHideDuration={null} // Don't auto-hide errors
+        autoHideDuration={3000}
         anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
       >
         <Alert
@@ -303,12 +309,16 @@ export const SyncStatusIndicator: React.FC<SyncStatusIndicatorProps> = ({
       
       {/* Success Snackbar */}
       <Snackbar
-        open={syncStatus.state === 'saved' && syncStatus.queueSize === 0}
-        autoHideDuration={2000}
-        onClose={() => {}}
+        open={showSuccessSnackbar}
+        autoHideDuration={3000}
+        onClose={() => setShowSuccessSnackbar(false)}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >
-        <Alert severity="success" variant="filled">
+        <Alert
+          severity="success"
+          variant="filled"
+          onClose={() => setShowSuccessSnackbar(false)}
+        >
           All changes saved to cloud
         </Alert>
       </Snackbar>

@@ -147,7 +147,10 @@
       "Bash(while read file)",
       "Bash(do [ -f \"$file\" ])",
       "Bash(echo:*)",
-      "Bash(done)"
+      "Bash(done)",
+      "Bash(start http://localhost:3000/upload)",
+      "Bash(cross-env:*)",
+      "Bash(PORT=3051 npm start)"
     ]
   },
   "outputStyle": "default",

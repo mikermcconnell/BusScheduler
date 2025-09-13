@@ -10,8 +10,9 @@ import { getAnalytics } from 'firebase/analytics';
 
 // Firebase configuration
 // Check if we have real Firebase config, otherwise use a flag to disable Firebase
-const hasRealFirebaseConfig = process.env.REACT_APP_FIREBASE_API_KEY && 
-  process.env.REACT_APP_FIREBASE_API_KEY !== "demo-api-key";
+const hasRealFirebaseConfig = process.env.REACT_APP_FIREBASE_API_KEY &&
+  process.env.REACT_APP_FIREBASE_API_KEY !== "demo-api-key" &&
+  process.env.REACT_APP_FIREBASE_API_KEY !== "AIzaSyFakeKeyForLocalStorageOnly";
 
 const firebaseConfig = {
   apiKey: process.env.REACT_APP_FIREBASE_API_KEY || "AIzaSyFakeKeyForLocalStorageOnly",

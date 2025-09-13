@@ -2090,7 +2090,7 @@ class UnifiedDraftService {
         const workflowData = {
           draftId: workflow.draftId,
           draftName: workflow.draftName,
-          routeName: workflow.routeName,
+          routeName: workflow.routeName || null,
           currentStep: workflow.currentStep,
           steps: workflow.steps,
           overallProgress: workflow.overallProgress,
@@ -2119,7 +2119,7 @@ class UnifiedDraftService {
               data: {
                 draftId: workflow.draftId,
                 draftName: workflow.draftName,
-                routeName: workflow.routeName,
+                routeName: workflow.routeName || null,
                 currentStep: workflow.currentStep,
                 steps: workflow.steps,
                 overallProgress: workflow.overallProgress,

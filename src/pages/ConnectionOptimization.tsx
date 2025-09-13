@@ -114,15 +114,21 @@ const ConnectionOptimization: React.FC = () => {
 
   const [loading, setLoading] = useState(true);
 
-  // Load existing connection data from draft
+  // Load existing connection data from draft with fallback data sources
   useEffect(() => {
     const loadConnectionData = async () => {
       setLoading(true);
-      
+
       try {
+        // Load connection optimization data
+        let selectedConnections: ConnectionPoint[] = [];
+        let optimizationResult = null;
+        let optimizationHistory: any[] = [];
+        let originalSchedule = null;
+
         if (draft?.connectionOptimization) {
           // Ensure selectedConnections have the correct ConnectionPoint type structure
-          const selectedConnections = (draft.connectionOptimization?.selectedConnections || []).map((conn: any) => {
+          selectedConnections = (draft.connectionOptimization?.selectedConnections || []).map((conn: any) => {
             // If it's already the correct format, use it as is; otherwise convert/skip
             if (conn.timepointId && conn.scheduleTimes) {
               return conn as ConnectionPoint;
@@ -131,15 +137,50 @@ const ConnectionOptimization: React.FC = () => {
             return null;
           }).filter(Boolean) as ConnectionPoint[];
 
-          setState(prev => ({
-            ...prev,
-            selectedConnections,
-            optimizationResult: draft.connectionOptimization?.lastResult || null,
-            optimizationHistory: draft.connectionOptimization?.optimizationHistory || [],
-            originalSchedule: draft.summarySchedule?.schedule || null,
-          }));
+          optimizationResult = draft.connectionOptimization?.lastResult || null;
+          optimizationHistory = draft.connectionOptimization?.optimizationHistory || [];
         }
+
+        // Try to load schedule data from multiple sources (for originalSchedule fallback)
+        if (!originalSchedule) {
+          // First: Try draft summarySchedule
+          if (draft && draft.summarySchedule && draft.summarySchedule.schedule) {
+            originalSchedule = draft.summarySchedule.schedule;
+            console.log('📋 Loaded original schedule from draft');
+          }
+          // Second: Try navigation state
+          else if (location.state?.summarySchedule) {
+            originalSchedule = location.state.summarySchedule;
+            console.log('📋 Loaded original schedule from navigation state');
+          }
+          // Third: Try localStorage
+          else {
+            try {
+              const savedSchedule = localStorage.getItem('currentSummarySchedule');
+              if (savedSchedule) {
+                const parsedSchedule = JSON.parse(savedSchedule);
+                if (parsedSchedule && parsedSchedule.trips && parsedSchedule.trips.length > 0) {
+                  originalSchedule = parsedSchedule;
+                  console.log('📋 Loaded original schedule from localStorage');
+                }
+              }
+            } catch (error) {
+              console.warn('Failed to load schedule from localStorage during initialization:', error);
+            }
+          }
+        }
+
+        setState(prev => ({
+          ...prev,
+          selectedConnections,
+          optimizationResult,
+          optimizationHistory,
+          originalSchedule,
+          error: !originalSchedule ? 'Schedule data not found. Please ensure you completed the Block Summary Schedule step.' : null,
+        }));
+
       } catch (err) {
+        console.error('Error loading connection data:', err);
         setState(prev => ({
           ...prev,
           error: err instanceof Error ? err.message : 'Failed to load connection data'
@@ -150,7 +191,7 @@ const ConnectionOptimization: React.FC = () => {
     };
 
     loadConnectionData();
-  }, [draft]);
+  }, [draft, location.state]);
 
   // Handle connection selection from library
   const handleConnectionSelect = (connectionPoint: ConnectionPoint) => {
@@ -191,13 +232,58 @@ const ConnectionOptimization: React.FC = () => {
   // Run optimization
   const handleRunOptimization = async () => {
     storeOriginalSchedule();
-    if (!draft?.summarySchedule) {
+
+    // Try multiple data sources for schedule data
+    let scheduleData = null;
+    let dataSource = '';
+
+    // First: Try draft summarySchedule (most reliable)
+    if (draft && draft.summarySchedule && draft.summarySchedule.schedule) {
+      scheduleData = draft.summarySchedule.schedule;
+      dataSource = 'draft';
+      console.log('📋 Using schedule data from draft');
+    }
+    // Second: Try location state (navigation from BlockSummarySchedule)
+    else if (location.state?.summarySchedule) {
+      scheduleData = location.state.summarySchedule;
+      dataSource = 'navigation';
+      console.log('📋 Using schedule data from navigation state');
+    }
+    // Third: Try localStorage fallback
+    else {
+      try {
+        const savedSchedule = localStorage.getItem('currentSummarySchedule');
+        if (savedSchedule) {
+          const parsedSchedule = JSON.parse(savedSchedule);
+          if (parsedSchedule && parsedSchedule.trips && parsedSchedule.trips.length > 0) {
+            scheduleData = parsedSchedule;
+            dataSource = 'localStorage';
+            console.log('📋 Using schedule data from localStorage fallback');
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to load schedule from localStorage:', error);
+      }
+    }
+
+    if (!scheduleData) {
       setState(prev => ({
         ...prev,
-        error: 'No schedule data available. Please complete the previous workflow steps.',
+        error: `No schedule data found. Please ensure you've completed the Block Summary Schedule step and that the data was saved successfully.
+
+        Troubleshooting:
+        • Go back to Block Summary Schedule
+        • Wait for any save operations to complete
+        • Try navigating to Connection Optimization again
+        • If the problem persists, try refreshing the page from the Block Summary Schedule step`,
       }));
       return;
     }
+
+    console.log(`✅ Found schedule data from ${dataSource}:`, {
+      timePoints: scheduleData.timePoints?.length || 0,
+      trips: scheduleData.trips?.length || 0
+    });
 
     setState(prev => ({
       ...prev,
@@ -240,7 +326,7 @@ const ConnectionOptimization: React.FC = () => {
       }));
 
       // Build optimization request - convert SummarySchedule to Schedule format
-      const summarySchedule = draft.summarySchedule.schedule;
+      const summarySchedule = scheduleData;
       const convertedSchedule: Schedule = {
         id: summarySchedule.routeId,
         name: summarySchedule.routeName,
@@ -399,11 +485,46 @@ const ConnectionOptimization: React.FC = () => {
   };
 
   const handleGoForward = () => {
+    // Validate data before allowing progression
+    if (!state.originalSchedule && !draft?.summarySchedule && !location.state?.summarySchedule) {
+      setState(prev => ({
+        ...prev,
+        error: `Cannot proceed to export: No schedule data available.
+
+        Please:
+        1. Return to Block Summary Schedule
+        2. Ensure the schedule is generated and saved
+        3. Navigate back to Connection Optimization when save is complete`
+      }));
+      return;
+    }
+
+    // Additional validation for data integrity
+    const scheduleData = state.originalSchedule || draft?.summarySchedule?.schedule || location.state?.summarySchedule;
+    if (!scheduleData?.timePoints || scheduleData.timePoints.length === 0) {
+      setState(prev => ({
+        ...prev,
+        error: 'Invalid schedule data: No time points found. Please regenerate the schedule from Block Configuration.'
+      }));
+      return;
+    }
+
+    if (!scheduleData?.trips || scheduleData.trips.length === 0) {
+      setState(prev => ({
+        ...prev,
+        error: 'Invalid schedule data: No trips found. Please regenerate the schedule from Block Configuration.'
+      }));
+      return;
+    }
+
+    console.log('✅ Data validation passed, proceeding to export');
+
     // Navigate to next step or export
     navigate('/export', {
       state: {
         draftId: draft?.draftId,
         optimizationResult: state.optimizationResult,
+        scheduleData: scheduleData, // Pass validated schedule data
         fromWorkflowNavigation: true,
       }
     });
@@ -539,7 +660,14 @@ const ConnectionOptimization: React.FC = () => {
           onClick={handleGoForward}
           size="large"
           sx={{ minWidth: 160 }}
-          disabled={state.selectedConnections.length === 0 && !state.optimizationResult}
+          disabled={
+            // Disable if no schedule data is available from any source
+            (!state.originalSchedule && !draft?.summarySchedule?.schedule && !location.state?.summarySchedule) ||
+            // Also disable if there's a current error
+            !!state.error ||
+            // Standard validation: need connections or optimization result
+            (state.selectedConnections.length === 0 && !state.optimizationResult)
+          }
         >
 {state.optimizationResult ? 'Export Optimized Schedule' : 'Continue to Export'}
         </Button>
@@ -547,8 +675,40 @@ const ConnectionOptimization: React.FC = () => {
 
       {/* Error Display */}
       {state.error && (
-        <Alert severity="error" sx={{ mb: 3 }}>
-          {state.error}
+        <Alert
+          severity="error"
+          sx={{ mb: 3 }}
+          onClose={() => setState(prev => ({ ...prev, error: null }))}
+        >
+          <Box>
+            <Typography variant="subtitle2" gutterBottom>
+              🚨 Connection Optimization Error
+            </Typography>
+            <Typography variant="body2" sx={{ whiteSpace: 'pre-line' }}>
+              {state.error}
+            </Typography>
+            <Box sx={{ mt: 2, display: 'flex', gap: 2 }}>
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={() => navigate('/block-summary-schedule', {
+                  state: {
+                    draftId: draft?.draftId,
+                    fromConnectionOptimization: true
+                  }
+                })}
+              >
+                🔙 Return to Schedule
+              </Button>
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={() => window.location.reload()}
+              >
+                🔄 Refresh Page
+              </Button>
+            </Box>
+          </Box>
         </Alert>
       )}
 

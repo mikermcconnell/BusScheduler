@@ -1442,7 +1442,7 @@ export const TimePointsPanel: React.FC<PanelProps> = ({ panelId, data, onClose, 
       {/* Error Snackbar */}
       <Snackbar
         open={!!saveError}
-        autoHideDuration={6000}
+        autoHideDuration={3000}
         onClose={() => setSaveError(null)}
       >
         <Alert severity="error" sx={{ width: '100%' }}>

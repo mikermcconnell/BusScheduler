@@ -23,10 +23,8 @@ import {
   IconButton,
   Tooltip,
   Grid,
-  Badge,
   Divider,
   List,
-  ListItem,
   ListItemIcon,
   ListItemText,
   ListItemButton,
@@ -40,16 +38,16 @@ import {
   SwapHoriz as TransferIcon,
   AccessTime as TimeIcon,
   LocationOn as LocationIcon,
-  Warning as WarningIcon,
   Info as InfoIcon,
   Close as CloseIcon,
   ExpandMore as ExpandMoreIcon,
   ExpandLess as ExpandLessIcon,
   Star as PriorityIcon,
+  ArrowForward as ArrowForwardIcon,
 } from '@mui/icons-material';
 
 import { ConnectionPoint } from '../types/connectionOptimization';
-import { SampleConnectionDataService, SAMPLE_DATA_WARNING } from '../services/sampleConnectionData';
+import { SampleConnectionDataService } from '../services/sampleConnectionData';
 
 interface ConnectionLibraryProps {
   onConnectionSelect: (connection: ConnectionPoint) => void;
@@ -304,6 +302,26 @@ const ConnectionLibrary: React.FC<ConnectionLibraryProps> = ({
                       </Box>
                     }
                   />
+                  <Tooltip title="Add to Active Connections">
+                    <IconButton
+                      size="small"
+                      color="primary"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleConnectionSelect(connection);
+                      }}
+                      disabled={isConnectionSelected(connection.id)}
+                      sx={{
+                        mr: 1,
+                        backgroundColor: isConnectionSelected(connection.id) ? 'transparent' : 'primary.50',
+                        '&:hover': {
+                          backgroundColor: isConnectionSelected(connection.id) ? 'transparent' : 'primary.100',
+                        }
+                      }}
+                    >
+                      <ArrowForwardIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
                   <IconButton size="small">
                     {expandedConnections.has(connection.id) ? <ExpandLessIcon /> : <ExpandMoreIcon />}
                   </IconButton>

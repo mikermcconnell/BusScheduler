@@ -1043,7 +1043,7 @@ export const BlockConfigPanel: React.FC<PanelProps> = ({ id, onClose, initialDat
       {/* Save Notification */}
       <Snackbar
         open={state.saveNotification.open}
-        autoHideDuration={4000}
+        autoHideDuration={3000}
         onClose={() => setState(prev => ({ 
           ...prev, 
           saveNotification: { ...prev.saveNotification, open: false } 

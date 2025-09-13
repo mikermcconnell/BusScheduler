@@ -2308,7 +2308,7 @@ export default function BlockConfiguration() {
       {/* Save Notification Snackbar */}
       <Snackbar
         open={saveNotification.open}
-        autoHideDuration={4000}
+        autoHideDuration={3000}
         onClose={() => setSaveNotification({ ...saveNotification, open: false })}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >

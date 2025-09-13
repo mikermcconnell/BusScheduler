@@ -22,7 +22,10 @@ import {
   DialogContent,
   DialogActions,
   Menu,
-  MenuItem
+  MenuItem,
+  CircularProgress,
+  Alert,
+  Snackbar
 } from '@mui/material';
 import {
   ArrowBack as BackIcon,
@@ -41,6 +44,7 @@ import { draftService } from '../services/draftService';
 import { exportService } from '../services/exportService';
 import WorkflowBreadcrumbs from '../components/WorkflowBreadcrumbs';
 import { SaveToDraft, AutoSaveStatus } from '../components/SaveToDraft';
+import { useWorkflowDraft } from '../hooks/useWorkflowDraft';
 
 // TODO(human): Add comprehensive component documentation here
 
@@ -215,11 +219,23 @@ const BlockSummarySchedule: React.FC = () => {
   const theme = useTheme();
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 50 });
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [isNavigating, setIsNavigating] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishSuccess, setPublishSuccess] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
   const tableContainerRef = useRef<HTMLDivElement>(null);
-  
+
+  // Workflow draft management
+  const locationDraftId = location.state?.draftId;
+  const {
+    draft,
+    updateSummarySchedule,
+    loading: draftLoading,
+    error: draftError
+  } = useWorkflowDraft(locationDraftId);
+
   // Recovery time editing state
   const [editingRecovery, setEditingRecovery] = useState<{tripId: string, timePointId: string} | null>(null);
   const [tempRecoveryValue, setTempRecoveryValue] = useState<string>('');
@@ -523,6 +539,7 @@ const BlockSummarySchedule: React.FC = () => {
     }
   }, [location.state]);
 
+
   // Load schedule data from multiple sources with fallback logic
   const [schedule, setSchedule] = useState<Schedule>(() => {
     // First try location.state (direct navigation)
@@ -578,6 +595,88 @@ const BlockSummarySchedule: React.FC = () => {
       timePointData: []
     };
   });
+
+  // Save schedule data to workflow draft whenever it changes
+  useEffect(() => {
+    let isMounted = true;
+
+    const saveScheduleData = async () => {
+      if (!schedule || !schedule.trips || schedule.trips.length === 0 || !updateSummarySchedule) {
+        return;
+      }
+
+      setIsSaving(true);
+      setSaveError(null);
+
+      try {
+        // Convert trips to schedule matrix format for weekday
+        const weekdayMatrix: string[][] = schedule.trips.map(trip =>
+          schedule.timePoints.map(tp => {
+            // Use departure time if available, otherwise arrival time
+            return trip.departureTimes?.[tp.id] || trip.arrivalTimes?.[tp.id] || '';
+          })
+        );
+
+        const summaryScheduleData = {
+          schedule: {
+            routeId: schedule.id || `route_${Date.now()}`,
+            routeName: schedule.name || 'Bus Route',
+            direction: 'Outbound',
+          timePoints: schedule.timePoints || [],
+          weekday: weekdayMatrix,
+          saturday: [],
+          sunday: [],
+          effectiveDate: new Date(),
+          metadata: {
+            weekdayTrips: schedule.trips?.length || 0,
+            saturdayTrips: 0,
+            sundayTrips: 0,
+            lastModified: new Date().toISOString()
+          }
+        },
+        metadata: {
+          generationMethod: 'block-based' as const,
+          parameters: {
+            numberOfBuses: Math.max(...(schedule.trips?.map(t => t.blockNumber) || [0])),
+            tripCount: schedule.trips?.length || 0
+          },
+          validationResults: [],
+          performanceMetrics: {
+            generationTimeMs: 0,
+            tripCount: schedule.trips?.length || 0,
+            memoryUsageMB: 0
+          }
+        }
+      };
+
+        // Save to workflow draft and await completion
+        const result = await updateSummarySchedule(summaryScheduleData);
+
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to save schedule data');
+        }
+
+        console.log('✅ Successfully saved schedule data to workflow draft');
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to save schedule data';
+        console.error('❌ Failed to save schedule to workflow draft:', errorMessage);
+
+        if (isMounted) {
+          setSaveError(errorMessage);
+        }
+      } finally {
+        if (isMounted) {
+          setIsSaving(false);
+        }
+      }
+    };
+
+    saveScheduleData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [schedule, updateSummarySchedule]);
 
   // Initialize master recovery times based on schedule timepoints
   useEffect(() => {
@@ -2448,24 +2547,97 @@ const BlockSummarySchedule: React.FC = () => {
     navigate(-1);
   };
 
-  const handleContinueToConnections = () => {
-    // Get current draft ID from the location state or draft service
-    const draftId = location.state?.draftId || draftService.getCurrentSessionDraftId();
-    
-    navigate('/connection-optimization', {
-      state: {
-        draftId,
-        fromBlockSummary: true,
-        summarySchedule: {
-          id: schedule.id,
-          name: schedule.name,
-          timePoints: schedule.timePoints,
-          trips: schedule.trips,
-          serviceBands: schedule.serviceBands,
-          updatedAt: schedule.updatedAt,
+  const handleContinueToConnections = async () => {
+    // Prevent navigation if save is in progress
+    if (isSaving) {
+      console.log('⏳ Save in progress, waiting for completion before navigation...');
+      return;
+    }
+
+    // Validate that we have schedule data
+    if (!schedule || !schedule.trips || schedule.trips.length === 0) {
+      setSaveError('No schedule data available. Please ensure the schedule has been generated successfully.');
+      return;
+    }
+
+    setIsNavigating(true);
+
+    try {
+      // Get current draft ID from the location state or draft service
+      const draftId = location.state?.draftId || draftService.getCurrentSessionDraftId();
+
+      // Ensure data is saved before navigation
+      if (updateSummarySchedule && !saveError) {
+        console.log('🔄 Ensuring schedule data is saved before navigation...');
+
+        const summaryScheduleData = {
+          schedule: {
+            routeId: schedule.id || `route_${Date.now()}`,
+            routeName: schedule.name || 'Bus Route',
+            direction: 'Outbound',
+            timePoints: schedule.timePoints.map(tp => ({
+              id: tp.id,
+              name: tp.name,
+              sequence: tp.sequence
+            })),
+            weekday: schedule.trips.map(trip =>
+              schedule.timePoints.map(tp => {
+                return trip.departureTimes?.[tp.id] || trip.arrivalTimes?.[tp.id] || '';
+              })
+            ),
+            saturday: [],
+            sunday: [],
+            effectiveDate: new Date(),
+            expirationDate: undefined,
+            metadata: {
+              weekdayTrips: schedule.trips.length,
+              saturdayTrips: 0,
+              sundayTrips: 0
+            }
+          },
+          metadata: {
+            generationTimestamp: new Date().toISOString(),
+            generationMethod: 'block-based' as const,
+            parameters: {
+              numberOfBuses: Math.max(...(schedule.trips?.map(t => t.blockNumber) || [0])),
+              tripCount: schedule.trips?.length || 0
+            },
+            validationResults: [],
+            performanceMetrics: {
+              generationTimeMs: 0,
+              tripCount: schedule.trips?.length || 0,
+              memoryUsageMB: 0
+            }
+          }
+        };
+
+        const result = await updateSummarySchedule(summaryScheduleData);
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to save schedule before navigation');
         }
       }
-    });
+
+      navigate('/connection-optimization', {
+        state: {
+          draftId,
+          fromBlockSummary: true,
+          summarySchedule: {
+            id: schedule.id,
+            name: schedule.name,
+            timePoints: schedule.timePoints,
+            trips: schedule.trips,
+            serviceBands: schedule.serviceBands,
+            updatedAt: schedule.updatedAt,
+          }
+        }
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to navigate to connections';
+      console.error('❌ Navigation failed:', errorMessage);
+      setSaveError(errorMessage);
+    } finally {
+      setIsNavigating(false);
+    }
   };
 
 
@@ -2656,7 +2828,28 @@ const BlockSummarySchedule: React.FC = () => {
     <>
       <Box sx={{ pr: 3, width: '100%' }}>
         <Box sx={{ py: 4 }}>
-          
+
+          {/* Save Status and Error Display */}
+          {(isSaving || saveError) && (
+            <Box sx={{ mb: 3 }}>
+              {isSaving && (
+                <Alert severity="info" sx={{ mb: 1, display: 'flex', alignItems: 'center' }}>
+                  <CircularProgress size={20} sx={{ mr: 2 }} />
+                  Saving schedule data...
+                </Alert>
+              )}
+              {saveError && (
+                <Alert
+                  severity="error"
+                  sx={{ mb: 1 }}
+                  onClose={() => setSaveError(null)}
+                >
+                  <strong>Save Error:</strong> {saveError}
+                </Alert>
+              )}
+            </Box>
+          )}
+
           {/* Workflow Navigation Buttons */}
           <Box sx={{ 
             mb: 3, 
@@ -2692,17 +2885,18 @@ const BlockSummarySchedule: React.FC = () => {
               </Box>
               <Button
                 variant="contained"
-                startIcon={<ArrowForwardIcon />}
+                startIcon={isNavigating ? <CircularProgress size={20} color="inherit" /> : <ArrowForwardIcon />}
                 onClick={handleContinueToConnections}
                 size="large"
                 color="primary"
-                sx={{ 
+                disabled={isSaving || isNavigating || !schedule || !schedule.trips || schedule.trips.length === 0}
+                sx={{
                   minWidth: 220,
                   fontWeight: 'bold',
                   boxShadow: '0 4px 12px rgba(25, 118, 210, 0.3)'
                 }}
               >
-                Continue to Optimize Connections
+                {isNavigating ? 'Saving & Navigating...' : isSaving ? 'Saving Data...' : 'Continue to Optimize Connections'}
               </Button>
             </Box>
           </Box>
@@ -2750,12 +2944,13 @@ const BlockSummarySchedule: React.FC = () => {
                   </Button>
                   <Button
                     variant="contained"
-                    startIcon={<ConnectionsIcon />}
+                    startIcon={isNavigating ? <CircularProgress size={16} color="inherit" /> : <ConnectionsIcon />}
                     onClick={handleContinueToConnections}
                     size="small"
                     color="primary"
+                    disabled={isSaving || isNavigating || !schedule || !schedule.trips || schedule.trips.length === 0}
                   >
-                    Optimize Connections
+                    {isNavigating ? 'Saving...' : 'Optimize Connections'}
                   </Button>
                   <Button
                     variant="contained"
