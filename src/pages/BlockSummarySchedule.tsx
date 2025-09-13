@@ -218,7 +218,9 @@ const BlockSummarySchedule: React.FC = () => {
   const navigate = useNavigate();
   const theme = useTheme();
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [visibleRange, setVisibleRange] = useState({ start: 0, end: 50 });
+  // OPTIMIZATION: Lower virtualization threshold from 50 to 30 for better performance
+  const VIRTUALIZATION_THRESHOLD = 30;
+  const [visibleRange, setVisibleRange] = useState({ start: 0, end: VIRTUALIZATION_THRESHOLD });
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isNavigating, setIsNavigating] = useState(false);
@@ -597,13 +599,18 @@ const BlockSummarySchedule: React.FC = () => {
   });
 
   // Save schedule data to workflow draft whenever it changes
+  // SAFETY: Already has cleanup with isMounted flag
   useEffect(() => {
     let isMounted = true;
 
     const saveScheduleData = async () => {
+      if (!isMounted) return; // Check if still mounted
+
       if (!schedule || !schedule.trips || schedule.trips.length === 0 || !updateSummarySchedule) {
         return;
       }
+
+      if (!isMounted) return; // Check again before state updates
 
       setIsSaving(true);
       setSaveError(null);
@@ -825,24 +832,31 @@ const BlockSummarySchedule: React.FC = () => {
         newDepartureTime: string;
       }> = [];
       
-      const updatedTrips = prevSchedule.trips.map(trip => {
+      // SAFETY: Add null checks for trips array
+      const updatedTrips = (prevSchedule?.trips || []).map(trip => {
+        // SAFETY: Ensure trip exists before processing
+        if (!trip) {
+          console.warn('Encountered null trip in schedule, skipping');
+          return trip;
+        }
+
         if (trip.tripNumber === tripNumber) {
           // Update recovery time for this timepoint
           const updatedRecoveryTimes = {
-            ...trip.recoveryTimes,
+            ...(trip.recoveryTimes || {}),
             [timePointId]: newRecoveryTime
           };
-          
+
           // Update subsequent trip times within this trip
-          const updatedTrip = updateSubsequentTripTimes(trip, timePointId, recoveryDifference, prevSchedule.timePoints);
-          
+          const updatedTrip = updateSubsequentTripTimes(trip, timePointId, recoveryDifference, prevSchedule?.timePoints || []);
+
           return {
             ...updatedTrip,
             recoveryTimes: updatedRecoveryTimes
           };
         }
         return trip;
-      });
+      }).filter(Boolean); // Remove any null/undefined entries
       
       // Update subsequent trips in the same block for ANY recovery time change
       // because any change affects when the trip ends and thus when the next trip can start
@@ -854,15 +868,33 @@ const BlockSummarySchedule: React.FC = () => {
           const blockNumber = modifiedTrip.blockNumber;
           
           // Find all trips in the same block and sort them by departure time
+          // SAFETY: Add null checks and default values
           const blockTrips = updatedTrips
-            .filter(t => t.blockNumber === blockNumber)
-            .sort((a, b) => a.departureTime.localeCompare(b.departureTime));
+            .filter(t => t && t.blockNumber === blockNumber)
+            .sort((a, b) => (a?.departureTime || '').localeCompare(b?.departureTime || ''));
           
           // Find the position of the modified trip in the block
           const modifiedTripIndexInBlock = blockTrips.findIndex(t => t.tripNumber === tripNumber);
-          
+
+          // SAFETY: Add iteration limits and timeout to prevent infinite loops
+          const MAX_CASCADE_ITERATIONS = 100;
+          const CASCADE_TIMEOUT = 5000; // 5 seconds
+          let iterations = 0;
+          const cascadeStartTime = Date.now();
+
           // Update all subsequent trips in this block (based on block cycling order)
           for (let i = modifiedTripIndexInBlock + 1; i < blockTrips.length; i++) {
+            // Check safety limits to prevent browser freeze
+            if (++iterations > MAX_CASCADE_ITERATIONS) {
+              console.error(`⚠️ Cascade iteration limit (${MAX_CASCADE_ITERATIONS}) reached - aborting to prevent infinite loop`);
+              break;
+            }
+
+            if (Date.now() - cascadeStartTime > CASCADE_TIMEOUT) {
+              console.error(`⚠️ Cascade timeout (${CASCADE_TIMEOUT}ms) reached - aborting to prevent browser freeze`);
+              break;
+            }
+
             const subsequentTrip = blockTrips[i];
             const originalDepartureTime = subsequentTrip.departureTime;
             const originalServiceBand = subsequentTrip.serviceBand;
@@ -2522,13 +2554,13 @@ const BlockSummarySchedule: React.FC = () => {
 
   // Get visible trips for virtualization
   const visibleTrips = useMemo(() => {
-    if (sortedTrips.length <= 50) return sortedTrips;
+    if (sortedTrips.length <= VIRTUALIZATION_THRESHOLD) return sortedTrips;
     return sortedTrips.slice(visibleRange.start, visibleRange.end);
   }, [sortedTrips, visibleRange]);
 
   // Handle scroll for virtualization
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    if (sortedTrips.length <= 50) return;
+    if (sortedTrips.length <= VIRTUALIZATION_THRESHOLD) return;
     
     const container = e.target as HTMLDivElement;
     const scrollTop = container.scrollTop;
@@ -3273,14 +3305,14 @@ const BlockSummarySchedule: React.FC = () => {
                     )}
                     
                     {/* Add spacer for virtualization offset */}
-                    {sortedTrips.length > 50 && visibleRange.start > 0 && (
+                    {sortedTrips.length > VIRTUALIZATION_THRESHOLD && visibleRange.start > 0 && (
                       <TableRow sx={{ height: `${visibleRange.start * 48}px` }}>
                             <TableCell colSpan={7 + schedule.timePoints.length} sx={{ p: 0, border: 'none' }} />
                       </TableRow>
                     )}
                     
                     {visibleTrips.map((trip, idx) => {
-                      const originalIdx = sortedTrips.length > 50 ? visibleRange.start + idx : idx;
+                      const originalIdx = sortedTrips.length > VIRTUALIZATION_THRESHOLD ? visibleRange.start + idx : idx;
                       const nextTrip = visibleTrips[idx + 1];
                       
                       return (
@@ -3365,7 +3397,7 @@ const BlockSummarySchedule: React.FC = () => {
                     )}
                     
                     {/* Add spacer for remaining items */}
-                    {sortedTrips.length > 50 && visibleRange.end < sortedTrips.length && (
+                    {sortedTrips.length > VIRTUALIZATION_THRESHOLD && visibleRange.end < sortedTrips.length && (
                       <TableRow sx={{ height: `${(sortedTrips.length - visibleRange.end) * 48}px` }}>
                             <TableCell colSpan={7 + schedule.timePoints.length} sx={{ p: 0, border: 'none' }} />
                       </TableRow>

@@ -198,6 +198,9 @@ class UnifiedDraftService {
   
   // In-memory lock for client-side atomic operations
   private operationLocks = new Map<string, number>();
+
+  // SAFETY: Track pending save promises to prevent race conditions
+  private pendingSaves = new Map<string, Promise<void>>();
   
   // Cache for draft data to reduce Firebase calls
   private draftCache = new Map<string, { draft: UnifiedDraftCompat, timestamp: number }>();
@@ -2057,21 +2060,52 @@ class UnifiedDraftService {
 
   /**
    * Save workflow state with resilience (UI storyboard persistence)
+   * SAFETY: Implements race condition protection with pending saves queue
    */
   async saveWorkflow(workflow: DraftWorkflowState): Promise<void> {
+    const saveKey = `workflow_${workflow.draftId}`;
+
+    // SAFETY: Wait for any pending saves for this workflow to complete
+    const pendingSave = this.pendingSaves.get(saveKey);
+    if (pendingSave) {
+      console.log(`⏳ Waiting for pending save to complete for workflow ${workflow.draftId}`);
+      try {
+        await pendingSave;
+      } catch (error) {
+        console.warn('Previous save failed, proceeding with new save');
+      }
+    }
+
+    // Create a new save promise
+    const savePromise = this.performWorkflowSave(workflow);
+    this.pendingSaves.set(saveKey, savePromise);
+
+    try {
+      await savePromise;
+    } finally {
+      // Clean up the pending save
+      this.pendingSaves.delete(saveKey);
+    }
+  }
+
+  /**
+   * Perform the actual workflow save
+   */
+  private async performWorkflowSave(workflow: DraftWorkflowState): Promise<void> {
     try {
       workflow.lastModified = new Date().toISOString();
-      
+
       // Save to localStorage first (instant feedback)
       localStorage.setItem(
         this.WORKFLOW_KEY_PREFIX + workflow.draftId,
         JSON.stringify(workflow)
       );
-      
+
       // Then sync to Firebase with resilience
       await this.saveWorkflowToFirebase(workflow);
     } catch (error) {
       console.error('Error saving draft workflow:', error);
+      throw error; // Re-throw to handle in caller
     }
   }
 

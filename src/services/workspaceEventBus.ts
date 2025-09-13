@@ -152,11 +152,108 @@ class WorkspaceEventBus {
   }
 
   /**
+   * Validate event type and payload structure
+   */
+  private validateEventType(event: WorkspaceEventInput): boolean {
+    if (!event || typeof event !== 'object') {
+      console.error('Invalid event: must be an object');
+      return false;
+    }
+
+    if (!event.type || typeof event.type !== 'string') {
+      console.error('Invalid event: missing or invalid type');
+      return false;
+    }
+
+    if (!event.source || typeof event.source !== 'string') {
+      console.error('Invalid event: missing or invalid source');
+      return false;
+    }
+
+    if (typeof event.priority !== 'number') {
+      console.error('Invalid event: missing or invalid priority');
+      return false;
+    }
+
+    // Type-specific payload validation
+    switch (event.type) {
+      case 'data-validation':
+        if (!event.payload?.validationId || !event.payload?.status || !Array.isArray(event.payload?.errors) || !Array.isArray(event.payload?.warnings)) {
+          console.error('Invalid data-validation event payload');
+          return false;
+        }
+        break;
+
+      case 'workflow-progress':
+        if (!event.payload?.currentStep || typeof event.payload?.progress !== 'number' || typeof event.payload?.canProceed !== 'boolean') {
+          console.error('Invalid workflow-progress event payload');
+          return false;
+        }
+        break;
+
+      case 'auto-save':
+        if (!event.payload?.draftId || !event.payload?.status) {
+          console.error('Invalid auto-save event payload');
+          return false;
+        }
+        break;
+
+      case 'schedule-data':
+        if (!event.payload?.dataType || !event.payload?.action || event.payload?.data === undefined) {
+          console.error('Invalid schedule-data event payload');
+          return false;
+        }
+        break;
+
+      case 'panel-state':
+        if (!event.payload?.panelId || !event.payload?.action) {
+          console.error('Invalid panel-state event payload');
+          return false;
+        }
+        break;
+
+      case 'notification':
+        if (!event.payload?.level || !event.payload?.title || !event.payload?.message) {
+          console.error('Invalid notification event payload');
+          return false;
+        }
+        break;
+
+      case 'keyboard-shortcut':
+        if (!event.payload?.shortcut || !event.payload?.action) {
+          console.error('Invalid keyboard-shortcut event payload');
+          return false;
+        }
+        break;
+
+      case 'draft-update':
+        if (!event.payload?.draftId || !event.payload?.draftName || !event.payload?.updateType) {
+          console.error('Invalid draft-update event payload');
+          return false;
+        }
+        break;
+
+      // Add more event type validations as needed
+      default:
+        // Log warning for unknown event types but don't fail
+        console.warn(`Unknown event type: ${event.type}`);
+    }
+
+    return true;
+  }
+
+  /**
    * Emit an event
    */
   async emit(event: WorkspaceEventInput): Promise<void> {
     const startTime = performance.now();
-    
+
+    // SAFETY: Validate event structure and type before processing
+    if (!this.validateEventType(event)) {
+      console.error('Event validation failed, skipping emission:', event);
+      return;
+    }
+
     // Create complete event with ID and timestamp
     const completeEvent = {
       ...event,
