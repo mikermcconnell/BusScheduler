@@ -15,6 +15,7 @@ import {
   Menu as MenuIcon 
 } from '@mui/icons-material';
 import { useLocation, useNavigate } from 'react-router-dom';
+import SyncStatusIndicator from './SyncStatusIndicator';
 
 interface AppHeaderProps {
   title?: string;
@@ -138,6 +139,10 @@ const AppHeader: React.FC<AppHeaderProps> = ({
             alignItems: 'center',
             gap: 2
           }}>
+            <SyncStatusIndicator 
+              position="inline" 
+              showDetails={!isMobile}
+            />
             <Typography 
               variant="subtitle1" 
               sx={{ 

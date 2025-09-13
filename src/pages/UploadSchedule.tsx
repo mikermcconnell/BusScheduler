@@ -203,6 +203,7 @@ const UploadSchedule: React.FC = () => {
           open={showDraftNamingDialog}
           fileName={pendingUploadData.fileName}
           suggestedName={pendingUploadData.fileName}
+          uploadedData={pendingUploadData.data.extractedData || pendingUploadData.data.csvData}
           onConfirm={handleDraftNamingConfirm}
           onClose={handleDraftNamingCancel}
         />

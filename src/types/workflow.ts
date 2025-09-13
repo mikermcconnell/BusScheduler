@@ -2,9 +2,10 @@
  * Unified workflow state management types
  */
 
-import { SummarySchedule, TimePoint, ServiceBand, ScheduleValidationResult } from './schedule';
+import { SummarySchedule, TimePoint, ServiceBand, ScheduleValidationResult, ConnectionPoint } from './schedule';
 import { ParsedExcelData } from '../utils/excelParser';
 import { ParsedCsvData } from '../utils/csvParser';
+import { ConnectionOptimizationResult } from './connectionOptimization';
 
 export interface BlockConfiguration {
   blockNumber: number;
@@ -62,7 +63,7 @@ export interface WorkflowDraftState {
   draftId: string;
   
   /** Current step in the workflow */
-  currentStep: 'upload' | 'timepoints' | 'blocks' | 'summary' | 'ready-to-publish';
+  currentStep: 'upload' | 'timepoints' | 'blocks' | 'block-config' | 'summary' | 'connections' | 'ready-to-publish';
   
   /** Original uploaded data */
   originalData: {
@@ -97,6 +98,14 @@ export interface WorkflowDraftState {
     schedule: SummarySchedule;
     metadata: ScheduleGenerationMetadata;
     generationTimestamp: string;
+  };
+
+  /** Connection optimization results */
+  connectionOptimization?: {
+    selectedConnections: ConnectionPoint[];
+    lastResult?: ConnectionOptimizationResult;
+    optimizationHistory: ConnectionOptimizationResult[];
+    optimizationTimestamp: string;
   };
   
   /** Workflow metadata */

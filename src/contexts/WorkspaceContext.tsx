@@ -470,19 +470,6 @@ export const WorkspaceProvider: React.FC<WorkspaceProviderProps> = ({ children }
   }, []);
 
   /**
-   * Auto-save functionality with optimized timing
-   */
-  useEffect(() => {
-    if (state.scheduleData.isDirty && state.scheduleData.autoSaveEnabled) {
-      const autoSaveTimer = setTimeout(() => {
-        saveDraft();
-      }, AUTO_SAVE_CONFIG.NAVIGATION_AUTO_SAVE); // 3s optimal interval
-
-      return () => clearTimeout(autoSaveTimer);
-    }
-  }, [state.scheduleData.isDirty]);
-
-  /**
    * Panel actions
    */
   const setActivePanel = useCallback((panelId: string | null) => {
@@ -640,6 +627,20 @@ export const WorkspaceProvider: React.FC<WorkspaceProviderProps> = ({ children }
   }, [state.scheduleData.currentDraft]);
 
   /**
+   * Auto-save functionality with optimized timing
+   */
+  useEffect(() => {
+    if (state.scheduleData.isDirty && state.scheduleData.autoSaveEnabled) {
+      const autoSaveTimer = setTimeout(() => {
+        saveDraft();
+      }, AUTO_SAVE_CONFIG.NAVIGATION_AUTO_SAVE); // 3s optimal interval
+
+      return () => clearTimeout(autoSaveTimer);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.scheduleData.isDirty, state.scheduleData.autoSaveEnabled]); // saveDraft excluded to avoid circular dependency
+
+  /**
    * Validation actions
    */
   const validateWorkspace = useCallback(async () => {
@@ -731,11 +732,11 @@ export const WorkspaceProvider: React.FC<WorkspaceProviderProps> = ({ children }
   }, [state.scheduleData.currentDraft, loadDraft]);
 
   /**
-   * Performance tracking
+   * Performance tracking - run once on mount
    */
   useEffect(() => {
     dispatch({ type: 'UPDATE_PERFORMANCE_METRICS' });
-  });
+  }, []); // Empty dependency array - only run on mount
 
   const value = useMemo<WorkspaceContextType>(() => ({
     // State

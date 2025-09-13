@@ -1,11 +1,14 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import Layout from './components/Layout';
 import ErrorBoundary from './components/ErrorBoundary';
+import { LoadingOverlay } from './components/loading';
 import { securityInitializer } from './utils/securityInitializer';
 import { db } from './config/firebase'; // Initialize Firebase
+import { WorkspaceProvider } from './contexts/WorkspaceContext';
+import { FeatureFlagProvider } from './contexts/FeatureFlagContext';
 import './utils/testUnifiedStorage'; // Test utilities for storage verification
 import './utils/createTestDraft'; // Test draft creation utilities
 import './utils/debugDraftStorage'; // Debug draft storage utilities
@@ -51,40 +54,67 @@ const theme = createTheme({
 });
 
 function App() {
+  const [isInitializing, setIsInitializing] = useState(true);
+  
   useEffect(() => {
-    // Initialize security features on app mount
-    securityInitializer.initialize({
-      environment: process.env.NODE_ENV as 'development' | 'staging' | 'production',
-      enableCSRF: true,
-      enableRateLimiting: true,
-      enableCSP: true,
-      enableAuditLogging: true,
-      cspReportEndpoint: '/api/csp-report',
-      auditEndpoint: '/api/audit'
-    });
+    const initializeApp = async () => {
+      try {
+        console.log('🚀 Starting application initialization...');
+        
+        // Initialize security features on app mount
+        await securityInitializer.initialize({
+          environment: process.env.NODE_ENV as 'development' | 'staging' | 'production',
+          enableCSRF: true,
+          enableRateLimiting: true,
+          enableCSP: true,
+          enableAuditLogging: true,
+          cspReportEndpoint: '/api/csp-report',
+          auditEndpoint: '/api/audit'
+        });
+        
+        console.log('✅ Security features initialized');
 
-    // Test Firebase connection
-    console.log('🔥 Firebase initialized');
-    console.log('🔥 Project ID:', process.env.REACT_APP_FIREBASE_PROJECT_ID);
-    console.log('🔥 Auth Domain:', process.env.REACT_APP_FIREBASE_AUTH_DOMAIN);
+        // Test Firebase connection
+        console.log('🔥 Firebase initialized');
+        console.log('🔥 Project ID:', process.env.REACT_APP_FIREBASE_PROJECT_ID);
+        console.log('🔥 Auth Domain:', process.env.REACT_APP_FIREBASE_AUTH_DOMAIN);
+        
+        // Test Firestore connection
+        if (db) {
+          console.log('🔥 Firestore database connected');
+        }
+        
+        // Small delay to show loading indicator
+        await new Promise(resolve => setTimeout(resolve, 800));
+        
+        console.log('✅ Application initialization complete');
+        setIsInitializing(false);
+      } catch (error) {
+        console.error('❌ Application initialization failed:', error);
+        setIsInitializing(false);
+      }
+    };
     
-    // Test Firestore connection
-    if (db) {
-      console.log('🔥 Firestore database connected');
-    }
-    
-    // No authentication needed
+    initializeApp();
   }, []);
 
   return (
     <ErrorBoundary>
       <ThemeProvider theme={theme}>
         <CssBaseline />
-        <Router>
-          <Routes>
-            <Route path="/*" element={<Layout />} />
-          </Routes>
-        </Router>
+        <LoadingOverlay 
+          open={isInitializing} 
+          message="Initializing Scheduler2..." 
+        />
+        <FeatureFlagProvider>
+          <WorkspaceProvider>
+            <Router>
+              <Routes>
+                <Route path="/*" element={<Layout />} />
+              </Routes>
+            </Router>
+          </WorkspaceProvider>
+        </FeatureFlagProvider>
       </ThemeProvider>
     </ErrorBoundary>
   );

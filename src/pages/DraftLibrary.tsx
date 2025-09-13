@@ -67,24 +67,39 @@ const DraftLibrary: React.FC = () => {
     }
   };
 
-  const handleOpenDraft = (draft: UnifiedDraftCompat) => {
-    // Set as current session draft and navigate to appropriate step
-    draftService.setCurrentSessionDraft(draft.draftId);
-    
-    // Navigate based on current step
-    switch (draft.currentStep) {
-      case 'timepoints':
-        navigate('/timepoints');
-        break;
-      case 'blocks':
-        navigate('/block-configuration');
-        break;
-      case 'summary':
-      case 'ready-to-publish':
-        navigate('/summary-schedule');
-        break;
+  const handleOpenDraft = async (draft: UnifiedDraftCompat) => {
+    try {
+      // Load draft with full state restoration data
+      const result = await draftService.loadDraftWithFullState(draft.draftId);
+      
+      if (!result) {
+        setError('Failed to load draft');
+        return;
+      }
+      
+      const { restorationData } = result;
+      
+      // Set as current session draft
+      draftService.setCurrentSessionDraft(draft.draftId);
+      
+      // Navigate to appropriate step with full restoration data
+      switch (draft.currentStep) {
+        case 'timepoints':
+          navigate('/timepoints', { state: restorationData });
+          break;
+        case 'blocks':
+          navigate('/block-configuration', { state: restorationData });
+          break;
+        case 'summary':
+        case 'ready-to-publish':
+          navigate('/summary-schedule', { state: restorationData });
+          break;
       default:
-        navigate('/timepoints'); // Default to timepoints for any draft
+        navigate('/timepoints', { state: restorationData }); // Default to timepoints with restoration data
+    }
+    } catch (error) {
+      console.error('Error opening draft:', error);
+      setError('Failed to open draft. Please try again.');
     }
   };
 

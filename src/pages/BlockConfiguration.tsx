@@ -782,6 +782,61 @@ export default function BlockConfiguration() {
       console.log('📦 Using default service band mapping:', defaultMapping);
     }
   }, [location.state]); // React to changes in location.state
+
+  // State restoration when coming from draft
+  useEffect(() => {
+    // Check if we're restoring from a draft
+    if (location.state?.fromDraft && location.state?.draftId) {
+      console.log('📋 Restoring BlockConfiguration state from draft:', location.state.draftId);
+      
+      // Restore number of buses
+      if (location.state.numberOfBuses && typeof location.state.numberOfBuses === 'number') {
+        console.log('✅ Restoring number of buses:', location.state.numberOfBuses);
+        setSchedule(prev => ({
+          ...prev,
+          numberOfBuses: location.state.numberOfBuses
+        }));
+      }
+      
+      // Restore cycle time
+      if (location.state.cycleTimeMinutes && typeof location.state.cycleTimeMinutes === 'number') {
+        console.log('✅ Restoring cycle time:', location.state.cycleTimeMinutes);
+        setSchedule(prev => ({
+          ...prev,
+          cycleTimeMinutes: location.state.cycleTimeMinutes,
+          frequency: Math.floor(location.state.cycleTimeMinutes / (location.state.numberOfBuses || 1))
+        }));
+      }
+      
+      // Restore automation setting
+      if (location.state.automateBlockStartTimes !== undefined) {
+        console.log('✅ Restoring automation setting:', location.state.automateBlockStartTimes);
+        setSchedule(prev => ({
+          ...prev,
+          automateBlockStartTimes: location.state.automateBlockStartTimes
+        }));
+      }
+      
+      // Restore block configurations
+      if (location.state.blockConfigurations && Array.isArray(location.state.blockConfigurations)) {
+        console.log('✅ Restoring block configurations:', location.state.blockConfigurations.length);
+        
+        // Convert to local BlockConfiguration format if needed
+        const restoredBlocks: BlockConfiguration[] = location.state.blockConfigurations.map((bc: any, index: number) => ({
+          blockNumber: bc.blockNumber || (index + 1),
+          startTime: bc.startTime || '06:00',
+          endTime: bc.endTime || '22:00'
+        }));
+        
+        setSchedule(prev => ({
+          ...prev,
+          blockConfigurations: restoredBlocks
+        }));
+      }
+      
+      console.log('📋 BlockConfiguration state restoration complete');
+    }
+  }, [location.state?.fromDraft, location.state?.draftId]);
   
   // Load service band mapping and rebuild service bands from draft if available
   useEffect(() => {

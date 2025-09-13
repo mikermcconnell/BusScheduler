@@ -176,30 +176,49 @@ export const useWorkflowDraft = (draftId?: string): UseWorkflowDraftReturn => {
   }): Promise<WorkflowDraftResult> => {
     if (!draft) return { success: false, error: 'No active draft' };
     
+    // Store original state for rollback
+    const originalDraft = { ...draft };
+    
     setIsSaving(true);
     setError(null);
     
     try {
+      // Optimistic update - update UI immediately
+      setDraft(prevDraft => prevDraft ? {
+        ...prevDraft,
+        blockConfiguration: {
+          ...blockConfig,
+          configurationTimestamp: new Date().toISOString()
+        },
+        metadata: {
+          ...prevDraft.metadata,
+          lastModifiedAt: new Date().toISOString()
+        }
+      } : null);
+      
+      // Background sync with Firebase
       const result = await draftService.updateDraftWithBlockConfiguration(
         draft.draftId,
         blockConfig
       );
       
-      if (result.success) {
-        await loadDraft(draft.draftId);
-      } else {
+      if (!result.success) {
+        // Rollback on failure
+        setDraft(originalDraft);
         setError(result.error || 'Failed to update configuration');
       }
       
       return result;
     } catch (err: any) {
+      // Rollback on error
+      setDraft(originalDraft);
       const errorMessage = err.message || 'Failed to update configuration';
       setError(errorMessage);
       return { success: false, error: errorMessage };
     } finally {
       setIsSaving(false);
     }
-  }, [draft, loadDraft]);
+  }, [draft]);
   
   // Update summary schedule
   const updateSummarySchedule = useCallback(async (summaryData: {

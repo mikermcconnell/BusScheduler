@@ -64,7 +64,13 @@
     "typecheck": "tsc --noEmit",
     "precommit": "npm run typecheck && npm run build",
     "ci-check": "tsc --noEmit --strict",
-    "type-coverage": "echo \"Type coverage check - manual for now\""
+    "type-coverage": "echo \"Type coverage check - manual for now\"",
+    "test:workflow-persistence": "node package-scripts/test-workflow-persistence.js",
+    "test:workflow-persistence:fast": "node package-scripts/test-workflow-persistence.js --fast",
+    "test:workflow-units": "jest --config jest.config.workflow.js --testPathPattern='(draftService|offlineQueue)\\.test\\.(ts|tsx)$'",
+    "test:workflow-components": "jest --config jest.config.workflow.js --testPathPattern='SyncStatusIndicator\\.test\\.tsx$'",
+    "test:workflow-integration": "jest --config jest.config.workflow.js --testPathPattern='workflowPersistence\\.test\\.ts$'",
+    "test:workflow-performance": "jest --config jest.config.workflow.js --testPathPattern='workflowPersistence\\.performance\\.test\\.ts$'"
   },
   "eslintConfig": {
     "extends": [

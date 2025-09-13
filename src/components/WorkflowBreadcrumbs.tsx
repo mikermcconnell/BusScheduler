@@ -124,7 +124,16 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
         path: '/block-summary-schedule',
         icon: <SummaryIcon />,
         description: 'Generate base schedule with best practice recovery times',
-        status: 'pending' as const
+        status: 'completed' as const
+      },
+      {
+        key: 'connections',
+        label: 'Optimize Connections',
+        path: '/connection-optimization',
+        icon: <SwapVertIcon />,
+        description: 'Advanced optimization for GO train and school connections',
+        status: 'pending' as const,
+        optional: true
       }
     ],
     'route-management': [
@@ -169,7 +178,7 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
   const detectWorkflowContext = (): string | null => {
     const path = location.pathname;
     
-    if (['/upload', '/timepoints', '/block-configuration', '/block-summary-schedule'].includes(path)) {
+    if (['/upload', '/timepoints', '/block-configuration', '/block-summary-schedule', '/connection-optimization'].includes(path)) {
       return 'schedule-creation';
     }
     if (['/routes'].includes(path)) {
@@ -223,46 +232,32 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
       const sessionDraftId = draftService.getCurrentSessionDraftId();
       if (sessionDraftId) {
         try {
-          // Get actual draft data from Firebase first
-          const firebaseDraft = await draftService.getDraftByIdUnified(sessionDraftId);
+          // Use the new loadWorkflowFromCloud method
+          let cloudWorkflow = await draftService.loadWorkflowFromCloud(sessionDraftId);
           
-          if (firebaseDraft) {
-            // Get existing localStorage workflow data
-            let localWorkflow = draftService.getWorkflow(sessionDraftId);
-            
-            // Sync localStorage with Firebase data
-            const shouldSync = !localWorkflow || 
-              localWorkflow.currentStep !== firebaseDraft.currentStep ||
-              localWorkflow.overallProgress !== firebaseDraft.progress;
-            
-            if (shouldSync) {
-              console.log('🔄 Syncing workflow data from Firebase draft:', {
-                draftId: sessionDraftId,
-                firebaseStep: firebaseDraft.currentStep,
-                localStep: localWorkflow?.currentStep || 'none',
-                firebaseProgress: firebaseDraft.progress,
-                localProgress: localWorkflow?.overallProgress || 0
-              });
-              
-              // Create or update workflow to match Firebase draft
-              localWorkflow = draftService.getOrCreateWorkflow(
+          if (!cloudWorkflow) {
+            // If no workflow exists, try to get Firebase draft data and create workflow
+            const firebaseDraft = await draftService.getDraftByIdUnified(sessionDraftId);
+            if (firebaseDraft) {
+              // Create workflow based on Firebase draft data
+              cloudWorkflow = draftService.getOrCreateWorkflow(
                 sessionDraftId, 
                 firebaseDraft.draftName
               );
               
               // Sync workflow state with Firebase draft data
-              localWorkflow.currentStep = firebaseDraft.currentStep;
-              localWorkflow.overallProgress = firebaseDraft.progress;
-              localWorkflow.draftName = firebaseDraft.draftName;
-              localWorkflow.lastModified = firebaseDraft.metadata.lastModifiedAt;
+              cloudWorkflow.currentStep = firebaseDraft.currentStep;
+              cloudWorkflow.overallProgress = firebaseDraft.progress;
+              cloudWorkflow.draftName = firebaseDraft.draftName;
+              cloudWorkflow.lastModified = firebaseDraft.metadata.lastModifiedAt;
               
               // Update step completion status based on Firebase currentStep
               const stepOrder = ['upload', 'timepoints', 'block-config', 'summary'];
               const currentStepIndex = stepOrder.indexOf(firebaseDraft.currentStep === 'blocks' ? 'block-config' : 
-                                                      firebaseDraft.currentStep === 'ready-to-publish' ? 'summary' : 
-                                                      firebaseDraft.currentStep);
+                                                        firebaseDraft.currentStep === 'ready-to-publish' ? 'summary' : 
+                                                        firebaseDraft.currentStep);
               
-              localWorkflow.steps.forEach((step, index) => {
+              cloudWorkflow.steps.forEach((step, index) => {
                 if (index < currentStepIndex) {
                   step.status = 'completed';
                 } else if (index === currentStepIndex) {
@@ -272,43 +267,30 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
                 }
               });
               
-              // Store any relevant step data from Firebase
-              if (firebaseDraft.stepData) {
-                if (!localWorkflow.stepData) {
-                  localWorkflow.stepData = {};
-                }
-                
-                if (firebaseDraft.stepData.timepoints) {
-                  localWorkflow.stepData.timepoints = firebaseDraft.stepData.timepoints;
-                }
-                if (firebaseDraft.stepData.blockConfiguration) {
-                  localWorkflow.stepData.blockConfiguration = firebaseDraft.stepData.blockConfiguration;
-                }
-                if (firebaseDraft.stepData.summarySchedule) {
-                  localWorkflow.stepData.summarySchedule = firebaseDraft.stepData.summarySchedule;
-                }
+              // Store step data if available
+              if (firebaseDraft.stepData && !cloudWorkflow.stepData) {
+                cloudWorkflow.stepData = firebaseDraft.stepData;
               }
               
-              // Save the synced workflow
-              draftService.saveWorkflow(localWorkflow);
+              // Save the synced workflow to Firebase for next time
+              await draftService.saveWorkflow(cloudWorkflow);
+            } else {
+              // Create a new workflow if no data exists
+              cloudWorkflow = draftService.getOrCreateWorkflow(sessionDraftId);
             }
-            
-            setDraftWorkflow(localWorkflow);
-          } else {
-            // Fallback to local workflow if Firebase draft not found
-            const localWorkflow = draftService.getOrCreateWorkflow(sessionDraftId);
-            if (localWorkflow) {
-              setDraftWorkflow(localWorkflow);
-            }
+          }
+          
+          if (cloudWorkflow) {
+            setDraftWorkflow(cloudWorkflow);
           }
           
           // Load all workflows for draft selector
           const allWorkflowsData = draftService.getAllWorkflows();
           setAllWorkflows(allWorkflowsData);
         } catch (error) {
-          console.warn('Could not load draft workflow for progress tracking:', error);
+          console.warn('Could not load workflow from cloud, using fallback:', error);
           
-          // Fallback to existing method if sync fails
+          // Fallback to existing method if everything fails
           try {
             const localWorkflow = draftService.getOrCreateWorkflow(sessionDraftId);
             if (localWorkflow) {
@@ -370,6 +352,7 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
                             (currentPath.includes('timepoints') && step.key === 'timepoints') ||
                             (currentPath.includes('block-configuration') && step.key === 'block-config') ||
                             (currentPath.includes('block-summary-schedule') && step.key === 'summary') ||
+                            (currentPath.includes('connection-optimization') && step.key === 'connections') ||
                             (currentPath.includes('upload') && step.key === 'upload');
         
         // Mark current step as active while preserving completion status
@@ -406,6 +389,7 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
                           (currentPath.includes('timepoints') && step.key === 'timepoints') ||
                           (currentPath.includes('block-configuration') && step.key === 'block-config') ||
                           (currentPath.includes('block-summary-schedule') && step.key === 'summary') ||
+                          (currentPath.includes('connection-optimization') && step.key === 'connections') ||
                           (currentPath.includes('upload') && step.key === 'upload');
       
       // Mark completed steps based on data availability and path progression
@@ -475,6 +459,7 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
       'timepoints': { label: 'Optimize Timing', icon: <TimelineIcon /> },
       'block-configuration': { label: 'Plan Blocks', icon: <ConfigIcon /> },
       'block-summary-schedule': { label: 'Build Schedule', icon: <SummaryIcon /> },
+      'connection-optimization': { label: 'Optimize Connections', icon: <SwapVertIcon /> },
       'schedules': { label: 'View Schedules', icon: <SummaryIcon /> },
       'routes': { label: 'Manage Routes', icon: <ConfigIcon /> },
       'tod-shifts': { label: 'Tod Shifts', icon: <ConfigIcon /> },
@@ -535,24 +520,46 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
     }
   };
 
-  const handleNavigation = (path: string) => {
+  const handleNavigation = async (path: string) => {
     // Update the persistent workflow state to track navigation
     const step = workflowSteps.find(s => s.path === path);
     if (step && persistentWorkflow) {
       // NOTE: navigateToStep requires draftId, skipping for now
     }
     
-    // Preserve state data from draftService workflow
+    // Load full state from draft if available
+    const draftId = draftService.getCurrentSessionDraftId();
+    let restorationData: any = {
+      fromWorkflowNavigation: true
+    };
+    
+    if (draftId) {
+      try {
+        // Load draft with full state
+        const result = await draftService.loadDraftWithFullState(draftId);
+        if (result) {
+          // Use the restoration data from the draft
+          restorationData = {
+            ...result.restorationData,
+            fromWorkflowNavigation: true
+          };
+        }
+      } catch (error) {
+        console.warn('Could not load draft state for navigation:', error);
+      }
+    }
+    
+    // Preserve state data from current location or draftWorkflow as fallback
     let timePointData = null;
     let serviceBands = null;
     let blockConfiguration = null;
     
     try {
-      // Get data from draftWorkflow instead of localStorage
+      // Get data from draftWorkflow if not in restorationData
       if (draftWorkflow && draftWorkflow.stepData) {
-        timePointData = draftWorkflow.stepData.timepoints?.travelTimeData || null;
-        serviceBands = draftWorkflow.stepData.timepoints?.serviceBands || null;
-        blockConfiguration = draftWorkflow.stepData.blockConfiguration || null;
+        timePointData = restorationData.travelTimeData || draftWorkflow.stepData.timepoints?.travelTimeData || null;
+        serviceBands = restorationData.serviceBands || draftWorkflow.stepData.timepoints?.serviceBands || null;
+        blockConfiguration = restorationData.blockConfigurations || draftWorkflow.stepData.blockConfiguration || null;
       }
     } catch (error) {
       console.warn('Error accessing draftWorkflow data:', error);
@@ -561,20 +568,21 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
     const scheduleState = location.state;
     
     const navigationState: any = {
-      timePointData: scheduleState?.timePointData || timePointData,
-      serviceBands: scheduleState?.serviceBands || serviceBands,
-      deletedPeriods: scheduleState?.deletedPeriods || [],
-      timePeriodServiceBands: scheduleState?.timePeriodServiceBands || {},
+      ...restorationData,
+      timePointData: restorationData.travelTimeData || scheduleState?.timePointData || timePointData,
+      serviceBands: restorationData.serviceBands || scheduleState?.serviceBands || serviceBands,
+      deletedPeriods: restorationData.deletedPeriods || scheduleState?.deletedPeriods || [],
+      timePeriodServiceBands: restorationData.timePeriodServiceBands || scheduleState?.timePeriodServiceBands || {},
       scheduleId: scheduleState?.scheduleId,
-      fileName: scheduleState?.fileName,
-      blockConfiguration: scheduleState?.blockConfiguration || blockConfiguration,
+      fileName: restorationData.fileName || scheduleState?.fileName,
+      blockConfiguration: restorationData.blockConfigurations || scheduleState?.blockConfiguration || blockConfiguration,
       fromWorkflowNavigation: true
     };
     
     // Special handling for Build Schedule page
-    if (path === '/block-summary-schedule' && blockConfiguration) {
+    if (path === '/block-summary-schedule' && (restorationData.blockConfigurations || blockConfiguration)) {
       // Pass the block configuration data specifically for the Build Schedule page
-      navigationState.bus_block_configurations = blockConfiguration.blocks || [];
+      navigationState.bus_block_configurations = restorationData.blockConfigurations || blockConfiguration?.blocks || [];
     }
     
     // Only pass state for workflow pages that need it
@@ -743,27 +751,6 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
               </Box>
             )}
 
-            {/* Step Tips */}
-            {draftWorkflow && (
-              (() => {
-                const currentStep = draftWorkflow.steps?.find((s: any) => s.key === draftWorkflow.currentStep);
-                const currentTip = currentStep ? draftService.getStepTip(currentStep.key) : '';
-                
-                return currentTip ? (
-                  <Box sx={{ 
-                    p: 1.5, 
-                    mb: 2, 
-                    backgroundColor: alpha(theme.palette.info.main, 0.05),
-                    border: `1px solid ${alpha(theme.palette.info.main, 0.2)}`,
-                    borderRadius: 2 
-                  }}>
-                    <Typography variant="caption" color="info.main" fontStyle="italic">
-                      💡 {currentTip}
-                    </Typography>
-                  </Box>
-                ) : null;
-              })()
-            )}
 
             {/* Compact Step Navigation */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>

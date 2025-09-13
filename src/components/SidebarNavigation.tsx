@@ -136,6 +136,14 @@ const SidebarNavigation: React.FC<SidebarNavigationProps> = ({ open, onToggle, c
         description: 'Configure bus blocks and timing'
       },
       {
+        key: 'connection-optimization',
+        label: 'Connection Optimization',
+        path: '/connection-optimization',
+        icon: <WorkflowIcon />,
+        description: 'Optimize connections with GO trains and schools',
+        badge: 'Advanced'
+      },
+      {
         key: 'tod-shifts',
         label: 'Tod Shifts',
         path: '/tod-shifts',

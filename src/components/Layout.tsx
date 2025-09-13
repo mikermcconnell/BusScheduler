@@ -21,6 +21,7 @@ import SidebarNavigation from './SidebarNavigation';
 import WorkflowBreadcrumbs from './WorkflowBreadcrumbs';
 import KeyboardShortcutsHelp from './KeyboardShortcutsHelp';
 import AppHeader from './AppHeader';
+import SyncStatusIndicator from './SyncStatusIndicator';
 import useKeyboardShortcuts from '../hooks/useKeyboardShortcuts';
 import { draftService } from '../services/draftService';
 
@@ -35,6 +36,8 @@ import ManageRoutes from '../pages/ManageRoutes';
 import TimePoints from '../pages/TimePoints';
 import BlockConfiguration from '../pages/BlockConfiguration';
 import BlockSummarySchedule from '../pages/BlockSummarySchedule';
+import ConnectionOptimization from '../pages/ConnectionOptimization';
+import VisualDashboard from '../pages/VisualDashboard';
 import TodShifts from '../pages/TodShifts';
 import DraftLibrary from '../pages/DraftLibrary';
 import Settings from '../pages/Settings';
@@ -127,6 +130,8 @@ const Layout: React.FC = () => {
     '/timepoints',
     '/block-configuration',
     '/block-summary-schedule',
+    '/connection-optimization',
+    '/visual-dashboard',
     '/routes',
     '/tod-shifts'
   ].some(path => location.pathname.startsWith(path));
@@ -199,6 +204,8 @@ const Layout: React.FC = () => {
             <Route path="/draft-library" element={<DraftLibrary />} />
             <Route path="/block-configuration" element={<BlockConfiguration />} />
             <Route path="/block-summary-schedule" element={<BlockSummarySchedule />} />
+            <Route path="/connection-optimization" element={<ConnectionOptimization />} />
+            <Route path="/visual-dashboard" element={<VisualDashboard />} />
             <Route path="/tod-shifts" element={<TodShifts />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<NotFound />} />

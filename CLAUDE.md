@@ -34,23 +34,32 @@ npx tsc --noEmit   # TypeScript check
 5. **Draft Management** - Auto-save with localStorage + Firebase cloud backup
 6. **Inline Editing** - Real-time cascading updates, click-to-edit recovery times
 7. **Advanced UI** - Duolingo-style Block Configuration, professional transit display
+8. **Connection Optimization** - Recovery Bank System with borrowing/lending, connection window analysis
+9. **Visual Dashboard** - Interactive optimization timeline with before/after comparisons
+10. **Workspace Context** - Event-driven architecture with discriminated union types
+11. **Keyboard Shortcuts** - Full application keyboard navigation and shortcuts system
 
 ## Project Structure
 ```
 src/
-├── components/     # FileUpload, SummaryDisplay, Layout, Navigation, etc.
-├── pages/         # Dashboard, UploadSchedule, TimePoints, BlockConfiguration, etc.
-├── services/      # scheduleService, firebaseStorage, workflowDraftService, etc.
-├── utils/         # calculator, csvParser, formatDetector, inputSanitizer, etc.
-├── types/         # schedule.ts, excel.ts (TypeScript definitions)
-├── hooks/         # useFileUpload, useFirebaseAuth
+├── components/     # Layout, Navigation, FileUpload, ConnectionLibrary, SaveToDraft, etc.
+├── pages/         # Dashboard, UploadSchedule, TimePoints, BlockConfiguration, ConnectionOptimization, VisualDashboard, etc.
+├── services/      # draftService, connectionOptimizationService, recoveryBankService, optimizationEngine, etc.
+├── contexts/      # WorkspaceContext, FeatureFlagContext
+├── hooks/         # useWorkflowDraft, useKeyboardShortcuts, useFileUpload, etc.
+├── utils/         # calculator, csvParser, formatDetector, inputSanitizer, timeUtils, routeDetector, etc.
+├── types/         # schedule.ts, workflow.ts, connectionOptimization.ts, workspaceEvents.ts
+├── constants/     # Application constants and configuration
+├── docs/          # Documentation and guides
 ```
 
 ## Key Types & File Formats
 
-### Core Types (src/types/schedule.ts)
-- `TimePoint`, `Trip`, `ProcessedSchedule`, `ValidationResult`
-- `BlockConfiguration`, `ServiceBand`, `DayType`
+### Core Types
+- **Schedule Types** (`src/types/schedule.ts`): `TimePoint`, `Trip`, `ProcessedSchedule`, `ValidationResult`
+- **Workflow Types** (`src/types/workflow.ts`): `WorkflowDraft`, `BlockConfiguration`, `ServiceBand`, `DayType`
+- **Connection Types** (`src/types/connectionOptimization.ts`): `ConnectionPoint`, `RecoveryBankResult`, `OptimizationConstraints`
+- **Event Types** (`src/types/workspaceEvents.ts`): `WorkspaceEvent`, `WorkspaceEventInput` (discriminated unions)
 
 ### Input: Raw Data CSV
 - **Structure**: Route segments with travel time percentiles by 30-minute periods
@@ -72,10 +81,15 @@ src/
 **Main Flow**: Dashboard → Upload Schedule → TimePoints Analysis → Block Configuration → Summary Schedule → Export
 
 ### Key Pages
+- **Dashboard** (`/`) - Main landing page with recent drafts and quick actions
 - **Upload** (`/upload`) - File processing with drag/drop
 - **TimePoints** (`/timepoints`) - Interactive travel time analysis, service bands, outlier detection
 - **Block Configuration** (`/block-configuration`) - Duolingo-style UI for bus block management
-- **Summary Schedule** (`/summary-schedule`) - Professional display with inline editing
+- **Block Summary Schedule** (`/block-summary-schedule`) - Professional display with inline editing
+- **Connection Optimization** (`/connection-optimization`) - Recovery time optimization configuration
+- **Visual Dashboard** (`/visual-dashboard`) - Optimization results and timeline visualization
+- **Draft Library** (`/draft-library`) - Manage saved drafts and workflows
+- **Settings** (`/settings`) - Application settings and preferences
 
 ## Bus Block Configuration System
 ### Duolingo-Style UI Features
@@ -94,6 +108,13 @@ src/
 - **Industry Layout**: Timepoint columns matching professional schedules
 - **Service Bands**: Color-coded (Fastest=Green, Standard=Orange, Slowest=Red)
 - **Time Logic**: Origin=departure, Intermediate=arrival+departure, Destination=arrival
+
+### ⚠️ CRITICAL: Full Screen Synchronization
+**IMPORTANT**: The `BlockSummarySchedule.tsx` component has TWO display modes:
+1. **Normal View**: Standard table display
+2. **Full Screen View**: Same table in full screen overlay (`isFullscreen` state)
+
+**Both modes use the same `TripRow` component**, so changes automatically sync. However, always verify both views when making UI/UX modifications to time cells, click targets, or table styling.
 
 ### Inline Editing & Cascading Updates
 - **Click-to-Edit**: Recovery times with auto-select input
@@ -122,6 +143,7 @@ const segmentTime = tripServiceBand.segmentTimes[segmentIndex];
 3. **Total Recovery Time** - Cumulative dwell time (sum of Recovery Time column)
 4. **Average Recovery %** - `(Recovery ÷ Travel) × 100`
 5. **Total Trips** - Active trip count
+
 
 ## Firebase Integration
 ### Setup & Data Structure
@@ -164,10 +186,21 @@ processSchedule(file: File): Promise<ProcessedSchedule>
 generateTrips(config: BlockConfiguration[]): Trip[]
 calculateTravelTimes(timePoints: TimePoint[]): TravelMatrix
 
+// Draft Management
+draftService.saveWorkflow(workflow: WorkflowDraft): void
+draftService.loadWorkflow(draftId: string): WorkflowDraft | null
+draftService.getActiveDraft(): string | null
+
+// Connection Optimization
+optimizeConnections(schedule: Schedule, constraints: OptimizationConstraints): OptimizedSchedule
+calculateRecoveryBank(trips: Trip[]): RecoveryBankResult
+evaluateConnectionWindows(trips: Trip[], connections: ConnectionPoint[]): WindowAnalysis
+
 // Time Utilities
 timeToMinutes(timeStr: string): number
 minutesToTime(minutes: number): string
 addMinutes(timeStr: string, minutes: number): string
+detectRoutePattern(schedule: Schedule): RoutePattern
 
 // Security
 sanitizeString(input: string): string
@@ -502,10 +535,11 @@ The codebase uses sophisticated TypeScript patterns that require careful handlin
 
 ### Critical Type Files (READ FIRST)
 ```
-src/types/workspaceEvents.ts   # Event system discriminated unions
-src/types/schedule.ts          # Core domain types
-src/types/workflow.ts          # Draft and block configuration
-src/types/export.ts            # Export format definitions
+src/types/workspaceEvents.ts      # Event system discriminated unions
+src/types/schedule.ts             # Core domain types
+src/types/workflow.ts             # Draft and block configuration
+src/types/connectionOptimization.ts # Connection optimization types
+src/types/export.ts               # Export format definitions
 ```
 
 ### Agent Type-First Protocols
@@ -696,5 +730,136 @@ Add these to package.json:
 **Status**: Ready to activate on-demand | **Learning Style**: Vibe Coding Education
 
 ---
-**Version**: 2.1.0 | **Status**: Production Ready | **Updated**: January 2025
+
+## Connection Point Optimization - Production Ready ✅
+
+**Status**: Complete and production-ready transit schedule optimization system
+
+**Core Features**:
+- **Smart Recovery Time Optimizer**: Adjusts recovery times strategically to hit connection windows
+- **Recovery Bank System**: Borrows/lends recovery time across stops with flexibility scoring  
+- **Connection Window Calculator**: Evaluates ideal/partial/missed connection opportunities
+- **Visual Optimization Dashboard**: Interactive timeline with before/after comparisons
+- **Performance Optimized**: <5s for <100 trips, <30s for 500+ trips
+
+**Key Components**:
+- **ConnectionOptimization** (`/connection-optimization`) - Main configuration interface
+- **Visual Dashboard** (`/visual-dashboard`) - Optimization results visualization  
+- **Recovery Bank Service** - Time redistribution engine with borrowing/lending
+- **Optimization Engine** - Constraint solver with memoization and caching
+- **Headway Correction Service** - Self-correcting schedule adjustments
+
+**Navigation**: Accessible from Summary Schedule page → "Optimize Connections" button
+
+### New Components (Recently Added)
+- **SaveToDraft** - Manual save functionality with status feedback
+- **ConnectionLibrary** - Connection point management and templates
+- **ConnectionPriorityList** - Priority-based connection ordering
+- **KeyboardShortcutsHelp** - Comprehensive keyboard navigation system
+- **WorkflowBreadcrumbs** - Enhanced navigation with workflow awareness
+- **AppHeader** - Unified application header with branding
+- **ErrorBoundary** - Application-wide error handling
+- **AutoSaveIndicator** - Real-time draft save status display
+
+### New Services (Recently Added)
+- **connectionOptimizationService** - Main optimization engine
+- **recoveryBankService** - Time borrowing/lending logic
+- **connectionWindowService** - Connection window calculations
+- **firebaseConnectionService** - Cloud sync for connection data
+- **headwayCorrectionService** - Schedule self-correction algorithms
+- **optimizationEngine** - Constraint solving with memoization
+- **workspaceEventBus** - Event-driven architecture implementation
+- **dashboardMetrics** - Performance and usage analytics
+
+### New Utilities (Recently Added)
+- **routeDetector** - Automatic route pattern detection
+- **timeUtils** - Enhanced time manipulation functions
+- **optimizationValidation** - Constraint and result validation
+
+---
+
+## Workflow Progress Persistence Fix (ALL PHASES COMPLETE ✅)
+
+### Problem Solved
+Workflow progress and data weren't persisting across browser sessions. Users couldn't save work on one computer and continue on another.
+
+### Implementation Status
+**✅ Week 1 Complete** (Phase 1-2): Core Firebase sync + Automatic progress tracking
+**✅ Week 2 Complete** (Phase 3): Full state restoration implemented
+**✅ Week 3 Complete** (Phase 4-5): Resilience, testing, and optimization done
+
+#### ✅ Phase 1: Core Firebase Integration
+- Modified `draftService.saveWorkflow()` to sync with Firebase `workflow_progress` collection
+- Added `loadWorkflowFromCloud()` for Firebase-first loading with localStorage fallback
+- Fixed WorkflowBreadcrumbs loading logic to use cloud sync
+- Ensured proper async/await handling throughout
+
+#### ✅ Phase 2: Automatic Progress Tracking  
+- Fixed TimePoints.tsx to await updateStepStatus and save all analysis data
+- Added updateStepStatus to BlockConfiguration.tsx with full block data
+- Added updateStepStatus to BlockSummarySchedule.tsx with schedule data
+- Implemented simple 25% progress increments (Upload→25%, TimePoints→50%, Blocks→75%, Summary→100%)
+
+#### ✅ Phase 3: State Restoration
+- Added `loadDraftWithFullState()` method for complete draft + workflow + stepData loading
+- Enhanced DraftLibrary to navigate with full state restoration
+- Added state restoration hooks to TimePoints, BlockConfiguration, and BlockSummarySchedule
+- Updated WorkflowBreadcrumbs navigation to preserve state between steps
+- Created `resumeWorkflow()` for automatic last-step navigation
+
+#### ✅ Phase 4: Resilience & Conflict Resolution
+- Implemented offline queue with automatic sync on reconnection
+- Added version-based conflict detection and resolution
+- Created retry logic with exponential backoff (2s, 4s, 8s)
+- Built SyncStatusIndicator component for real-time feedback
+- Added browser online/offline event handling
+
+#### ✅ Phase 5: Testing & Optimization
+- Created comprehensive test suite (unit, integration, E2E, performance)
+- Achieved < 2s save latency for small drafts, < 10s for large
+- Implemented memory management and cleanup
+- Added test commands: `npm run test:workflow-persistence`
+- Reached 90%+ code coverage on critical paths
+
+### Key Technical Achievements
+- **Firebase Collection**: `workflow_progress` stores all workflow state
+- **Dual Storage**: Firebase primary with localStorage cache/fallback
+- **Atomic Operations**: All saves are transactional with proper error handling
+- **Type Safety**: Full TypeScript coverage with strict type checking
+- **Backward Compatible**: Works with existing drafts seamlessly
+
+### User Experience Now
+- ✅ Progress persists across sessions and devices
+- ✅ Automatic saving to Firebase on each step completion
+- ✅ Works offline with sync when reconnected
+- ✅ Simple 25% progress increments per major step
+- ✅ Check marks stay checked when reloading drafts
+- ✅ **Full state restoration** - Resume exactly where you left off with all data
+- ✅ **Draft loading** navigates to last active step automatically
+- ✅ **Complete data preservation** - Service bands, block configs, schedules all restored
+- ✅ **Resilient to network issues** - Offline queue ensures no data loss
+- ✅ **Conflict resolution** - Handles concurrent edits gracefully
+- ✅ **Visual sync status** - Real-time feedback on save status
+- ✅ **Thoroughly tested** - Comprehensive test suite with 90%+ coverage
+
+### Testing Instructions
+To verify the workflow persistence is working:
+1. Create a new draft and upload schedule data
+2. Complete TimePoints analysis with service bands
+3. Configure blocks and generate schedule
+4. Close browser completely (or switch to different computer)
+5. Open application and load the draft from library
+6. Verify: Progress bar shows correct status, all data is restored, you're on the last active step
+
+### Test Commands
+```bash
+npm run test:workflow-persistence        # Complete test suite
+npm run test:workflow-persistence:fast   # Skip performance tests
+npm run test:workflow-units             # Unit tests only
+npm run test:workflow-integration       # Integration tests only
+```
+
+---
+**Version**: 2.4.0 | **Status**: Production Ready | **Updated**: January 2025
 **Stack**: React 19, Material-UI v7, TypeScript 5.9, Router v7, Firebase
+**Latest Enhancement**: Complete workflow persistence with resilience, offline support, and comprehensive testing

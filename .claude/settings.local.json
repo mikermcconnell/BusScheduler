@@ -140,7 +140,14 @@
       "mcp__puppeteer__puppeteer_fill",
       "Bash(start http://localhost:3052)",
       "Bash(set PORT=3053)",
-      "Bash(del:*)"
+      "Bash(del:*)",
+      "Bash(netstat:*)",
+      "Bash(powershell:*)",
+      "Bash(start http://localhost:3052/connection-optimization)",
+      "Bash(while read file)",
+      "Bash(do [ -f \"$file\" ])",
+      "Bash(echo:*)",
+      "Bash(done)"
     ]
   },
   "outputStyle": "default",

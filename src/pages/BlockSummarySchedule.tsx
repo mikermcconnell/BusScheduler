@@ -30,13 +30,17 @@ import {
   Fullscreen as FullscreenIcon,
   Publish as PublishIcon,
   Schedule as ScheduleIcon,
-  Add as AddIcon
+  Add as AddIcon,
+  SwapHoriz as ConnectionsIcon,
+  FileDownload as ExportIcon
 } from '@mui/icons-material';
 import { calculateTripTime } from '../utils/dateHelpers';
 import { scheduleStorage } from '../services/scheduleStorage';
 import { SummarySchedule } from '../types/schedule';
 import { draftService } from '../services/draftService';
+import { exportService } from '../services/exportService';
 import WorkflowBreadcrumbs from '../components/WorkflowBreadcrumbs';
+import { SaveToDraft, AutoSaveStatus } from '../components/SaveToDraft';
 
 // TODO(human): Add comprehensive component documentation here
 
@@ -294,6 +298,42 @@ const BlockSummarySchedule: React.FC = () => {
     }
   });
 
+  // Mark summary step as completed when schedule is loaded
+  React.useEffect(() => {
+    const markSummaryStepComplete = async () => {
+      const draftId = location.state?.draftId || draftService.getCurrentSessionDraftId();
+      
+      if (draftId && schedule && schedule.trips && schedule.trips.length > 0) {
+        try {
+          await draftService.updateStepStatus(draftId, 'summary', 'completed', 100, {
+            scheduleGenerated: true,
+            tripCount: schedule.trips.length,
+            timePointCount: schedule.timePoints.length,
+            serviceBands: schedule.serviceBands?.map(sb => ({
+              name: sb.name,
+              color: sb.color,
+              count: schedule.trips.filter(t => t.serviceBand === sb.name).length
+            })) || [],
+            summarySchedule: {
+              id: schedule.id,
+              name: schedule.name,
+              timePoints: schedule.timePoints,
+              trips: schedule.trips.length, // Don't store full trips, just count
+              serviceBands: schedule.serviceBands,
+              updatedAt: schedule.updatedAt
+            }
+          });
+          console.log('✅ Summary step marked as completed in workflow');
+        } catch (error) {
+          console.warn('Failed to mark summary step as completed:', error);
+        }
+      }
+    };
+
+    // Only run once when component mounts with a valid schedule
+    markSummaryStepComplete();
+  }, []); // Empty dependency array - only run on mount
+
   // Master recovery times state for "Apply to All Templates" functionality
   const [masterRecoveryTimes, setMasterRecoveryTimes] = useState<number[]>([0, 1, 1, 2, 3]);
 
@@ -349,6 +389,45 @@ const BlockSummarySchedule: React.FC = () => {
       timestamp: new Date().toISOString()
     });
   }, []);
+
+  // State restoration when coming from draft
+  useEffect(() => {
+    // Check if we're restoring from a draft
+    if (location.state?.fromDraft && location.state?.draftId) {
+      console.log('📋 Restoring BlockSummarySchedule state from draft:', location.state.draftId);
+      
+      // Restore summary schedule
+      if (location.state.summarySchedule) {
+        console.log('✅ Restoring summary schedule');
+        const restoredSchedule = location.state.summarySchedule;
+        
+        setSchedule(prev => ({
+          ...prev,
+          ...restoredSchedule,
+          trips: restoredSchedule.trips || prev.trips,
+          timePoints: restoredSchedule.timePoints || prev.timePoints,
+          serviceBands: restoredSchedule.serviceBands || prev.serviceBands
+        }));
+      }
+      
+      // Restore trips array if available separately
+      if (location.state.trips && Array.isArray(location.state.trips)) {
+        console.log('✅ Restoring trips:', location.state.trips.length);
+        setSchedule(prev => ({
+          ...prev,
+          trips: location.state.trips
+        }));
+      }
+      
+      // Restore recovery times if they were modified
+      if (location.state.masterRecoveryTimes && Array.isArray(location.state.masterRecoveryTimes)) {
+        console.log('✅ Restoring master recovery times');
+        setMasterRecoveryTimes(location.state.masterRecoveryTimes);
+      }
+      
+      console.log('📋 BlockSummarySchedule state restoration complete');
+    }
+  }, [location.state?.fromDraft, location.state?.draftId]);
 
   // Generate schedule from block configuration if coming from Block Configuration page
   useEffect(() => {
@@ -1944,11 +2023,25 @@ const BlockSummarySchedule: React.FC = () => {
                 } : {}
               }}
             >
-            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
               {isActive ? (
                 <>
-                  {/* Arrival time (or departure for first timepoint) */}
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px', width: '100%' }}>
+                  {/* Main Time Area - Click to End Trip */}
+                  <Box sx={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '4px', 
+                    width: '100%',
+                    padding: '4px 2px',
+                    borderRadius: '3px',
+                    backgroundColor: 'transparent',
+                    transition: 'all 0.15s ease-in-out',
+                    cursor: isClickable ? 'pointer' : 'default',
+                    '&:hover': isClickable ? {
+                      backgroundColor: '#fef3c7',
+                      transform: 'scale(1.02)'
+                    } : {}
+                  }}>
                     <Typography component="div" sx={{ 
                       fontSize: '11px',
                       color: '#94a3b8',
@@ -2018,7 +2111,21 @@ const BlockSummarySchedule: React.FC = () => {
               
               {/* Departure time (if different from arrival due to recovery, but not for first timepoint) */}
               {isActive && tpIndex > 0 && trip.recoveryTimes && trip.recoveryTimes[tp.id] > 0 && (
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px', width: '100%' }}>
+                <Box sx={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '4px', 
+                  width: '100%',
+                  padding: '4px 2px',
+                  borderRadius: '3px',
+                  backgroundColor: 'transparent',
+                  transition: 'all 0.15s ease-in-out',
+                  cursor: isClickable ? 'pointer' : 'default',
+                  '&:hover': isClickable ? {
+                    backgroundColor: '#fef3c7',
+                    transform: 'scale(1.02)'
+                  } : {}
+                }}>
                   <Typography component="div" sx={{ 
                     fontSize: '11px',
                     color: '#94a3b8',
@@ -2036,6 +2143,11 @@ const BlockSummarySchedule: React.FC = () => {
                     {trip.departureTimes[tp.id] || '-'}
                   </Typography>
                 </Box>
+              )}
+              
+              {/* Visual separator */}
+              {isActive && trip.recoveryTimes && trip.recoveryTimes[tp.id] !== undefined && (
+                <Box sx={{ width: '100%', height: '1px', backgroundColor: '#e2e8f0', my: '2px' }} />
               )}
               
               {/* Recovery time display - editable (always show, including 0min) */}
@@ -2074,23 +2186,33 @@ const BlockSummarySchedule: React.FC = () => {
                   ) : (
                     <Typography 
                       component="div" 
-                      onClick={() => onRecoveryClick(trip.tripNumber.toString(), tp.id, trip.recoveryTimes[tp.id] || 0)}
+                      onClick={(e) => {
+                        e.stopPropagation(); // Prevent triggering trip end dialog
+                        onRecoveryClick(trip.tripNumber.toString(), tp.id, trip.recoveryTimes[tp.id] || 0);
+                      }}
                       sx={{ 
                         fontSize: '11px',
                         color: '#0ea5e9',
-                        fontWeight: '600',
+                        fontWeight: '700',
                         cursor: 'pointer',
-                        padding: '2px 6px',
-                        borderRadius: '3px',
+                        padding: '3px 8px',
+                        borderRadius: '6px',
                         backgroundColor: '#f0f9ff',
-                        border: '1px solid #7dd3fc',
+                        border: '2px solid #7dd3fc',
                         display: 'inline-block',
-                        transition: 'all 0.15s ease-in-out',
+                        transition: 'all 0.2s ease-in-out',
+                        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+                        minWidth: '45px',
+                        textAlign: 'center',
                         '&:hover': {
-                          backgroundColor: '#e0f2fe',
-                          color: '#0284c7',
-                          borderColor: '#38bdf8',
-                          transform: 'scale(1.05)'
+                          backgroundColor: '#dbeafe',
+                          color: '#0369a1',
+                          borderColor: '#0ea5e9',
+                          transform: 'scale(1.08)',
+                          boxShadow: '0 2px 6px rgba(14, 165, 233, 0.3)'
+                        },
+                        '&:active': {
+                          transform: 'scale(1.02)'
                         }
                       }}
                     >
@@ -2326,6 +2448,26 @@ const BlockSummarySchedule: React.FC = () => {
     navigate(-1);
   };
 
+  const handleContinueToConnections = () => {
+    // Get current draft ID from the location state or draft service
+    const draftId = location.state?.draftId || draftService.getCurrentSessionDraftId();
+    
+    navigate('/connection-optimization', {
+      state: {
+        draftId,
+        fromBlockSummary: true,
+        summarySchedule: {
+          id: schedule.id,
+          name: schedule.name,
+          timePoints: schedule.timePoints,
+          trips: schedule.trips,
+          serviceBands: schedule.serviceBands,
+          updatedAt: schedule.updatedAt,
+        }
+      }
+    });
+  };
+
 
   const handlePublish = async () => {
     setIsPublishing(true);
@@ -2386,6 +2528,104 @@ const BlockSummarySchedule: React.FC = () => {
     }
   };
 
+  const handleExport = async () => {
+    try {
+      // Create export data bundle from current schedule
+      const exportDataBundle = {
+        summarySchedule: {
+          routeId: schedule.id || `route_${Date.now()}`,
+          routeName: schedule.name || 'Bus Route',
+          direction: 'Outbound',
+          timePoints: schedule.timePoints || [],
+          weekday: processedTrips.map(trip => 
+            schedule.timePoints.map(tp => trip.departureTimes?.[tp.id] || trip.arrivalTimes?.[tp.id] || '')
+          ),
+          saturday: [],
+          sunday: [],
+          effectiveDate: new Date(),
+          metadata: {
+            weekdayTrips: processedTrips.length,
+            saturdayTrips: 0,
+            sundayTrips: 0,
+            totalTimePoints: schedule.timePoints.length,
+            serviceBands: schedule.serviceBands.map(sb => sb.name),
+            exportedAt: new Date().toISOString()
+          }
+        },
+        metadata: {
+          projectName: 'Base Schedule Export',
+          routeName: schedule.name || 'Bus Route',
+          direction: 'Outbound',
+          processedAt: new Date(),
+          processingTime: 0,
+          version: '1.0',
+          generatedBy: 'Scheduler2'
+        },
+        context: {
+          exportedAt: new Date(),
+          exportVersion: '1.0',
+          sourceApplication: 'Scheduler2'
+        }
+      };
+
+      // Use Excel format for export
+      const exportOptions = {
+        format: 'excel' as const,
+        template: {
+          id: 'excel-operational-format',
+          name: 'Operational Excel Format',
+          description: 'Professional Excel format for transit operations',
+          format: 'excel' as const,
+          category: 'operational' as const,
+          isSystemTemplate: true,
+          defaultScope: {
+            includeRawData: false,
+            includeAnalysis: false,
+            includeConfiguration: false,
+            includeGeneratedSchedule: true,
+            includeMetadata: true
+          },
+          requiredData: ['summary-schedule' as const],
+          createdAt: new Date(),
+          updatedAt: new Date()
+        },
+        scope: {
+          includeRawData: false,
+          includeAnalysis: false,
+          includeConfiguration: false,
+          includeGeneratedSchedule: true,
+          includeMetadata: true
+        },
+        filename: `${schedule.name || 'schedule'}_${new Date().toISOString().split('T')[0]}`,
+        timeFormat: '24h' as const,
+        includeHeaders: true,
+        qualityLevel: 'standard' as const
+      };
+
+      const result = await exportService.executeExport(exportOptions, exportDataBundle);
+      
+      if (result.success && result.blob) {
+        // Create download link
+        const url = URL.createObjectURL(result.blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = result.filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        
+        console.log('✅ Schedule exported successfully:', result.filename);
+      } else {
+        console.error('Export failed:', result);
+        alert('Export failed. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error exporting schedule:', error);
+      alert('An error occurred while exporting the schedule. Please try again.');
+    }
+  };
+
   if (schedule.trips.length === 0) {
     return (
       <Box sx={{ pr: 3, width: '100%' }}>
@@ -2439,13 +2679,31 @@ const BlockSummarySchedule: React.FC = () => {
               Back to Blocks
             </Button>
             
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Typography variant="body2" color="text.secondary">
-                Step 4 of 5
-              </Typography>
-              <Typography variant="body1" color="primary" fontWeight="bold">
-                Summary Schedule
-              </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <SaveToDraft variant="outlined" size="medium" />
+              <AutoSaveStatus />
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Typography variant="body2" color="text.secondary">
+                  Step 4 of 5
+                </Typography>
+                <Typography variant="body1" color="primary" fontWeight="bold">
+                  Summary Schedule
+                </Typography>
+              </Box>
+              <Button
+                variant="contained"
+                startIcon={<ArrowForwardIcon />}
+                onClick={handleContinueToConnections}
+                size="large"
+                color="primary"
+                sx={{ 
+                  minWidth: 220,
+                  fontWeight: 'bold',
+                  boxShadow: '0 4px 12px rgba(25, 118, 210, 0.3)'
+                }}
+              >
+                Continue to Optimize Connections
+              </Button>
             </Box>
           </Box>
 
@@ -2489,6 +2747,24 @@ const BlockSummarySchedule: React.FC = () => {
                     color="success"
                   >
                     {isPublishing ? 'Publishing...' : publishSuccess ? 'Published!' : 'Publish Schedule'}
+                  </Button>
+                  <Button
+                    variant="contained"
+                    startIcon={<ConnectionsIcon />}
+                    onClick={handleContinueToConnections}
+                    size="small"
+                    color="primary"
+                  >
+                    Optimize Connections
+                  </Button>
+                  <Button
+                    variant="contained"
+                    startIcon={<ExportIcon />}
+                    onClick={handleExport}
+                    size="small"
+                    color="secondary"
+                  >
+                    Export Excel
                   </Button>
                   <Button
                     variant="outlined"

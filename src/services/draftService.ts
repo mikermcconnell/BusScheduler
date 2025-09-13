@@ -34,6 +34,7 @@ import { ParsedCsvData } from '../utils/csvParser';
 import { ValidationResult } from '../utils/validator';
 import { sanitizeText } from '../utils/inputSanitizer';
 import { emit } from './workspaceEventBus';
+import { offlineQueue } from './offlineQueue';
 
 // Enhanced draft interface for compatibility with unifiedDraftService
 export interface UnifiedDraftCompat {
@@ -87,6 +88,9 @@ export interface UnifiedDraftCompat {
     isPublished: boolean;
     publishedAt?: string;
     publishedScheduleId?: string;
+    lastConflictResolution?: string;
+    conflictResolutionFailed?: boolean;
+    syncStatus?: 'synced' | 'pending' | 'conflict' | 'error';
   };
 }
 
@@ -161,51 +165,27 @@ export interface DraftWorkflowState {
   stepData?: any; // Store step-specific data synced from Firebase
 }
 
-// Fun messages for different progress levels
+// Progress levels
 const PROGRESS_MESSAGES = {
-  0: "Ready to create something awesome? Let's go! 🚌",
-  10: "Great start! Every journey begins with a single step 🚀",
-  25: "You're on a roll! Your schedule is taking shape 📍",
-  40: "Looking good! The pieces are coming together 🧩",
-  50: "Halfway there! You're doing amazing 🌟",
-  65: "Fantastic progress! Keep up the great work 💪",
-  75: "Almost done! The finish line is in sight 🏁",
-  90: "So close! Just a few more touches ✨",
-  100: "Schedule complete! You're a scheduling wizard! 🎉"
+  0: "",
+  10: "",
+  25: "",
+  40: "",
+  50: "",
+  65: "",
+  75: "",
+  90: "",
+  100: ""
 };
 
 // Motivational tips for each step
 const STEP_TIPS = {
-  'upload': [
-    "Every great schedule starts with good data",
-    "Drop your file and let the magic begin",
-    "Your journey to a perfect schedule starts here"
-  ],
-  'drafts': [
-    "Take a moment to review what we've found",
-    "This is where your data becomes a story",
-    "Preview your schedule's blueprint"
-  ],
-  'timepoints': [
-    "Find the perfect rhythm for your routes",
-    "Discover patterns in your travel times",
-    "This is where timing becomes an art"
-  ],
-  'block-config': [
-    "Arrange your buses like a master strategist",
-    "Build your fleet configuration",
-    "Create the perfect bus ballet"
-  ],
-  'summary': [
-    "Watch your schedule come to life",
-    "See all your hard work pay off",
-    "Your masterpiece is almost ready"
-  ],
-  'connections': [
-    "Connect every passenger to their destination",
-    "Make sure no one gets left behind",
-    "The final touches that make it perfect"
-  ]
+  'upload': [],
+  'drafts': [],
+  'timepoints': [],
+  'block-config': [],
+  'summary': [],
+  'connections': []
 };
 
 class UnifiedDraftService {
@@ -219,6 +199,104 @@ class UnifiedDraftService {
   // In-memory lock for client-side atomic operations
   private operationLocks = new Map<string, number>();
   
+  // Cache for draft data to reduce Firebase calls
+  private draftCache = new Map<string, { draft: UnifiedDraftCompat, timestamp: number }>();
+  private readonly CACHE_DURATION = 30000; // 30 seconds
+  
+  // Online/offline state tracking
+  private isOnline: boolean = navigator.onLine;
+  private onlineListeners: Set<() => void> = new Set();
+  
+  constructor() {
+    this.initializeOnlineListeners();
+  }
+  
+  /**
+   * Initialize online/offline event listeners
+   */
+  private initializeOnlineListeners(): void {
+    const handleOnline = () => {
+      this.isOnline = true;
+      console.log('🌐 DraftService: Connection restored - will retry pending operations');
+      this.notifyOnlineListeners();
+      // Let the offline queue handle the retry logic
+    };
+    
+    const handleOffline = () => {
+      this.isOnline = false;
+      console.log('📵 DraftService: Connection lost - operations will be queued');
+      this.notifyOnlineListeners();
+    };
+    
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    // Store references for cleanup if needed
+    (this as any)._handleOnline = handleOnline;
+    (this as any)._handleOffline = handleOffline;
+  }
+  
+  /**
+   * Notify listeners of online state change
+   */
+  private notifyOnlineListeners(): void {
+    this.onlineListeners.forEach(listener => listener());
+  }
+  
+  /**
+   * Subscribe to online/offline state changes
+   */
+  subscribeToOnlineStatus(listener: () => void): () => void {
+    this.onlineListeners.add(listener);
+    return () => this.onlineListeners.delete(listener);
+  }
+  
+  /**
+   * Get current online status
+   */
+  getOnlineStatus(): boolean {
+    return this.isOnline;
+  }
+  
+  /**
+   * Clear expired cache entries
+   */
+  private clearExpiredCache(): void {
+    const now = Date.now();
+    const entries = Array.from(this.draftCache.entries());
+    for (const [key, entry] of entries) {
+      if (now - entry.timestamp > this.CACHE_DURATION) {
+        this.draftCache.delete(key);
+      }
+    }
+  }
+
+  /**
+   * Invalidate cache for specific draft
+   */
+  private invalidateCache(draftId: string): void {
+    this.draftCache.delete(draftId);
+  }
+
+  /**
+   * Get draft from cache if valid
+   */
+  private getCachedDraft(draftId: string): UnifiedDraftCompat | null {
+    this.clearExpiredCache();
+    const cached = this.draftCache.get(draftId);
+    if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {
+      return cached.draft;
+    }
+    return null;
+  }
+
+  /**
+   * Set draft in cache
+   */
+  private setCachedDraft(draftId: string, draft: UnifiedDraftCompat): void {
+    this.draftCache.set(draftId, { draft, timestamp: Date.now() });
+  }
+
   /**
    * Acquire lock for atomic operations (client-side)
    */
@@ -578,6 +656,156 @@ class UnifiedDraftService {
   }
   
   /**
+   * Load draft with full state restoration data
+   * This method loads everything needed to restore the user to exactly where they left off
+   */
+  async loadDraftWithFullState(draftId: string): Promise<{
+    draft: UnifiedDraftCompat;
+    restorationData: {
+      currentStep: string;
+      progress: number;
+      fromDraft: boolean;
+      draftId: string;
+      // TimePoints data
+      serviceBands?: any[];
+      travelTimeData?: any[];
+      outliers?: any[];
+      deletedPeriods?: string[];
+      timePeriodServiceBands?: { [timePeriod: string]: string };
+      // Block Configuration data
+      numberOfBuses?: number;
+      cycleTimeMinutes?: number;
+      automateBlockStartTimes?: boolean;
+      blockConfigurations?: any[];
+      // Summary Schedule data
+      summarySchedule?: any;
+      trips?: any[];
+      // Original upload data for context
+      uploadedData?: any;
+      fileName?: string;
+    };
+  } | null> {
+    try {
+      console.log('📖 Loading draft with full state restoration:', draftId);
+      
+      // Load the draft from Firebase first, falls back to localStorage
+      const draft = await this.getDraftByIdUnified(draftId);
+      if (!draft) {
+        console.error('Draft not found:', draftId);
+        return null;
+      }
+      
+      // Also load the workflow state for additional context
+      const workflow = await this.loadWorkflowFromCloud(draftId);
+      
+      // Build comprehensive restoration data
+      const restorationData: any = {
+        currentStep: draft.currentStep,
+        progress: draft.progress,
+        fromDraft: true,
+        draftId: draft.draftId,
+        fileName: draft.originalData?.fileName,
+        uploadedData: draft.originalData?.uploadedData
+      };
+      
+      // Add TimePoints data if available
+      if (draft.stepData?.timepoints) {
+        restorationData.serviceBands = draft.stepData.timepoints.serviceBands;
+        restorationData.travelTimeData = draft.stepData.timepoints.travelTimeData;
+        restorationData.outliers = draft.stepData.timepoints.outliers;
+        restorationData.deletedPeriods = draft.stepData.timepoints.deletedPeriods;
+        restorationData.timePeriodServiceBands = draft.stepData.timepoints.timePeriodServiceBands;
+      }
+      
+      // Add Block Configuration data if available
+      if (draft.stepData?.blockConfiguration) {
+        restorationData.numberOfBuses = draft.stepData.blockConfiguration.numberOfBuses;
+        restorationData.cycleTimeMinutes = draft.stepData.blockConfiguration.cycleTimeMinutes;
+        restorationData.automateBlockStartTimes = draft.stepData.blockConfiguration.automateBlockStartTimes;
+        restorationData.blockConfigurations = draft.stepData.blockConfiguration.blockConfigurations;
+      }
+      
+      // Add Summary Schedule data if available
+      if (draft.stepData?.summarySchedule) {
+        restorationData.summarySchedule = draft.stepData.summarySchedule;
+      }
+      
+      // Add workflow step data if available from Firebase workflow
+      if (workflow?.stepData) {
+        // Merge any additional step data from workflow
+        Object.assign(restorationData, workflow.stepData);
+      }
+      
+      console.log('✅ Draft loaded with full state restoration data:', {
+        draftId,
+        currentStep: draft.currentStep,
+        hasTimePointsData: !!restorationData.serviceBands,
+        hasBlockData: !!restorationData.blockConfigurations,
+        hasSummaryData: !!restorationData.summarySchedule
+      });
+      
+      return {
+        draft,
+        restorationData
+      };
+    } catch (error) {
+      console.error('Error loading draft with full state:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Resume workflow - navigates to last active step with all data
+   */
+  async resumeWorkflow(draftId: string): Promise<{
+    success: boolean;
+    targetStep?: string;
+    restorationData?: any;
+    error?: string;
+  }> {
+    try {
+      const result = await this.loadDraftWithFullState(draftId);
+      if (!result) {
+        return { success: false, error: 'Draft not found' };
+      }
+      
+      const { draft, restorationData } = result;
+      
+      // Set as current session
+      this.setCurrentSessionDraft(draftId);
+      
+      // Determine target navigation step
+      let targetStep = '/upload'; // Default
+      
+      switch (draft.currentStep) {
+        case 'timepoints':
+          targetStep = '/timepoints';
+          break;
+        case 'blocks':
+          targetStep = '/block-configuration';
+          break;
+        case 'summary':
+        case 'ready-to-publish':
+          targetStep = '/summary-schedule';
+          break;
+        default:
+          targetStep = '/upload';
+      }
+      
+      console.log(`📍 Resuming workflow at step: ${targetStep}`);
+      
+      return {
+        success: true,
+        targetStep,
+        restorationData
+      };
+    } catch (error: any) {
+      console.error('Error resuming workflow:', error);
+      return { success: false, error: sanitizeErrorMessage(error) };
+    }
+  }
+
+  /**
    * Gets a draft by ID from Firestore (backward compatibility)
    */
   async getDraftById(draftId: string): Promise<WorkflowDraftState | null> {
@@ -590,6 +818,13 @@ class UnifiedDraftService {
    */
   async getDraftByIdUnified(draftId: string): Promise<UnifiedDraftCompat | null> {
     try {
+      // Check cache first
+      const cached = this.getCachedDraft(draftId);
+      if (cached) {
+        console.log('🚀 Retrieved draft from cache:', draftId);
+        return cached;
+      }
+
       console.log('🔥 Fetching unified draft from Firebase:', draftId);
       const draftRef = doc(db, this.COLLECTION_NAME, draftId);
       const draftSnap = await getDoc(draftRef);
@@ -615,7 +850,11 @@ class UnifiedDraftService {
         
         // Ensure draft has all required unified fields
         const unifiedDraft = this.ensureUnifiedFormat(data);
-        console.log('🔥 Unified draft loaded from Firebase:', draftId, 'has uploadedData:', !!unifiedDraft.originalData?.uploadedData);
+        
+        // Cache the result
+        this.setCachedDraft(draftId, unifiedDraft);
+        
+        console.log('🔥 Unified draft loaded from Firebase and cached:', draftId, 'has uploadedData:', !!unifiedDraft.originalData?.uploadedData);
         return unifiedDraft;
       }
       
@@ -655,13 +894,373 @@ class UnifiedDraftService {
       });
       
       console.log('🔥 Saved draft to Firebase:', draft.draftId);
+      
+      // Invalidate cache since draft was updated
+      this.invalidateCache(draft.draftId);
+      
       return { success: true, draftId: draft.draftId };
     } catch (error: any) {
       console.error('🔥 Draft save operation failed:', error);
+      
+      // If offline or network error, queue the operation
+      if (this.isNetworkError(error)) {
+        const queued = offlineQueue.enqueue({
+          type: 'save',
+          collection: this.COLLECTION_NAME,
+          documentId: draft.draftId,
+          data: this.serializeForFirebase(draft)
+        });
+        
+        if (queued) {
+          console.log('📦 Operation queued for offline sync');
+          return { success: true, draftId: draft.draftId };
+        }
+      }
+      
       return { success: false, error: sanitizeErrorMessage(error) };
     } finally {
       this.releaseLock(draft.draftId);
     }
+  }
+
+  /**
+   * Save draft with advanced conflict resolution
+   */
+  async saveWithConflictResolution(draft: UnifiedDraftCompat): Promise<DraftOperationResult> {
+    const maxConflictRetries = 3;
+    let conflictRetryCount = 0;
+    
+    while (conflictRetryCount < maxConflictRetries) {
+      try {
+        // Get the current remote version with fresh data
+        const remoteDraft = await this.getRemoteDraft(draft.draftId);
+        
+        if (remoteDraft) {
+          const localVersion = draft.metadata.version || 0;
+          const remoteVersion = remoteDraft.metadata.version || 0;
+          
+          // Check for version conflict
+          if (remoteVersion > localVersion) {
+            console.warn('⚠️ Version conflict detected (attempt %d):', conflictRetryCount + 1, {
+              local: localVersion,
+              remote: remoteVersion,
+              localModified: draft.metadata.lastModifiedAt,
+              remoteModified: remoteDraft.metadata.lastModifiedAt
+            });
+            
+            // Enhanced merge strategy with conflict resolution
+            const mergedDraft = this.mergeConflictsAdvanced(draft, remoteDraft);
+            
+            // Update version to be higher than remote with conflict marker
+            mergedDraft.metadata.version = remoteVersion + 1;
+            mergedDraft.metadata.lastConflictResolution = new Date().toISOString();
+            
+            // Try to save merged version
+            const result = await this.saveDraftInternal(mergedDraft);
+            if (result.success) {
+              console.log('✅ Conflict resolved successfully after', conflictRetryCount + 1, 'attempts');
+              return result;
+            }
+            
+            // If save failed, retry conflict resolution
+            conflictRetryCount++;
+            await this.sleep(Math.pow(2, conflictRetryCount) * 100); // Exponential backoff
+            continue;
+            
+          } else if (remoteVersion === localVersion) {
+            // Safe to save, increment version
+            draft.metadata.version = localVersion + 1;
+            return await this.saveDraftInternal(draft);
+          } else {
+            // Local version is ahead (edge case - proceed with caution)
+            console.warn('⚠️ Local version ahead of remote:', {
+              local: localVersion,
+              remote: remoteVersion
+            });
+            draft.metadata.version = Math.max(localVersion, remoteVersion) + 1;
+            return await this.saveDraftInternal(draft);
+          }
+        } else {
+          // No remote version exists, safe to save
+          draft.metadata.version = (draft.metadata.version || 0) + 1;
+          return await this.saveDraftInternal(draft);
+        }
+      } catch (error: any) {
+        console.error('Conflict resolution attempt failed:', conflictRetryCount + 1, error);
+        conflictRetryCount++;
+        
+        if (conflictRetryCount >= maxConflictRetries) {
+          console.error('Max conflict resolution retries exceeded');
+          break;
+        }
+        
+        await this.sleep(Math.pow(2, conflictRetryCount) * 100); // Exponential backoff
+      }
+    }
+    
+    // Final fallback - save with optimistic versioning
+    console.warn('🔄 Falling back to optimistic save after conflict resolution failures');
+    draft.metadata.version = (draft.metadata.version || 0) + 1;
+    draft.metadata.conflictResolutionFailed = true;
+    return await this.saveDraftInternal(draft);
+  }
+
+  /**
+   * Save with retry and exponential backoff
+   */
+  async saveWithRetry(
+    draft: UnifiedDraftCompat, 
+    maxRetries: number = 3
+  ): Promise<DraftOperationResult> {
+    let retryCount = 0;
+    let lastError: any;
+    
+    while (retryCount < maxRetries) {
+      try {
+        // Try to save with conflict resolution
+        const result = await this.saveWithConflictResolution(draft);
+        if (result.success) {
+          return result;
+        }
+        
+        // If it failed but not due to network, don't retry
+        if (!this.isNetworkError(lastError)) {
+          return result;
+        }
+      } catch (error: any) {
+        lastError = error;
+        console.warn(`Save attempt ${retryCount + 1} failed:`, error.message);
+      }
+      
+      retryCount++;
+      if (retryCount < maxRetries) {
+        // Exponential backoff: 2s, 4s, 8s
+        const backoffMs = Math.pow(2, retryCount) * 1000;
+        console.log(`⏳ Retrying in ${backoffMs}ms...`);
+        await this.sleep(backoffMs);
+      }
+    }
+    
+    // All retries failed, queue for offline
+    const queued = offlineQueue.enqueue({
+      type: 'save',
+      collection: this.COLLECTION_NAME,
+      documentId: draft.draftId,
+      data: this.serializeForFirebase(draft)
+    });
+    
+    if (queued) {
+      console.log('📦 Operation queued after max retries');
+      return { success: true, draftId: draft.draftId };
+    }
+    
+    return { 
+      success: false, 
+      error: `Failed after ${maxRetries} attempts: ${sanitizeErrorMessage(lastError)}` 
+    };
+  }
+
+  /**
+   * Get draft directly from Firebase (bypasses cache)
+   */
+  private async getRemoteDraft(draftId: string): Promise<UnifiedDraftCompat | null> {
+    try {
+      const draftRef = doc(db, this.COLLECTION_NAME, draftId);
+      const draftSnap = await getDoc(draftRef);
+      
+      if (draftSnap.exists()) {
+        const data = draftSnap.data();
+        delete data.serverTimestamp;
+        
+        // Deserialize data
+        if (data.originalData?.uploadedData) {
+          data.originalData.uploadedData = this.deserializeFromFirebase(data.originalData.uploadedData);
+        }
+        
+        return this.ensureUnifiedFormat(data);
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('Failed to get remote draft:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Merge conflicting drafts (basic strategy)
+   */
+  private mergeConflicts(
+    localDraft: UnifiedDraftCompat, 
+    remoteDraft: UnifiedDraftCompat
+  ): UnifiedDraftCompat {
+    console.log('🔀 Merging conflicts between local and remote drafts');
+    
+    // Strategy: Keep remote data for shared fields, preserve local-only changes
+    const merged: UnifiedDraftCompat = {
+      ...remoteDraft,
+      // Preserve local UI state
+      ui: localDraft.ui,
+      // Merge metadata
+      metadata: {
+        ...remoteDraft.metadata,
+        lastModifiedAt: new Date().toISOString(),
+        version: Math.max(
+          localDraft.metadata.version || 0,
+          remoteDraft.metadata.version || 0
+        )
+      }
+    };
+    
+    // Merge stepData - prefer remote but don't lose local-only data
+    if (localDraft.stepData) {
+      merged.stepData = {
+        ...localDraft.stepData,
+        ...remoteDraft.stepData
+      };
+    }
+    
+    return merged;
+  }
+
+  /**
+   * Advanced merge conflicts with field-level resolution
+   */
+  private mergeConflictsAdvanced(
+    localDraft: UnifiedDraftCompat, 
+    remoteDraft: UnifiedDraftCompat
+  ): UnifiedDraftCompat {
+    console.log('🔀 Advanced merge of conflicts between local and remote drafts');
+    
+    const localTime = new Date(localDraft.metadata.lastModifiedAt).getTime();
+    const remoteTime = new Date(remoteDraft.metadata.lastModifiedAt).getTime();
+    const timeDifferenceMs = Math.abs(localTime - remoteTime);
+    
+    console.log('📊 Conflict analysis:', {
+      localVersion: localDraft.metadata.version,
+      remoteVersion: remoteDraft.metadata.version,
+      timeDifferenceMinutes: Math.round(timeDifferenceMs / 60000),
+      localStep: localDraft.currentStep,
+      remoteStep: remoteDraft.currentStep
+    });
+    
+    // Start with remote as base (preference for server state)
+    const merged: UnifiedDraftCompat = { ...remoteDraft };
+    
+    // FIELD-LEVEL MERGE STRATEGIES:
+    
+    // 1. UI State - Always prefer local (user's current view state)
+    merged.ui = {
+      ...remoteDraft.ui,
+      ...localDraft.ui,
+      // Merge celebrations shown from both versions
+      celebrationsShown: Array.from(new Set([
+        ...(localDraft.ui.celebrationsShown || []),
+        ...(remoteDraft.ui.celebrationsShown || [])
+      ]))
+    };
+    
+    // 2. Progress - Use higher progress value
+    merged.progress = Math.max(localDraft.progress || 0, remoteDraft.progress || 0);
+    
+    // 3. Current Step - Use the most advanced step
+    const stepOrder = ['upload', 'timepoints', 'blocks', 'summary', 'ready-to-publish'];
+    const localStepIndex = stepOrder.indexOf(localDraft.currentStep);
+    const remoteStepIndex = stepOrder.indexOf(remoteDraft.currentStep);
+    
+    if (localStepIndex > remoteStepIndex) {
+      merged.currentStep = localDraft.currentStep;
+    }
+    
+    // 4. Step Data - Merge with recent-wins strategy
+    merged.stepData = {};
+    
+    // Merge timepoints data
+    if (localDraft.stepData.timepoints || remoteDraft.stepData.timepoints) {
+      const localTimepoints = localDraft.stepData.timepoints;
+      const remoteTimepoints = remoteDraft.stepData.timepoints;
+      
+      // Use most recent timepoints data based on modification time
+      if (localTimepoints && remoteTimepoints) {
+        merged.stepData.timepoints = localTime > remoteTime ? localTimepoints : remoteTimepoints;
+      } else {
+        merged.stepData.timepoints = localTimepoints || remoteTimepoints;
+      }
+    }
+    
+    // Merge block configuration
+    if (localDraft.stepData.blockConfiguration || remoteDraft.stepData.blockConfiguration) {
+      const localBlocks = localDraft.stepData.blockConfiguration;
+      const remoteBlocks = remoteDraft.stepData.blockConfiguration;
+      
+      if (localBlocks && remoteBlocks) {
+        merged.stepData.blockConfiguration = localTime > remoteTime ? localBlocks : remoteBlocks;
+      } else {
+        merged.stepData.blockConfiguration = localBlocks || remoteBlocks;
+      }
+    }
+    
+    // Merge summary schedule
+    if (localDraft.stepData.summarySchedule || remoteDraft.stepData.summarySchedule) {
+      const localSummary = localDraft.stepData.summarySchedule;
+      const remoteSummary = remoteDraft.stepData.summarySchedule;
+      
+      if (localSummary && remoteSummary) {
+        merged.stepData.summarySchedule = localTime > remoteTime ? localSummary : remoteSummary;
+      } else {
+        merged.stepData.summarySchedule = localSummary || remoteSummary;
+      }
+    }
+    
+    // 5. Original Data - Prefer remote (shouldn't change often)
+    merged.originalData = remoteDraft.originalData;
+    
+    // 6. Metadata - Merge with conflict tracking
+    merged.metadata = {
+      ...remoteDraft.metadata,
+      lastModifiedAt: new Date().toISOString(),
+      lastModifiedStep: localTime > remoteTime ? 
+        localDraft.metadata.lastModifiedStep : 
+        remoteDraft.metadata.lastModifiedStep,
+      version: Math.max(
+        localDraft.metadata.version || 0,
+        remoteDraft.metadata.version || 0
+      ),
+      syncStatus: 'conflict',
+      lastConflictResolution: new Date().toISOString(),
+      conflictResolutionFailed: false
+    };
+    
+    console.log('✅ Advanced merge completed:', {
+      resultStep: merged.currentStep,
+      resultProgress: merged.progress,
+      hasTimepoints: !!merged.stepData.timepoints,
+      hasBlocks: !!merged.stepData.blockConfiguration,
+      hasSummary: !!merged.stepData.summarySchedule
+    });
+    
+    return merged;
+  }
+
+  /**
+   * Check if error is network-related
+   */
+  private isNetworkError(error: any): boolean {
+    if (!error) return false;
+    
+    const networkErrors = ['unavailable', 'network-error', 'failed-precondition'];
+    if (networkErrors.includes(error.code)) return true;
+    
+    const messageIndicators = ['network', 'offline', 'fetch', 'connect'];
+    const errorMessage = (error.message || '').toLowerCase();
+    return messageIndicators.some(indicator => errorMessage.includes(indicator));
+  }
+
+  /**
+   * Sleep utility for backoff
+   */
+  private sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   /**
@@ -686,7 +1285,8 @@ class UnifiedDraftService {
       draft.stepData = { ...draft.stepData, ...stepData };
     }
 
-    return this.saveDraftInternal(draft);
+    // Use save with retry for resilience
+    return this.saveWithRetry(draft, 2);
   }
 
   /**
@@ -1274,7 +1874,6 @@ class UnifiedDraftService {
       'timepoints': 30,
       'blocks': 60,
       'summary': 80,
-      'connections': 90,
       'ready': 100,
       'ready-to-publish': 100
     };
@@ -1374,12 +1973,26 @@ class UnifiedDraftService {
       celebrationsShown: []
     };
 
-    this.saveWorkflow(workflow);
+    // Save sync to localStorage first for immediate availability
+    try {
+      localStorage.setItem(
+        this.WORKFLOW_KEY_PREFIX + workflow.draftId,
+        JSON.stringify(workflow)
+      );
+    } catch (error) {
+      console.error('Error saving new workflow to localStorage:', error);
+    }
+    
+    // Save async to Firebase in background
+    this.saveWorkflow(workflow).catch(error => {
+      console.warn('Background Firebase save failed:', error);
+    });
+    
     return workflow;
   }
 
   /**
-   * Get workflow for a specific draft (UI storyboard state)
+   * Get workflow for a specific draft (UI storyboard state) - sync version
    */
   getWorkflow(draftId: string): DraftWorkflowState | null {
     try {
@@ -1392,17 +2005,142 @@ class UnifiedDraftService {
   }
 
   /**
-   * Save workflow state (UI storyboard persistence)
+   * Get workflow for a specific draft with cloud sync (async version)
    */
-  saveWorkflow(workflow: DraftWorkflowState): void {
+  async getWorkflowAsync(draftId: string): Promise<DraftWorkflowState | null> {
+    return await this.loadWorkflowFromCloud(draftId);
+  }
+
+  /**
+   * Load workflow from cloud (Firebase first, fallback to localStorage)
+   */
+  async loadWorkflowFromCloud(draftId: string): Promise<DraftWorkflowState | null> {
+    try {
+      // Try loading from Firebase first
+      console.log('🔥 Loading workflow from Firebase:', draftId);
+      const workflowProgressRef = doc(db, 'workflow_progress', draftId);
+      const workflowSnap = await getDoc(workflowProgressRef);
+      
+      if (workflowSnap.exists()) {
+        const firebaseWorkflow = workflowSnap.data();
+        console.log('✅ Workflow loaded from Firebase:', draftId);
+        
+        // Cache in localStorage for offline use
+        localStorage.setItem(
+          this.WORKFLOW_KEY_PREFIX + draftId,
+          JSON.stringify(firebaseWorkflow)
+        );
+        
+        return firebaseWorkflow as DraftWorkflowState;
+      } else {
+        console.log('🔍 No workflow found in Firebase, checking localStorage');
+      }
+    } catch (error) {
+      console.warn('🔥 Firebase load failed, falling back to localStorage:', error);
+    }
+    
+    // Fall back to localStorage if Firebase fails or no data
+    try {
+      const localData = localStorage.getItem(this.WORKFLOW_KEY_PREFIX + draftId);
+      if (localData) {
+        const localWorkflow = JSON.parse(localData) as DraftWorkflowState;
+        console.log('📱 Workflow loaded from localStorage:', draftId);
+        return localWorkflow;
+      }
+    } catch (error) {
+      console.error('Error loading workflow from localStorage:', error);
+    }
+    
+    console.log('❌ No workflow found anywhere for:', draftId);
+    return null;
+  }
+
+  /**
+   * Save workflow state with resilience (UI storyboard persistence)
+   */
+  async saveWorkflow(workflow: DraftWorkflowState): Promise<void> {
     try {
       workflow.lastModified = new Date().toISOString();
+      
+      // Save to localStorage first (instant feedback)
       localStorage.setItem(
         this.WORKFLOW_KEY_PREFIX + workflow.draftId,
         JSON.stringify(workflow)
       );
+      
+      // Then sync to Firebase with resilience
+      await this.saveWorkflowToFirebase(workflow);
     } catch (error) {
       console.error('Error saving draft workflow:', error);
+    }
+  }
+
+  /**
+   * Save workflow to Firebase with retry logic
+   */
+  private async saveWorkflowToFirebase(
+    workflow: DraftWorkflowState, 
+    maxRetries: number = 2
+  ): Promise<void> {
+    let retryCount = 0;
+    
+    while (retryCount <= maxRetries) {
+      try {
+        const workflowProgressRef = doc(db, 'workflow_progress', workflow.draftId);
+        const workflowData = {
+          draftId: workflow.draftId,
+          draftName: workflow.draftName,
+          routeName: workflow.routeName,
+          currentStep: workflow.currentStep,
+          steps: workflow.steps,
+          overallProgress: workflow.overallProgress,
+          lastModified: workflow.lastModified,
+          createdAt: workflow.createdAt,
+          celebrationsShown: workflow.celebrationsShown || [],
+          stepData: workflow.stepData || {},
+          serverTimestamp: serverTimestamp()
+        };
+        
+        await setDoc(workflowProgressRef, workflowData);
+        console.log('✅ Workflow synced to Firebase:', workflow.draftId);
+        return;
+        
+      } catch (error: any) {
+        retryCount++;
+        console.warn(`🔥 Firebase workflow sync failed (attempt ${retryCount}):`, error);
+        
+        if (retryCount > maxRetries) {
+          // Queue for offline sync if all retries failed
+          if (this.isNetworkError(error)) {
+            const queued = offlineQueue.enqueue({
+              type: 'save',
+              collection: 'workflow_progress',
+              documentId: workflow.draftId,
+              data: {
+                draftId: workflow.draftId,
+                draftName: workflow.draftName,
+                routeName: workflow.routeName,
+                currentStep: workflow.currentStep,
+                steps: workflow.steps,
+                overallProgress: workflow.overallProgress,
+                lastModified: workflow.lastModified,
+                createdAt: workflow.createdAt,
+                celebrationsShown: workflow.celebrationsShown || [],
+                stepData: workflow.stepData || {}
+              }
+            });
+            
+            if (queued) {
+              console.log('📦 Workflow operation queued for offline sync');
+            }
+          }
+          break;
+        } else {
+          // Exponential backoff for retry
+          const backoffMs = Math.pow(2, retryCount) * 500;
+          await this.sleep(backoffMs);
+        }
+      }
     }
   }
 
@@ -1449,7 +2187,7 @@ class UnifiedDraftService {
     // Calculate overall progress
     workflow.overallProgress = this.calculateWorkflowProgress(workflow.steps);
 
-    this.saveWorkflow(workflow);
+    await this.saveWorkflow(workflow);
     
     // Also persist to Firebase for proper sync
     try {
@@ -1594,7 +2332,22 @@ class UnifiedDraftService {
     }
     
     workflow.celebrationsShown.push(milestone);
-    this.saveWorkflow(workflow);
+    
+    // Save sync to localStorage first
+    try {
+      localStorage.setItem(
+        this.WORKFLOW_KEY_PREFIX + workflow.draftId,
+        JSON.stringify(workflow)
+      );
+    } catch (error) {
+      console.error('Error saving workflow celebration to localStorage:', error);
+    }
+    
+    // Save async to Firebase in background
+    this.saveWorkflow(workflow).catch(error => {
+      console.warn('Background Firebase save failed for celebration:', error);
+    });
+    
     return true;
   }
 
@@ -1622,7 +2375,22 @@ class UnifiedDraftService {
     if (!step || step.status === 'not-started') return false;
 
     workflow.currentStep = stepKey;
-    this.saveWorkflow(workflow);
+    
+    // Save sync to localStorage first
+    try {
+      localStorage.setItem(
+        this.WORKFLOW_KEY_PREFIX + workflow.draftId,
+        JSON.stringify(workflow)
+      );
+    } catch (error) {
+      console.error('Error saving workflow navigation to localStorage:', error);
+    }
+    
+    // Save async to Firebase in background
+    this.saveWorkflow(workflow).catch(error => {
+      console.warn('Background Firebase save failed during navigation:', error);
+    });
+    
     return true;
   }
 
@@ -1689,10 +2457,26 @@ class UnifiedDraftService {
 
   /**
    * Public method to save a draft (for WorkspaceContext compatibility)
+   * Uses the resilient save workflow with retry and conflict resolution
    */
   async saveDraft(draft: UnifiedDraftCompat, userId: string): Promise<DraftOperationResult> {
     try {
-      return await this.saveDraftInternal(draft);
+      // Mark sync status as pending
+      draft.metadata.syncStatus = 'pending';
+      
+      // Use the resilient save workflow
+      const result = await this.saveWithRetry(draft, 3);
+      
+      if (result.success) {
+        // Update sync status on success
+        draft.metadata.syncStatus = 'synced';
+        // Don't need to save again, just update cache
+        this.setCachedDraft(draft.draftId, draft);
+      } else {
+        draft.metadata.syncStatus = 'error';
+      }
+      
+      return result;
     } catch (error) {
       console.error('Failed to save draft:', error);
       return {

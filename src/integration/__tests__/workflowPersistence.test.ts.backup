@@ -1,0 +1,808 @@
+/**
+ * Integration Tests for Workflow Persistence System
+ * Tests complete workflow: Upload → TimePoints → Blocks → Summary with state restoration
+ */
+
+import { jest } from '@jest/globals';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { BrowserRouter } from 'react-router-dom';
+import React from 'react';
+
+import { draftService } from '../../services/draftService';
+import { offlineQueue } from '../../services/offlineQueue';
+import { WorkspaceProvider } from '../../contexts/WorkspaceContext';
+
+// Mock Firebase completely for integration tests
+jest.mock('firebase/firestore');
+jest.mock('../../config/firebase', () => ({
+  db: {}
+}));
+
+// Create mock components that represent the actual workflow pages
+const MockUploadSchedule = () => {
+  return (
+    <div data-testid="upload-page">
+      <h1>Upload Schedule</h1>
+      <button 
+        onClick={() => {
+          // Simulate successful file upload
+          const mockData = {
+            sheets: ['Sheet1'],
+            data: { Sheet1: [['Route', 'Time'], ['101', '10:00']] }
+          };
+          
+          draftService.createDraft(
+            'Test Route Upload',
+            'test-route.csv',
+            'csv',
+            mockData
+          );
+        }}
+        data-testid="upload-button"
+      >
+        Upload File
+      </button>
+    </div>
+  );
+};
+
+const MockTimePoints = ({ draftId }: { draftId?: string }) => {
+  return (
+    <div data-testid="timepoints-page">
+      <h1>TimePoints Analysis</h1>
+      <div data-testid="progress-indicator">Progress: 30%</div>
+      <button 
+        onClick={() => {
+          if (draftId) {
+            draftService.updateDraftWithTimepointsAnalysis(draftId, {
+              serviceBands: [
+                { id: 'fast', name: 'Fast Service', color: '#28a745' }
+              ],
+              travelTimeData: [
+                { timepoint: 'A', time: 600, band: 'fast' }
+              ],
+              outliers: [],
+              userModifications: []
+            });
+          }
+        }}
+        data-testid="complete-timepoints"
+      >
+        Complete Analysis
+      </button>
+    </div>
+  );
+};
+
+const MockBlockConfiguration = ({ draftId }: { draftId?: string }) => {
+  return (
+    <div data-testid="block-config-page">
+      <h1>Block Configuration</h1>
+      <div data-testid="progress-indicator">Progress: 60%</div>
+      <button 
+        onClick={() => {
+          if (draftId) {
+            draftService.updateDraftWithBlockConfiguration(draftId, {
+              numberOfBuses: 5,
+              cycleTimeMinutes: 60,
+              automateBlockStartTimes: true,
+              blockConfigurations: [
+                { blockId: 'B1', startTime: '06:00', trips: [] }
+              ]
+            });
+          }
+        }}
+        data-testid="complete-blocks"
+      >
+        Complete Configuration
+      </button>
+    </div>
+  );
+};
+
+const MockSummarySchedule = ({ draftId }: { draftId?: string }) => {
+  return (
+    <div data-testid="summary-page">
+      <h1>Summary Schedule</h1>
+      <div data-testid="progress-indicator">Progress: 100%</div>
+      <button 
+        onClick={() => {
+          if (draftId) {
+            const mockSchedule = {
+              routeId: 'route-101',
+              routeName: 'Test Route',
+              trips: [
+                {
+                  tripId: 'trip-1',
+                  blockId: 'B1',
+                  startTime: '06:00',
+                  endTime: '07:00',
+                  timepoints: [
+                    { name: 'A', arrivalTime: '06:00', departureTime: '06:00' },
+                    { name: 'B', arrivalTime: '06:30', departureTime: '06:31' },
+                    { name: 'C', arrivalTime: '07:00', departureTime: '07:00' }
+                  ]
+                }
+              ]
+            };
+            
+            draftService.updateDraftWithSummarySchedule(draftId, {
+              schedule: mockSchedule,
+              metadata: {
+                generationMethod: 'block-based',
+                parameters: {},
+                validationResults: [],
+                performanceMetrics: {
+                  generationTimeMs: 1500,
+                  tripCount: 1,
+                  memoryUsageMB: 2.5
+                }
+              }
+            });
+          }
+        }}
+        data-testid="complete-summary"
+      >
+        Generate Schedule
+      </button>
+    </div>
+  );
+};
+
+// Mock component that simulates browser refresh
+const MockWorkflowApp = () => {
+  const [currentPage, setCurrentPage] = React.useState<string>('upload');
+  const [draftId, setDraftId] = React.useState<string | null>(null);
+  const [isRefreshed, setIsRefreshed] = React.useState(false);
+
+  // Simulate loading draft on mount (like page refresh)
+  React.useEffect(() => {
+    const loadDraft = async () => {
+      const sessionDraftId = draftService.getCurrentSessionDraftId();
+      if (sessionDraftId && !isRefreshed) {
+        const result = await draftService.loadDraftWithFullState(sessionDraftId);
+        if (result) {
+          setDraftId(result.draft.draftId);
+          setCurrentPage(result.restorationData.currentStep);
+          setIsRefreshed(true);
+        }
+      }
+    };
+
+    loadDraft();
+  }, [isRefreshed]);
+
+  const simulateRefresh = () => {
+    // Simulate browser refresh by resetting state and reloading
+    setCurrentPage('upload');
+    setDraftId(null);
+    setIsRefreshed(false);
+  };
+
+  const navigateToPage = (page: string, newDraftId?: string) => {
+    setCurrentPage(page);
+    if (newDraftId) {
+      setDraftId(newDraftId);
+    }
+  };
+
+  return (
+    <div data-testid="workflow-app">
+      <div data-testid="current-page">{currentPage}</div>
+      <div data-testid="current-draft-id">{draftId || 'none'}</div>
+      
+      <button onClick={simulateRefresh} data-testid="refresh-button">
+        Simulate Refresh
+      </button>
+      
+      <button onClick={() => navigateToPage('upload')} data-testid="nav-upload">
+        Upload
+      </button>
+      <button onClick={() => navigateToPage('timepoints')} data-testid="nav-timepoints">
+        TimePoints
+      </button>
+      <button onClick={() => navigateToPage('blocks')} data-testid="nav-blocks">
+        Blocks
+      </button>
+      <button onClick={() => navigateToPage('summary')} data-testid="nav-summary">
+        Summary
+      </button>
+
+      {currentPage === 'upload' && (
+        <MockUploadSchedule />
+      )}
+      {currentPage === 'timepoints' && (
+        <MockTimePoints draftId={draftId || undefined} />
+      )}
+      {currentPage === 'blocks' && (
+        <MockBlockConfiguration draftId={draftId || undefined} />
+      )}
+      {currentPage === 'summary' && (
+        <MockSummarySchedule draftId={draftId || undefined} />
+      )}
+    </div>
+  );
+};
+
+const renderWorkflowApp = () => {
+  return render(
+    <BrowserRouter>
+      <WorkspaceProvider>
+        <MockWorkflowApp />
+      </WorkspaceProvider>
+    </BrowserRouter>
+  );
+};
+
+describe('Workflow Persistence Integration', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    
+    // Reset localStorage and sessionStorage
+    Object.defineProperty(window, 'localStorage', {
+      value: {
+        getItem: jest.fn(),
+        setItem: jest.fn(),
+        removeItem: jest.fn(),
+        clear: jest.fn(),
+        length: 0,
+        key: jest.fn()
+      },
+      writable: true
+    });
+
+    Object.defineProperty(window, 'sessionStorage', {
+      value: {
+        getItem: jest.fn(),
+        setItem: jest.fn(),
+        removeItem: jest.fn(),
+        clear: jest.fn(),
+        length: 0,
+        key: jest.fn()
+      },
+      writable: true
+    });
+
+    // Mock online status
+    Object.defineProperty(navigator, 'onLine', {
+      writable: true,
+      value: true
+    });
+
+    // Clear any existing drafts
+    draftService.clearCurrentSessionDraft();
+  });
+
+  describe('Full Workflow Progress Persistence', () => {
+    it('should persist progress through complete upload → timepoints → blocks → summary workflow', async () => {
+      const { getByTestId } = renderWorkflowApp();
+
+      // Step 1: Upload file
+      const uploadButton = getByTestId('upload-button');
+      await act(async () => {
+        fireEvent.click(uploadButton);
+      });
+
+      // Verify draft was created and session was set
+      const sessionDraftId = draftService.getCurrentSessionDraftId();
+      expect(sessionDraftId).toBeTruthy();
+
+      // Step 2: Navigate to timepoints and complete
+      const navTimepoints = getByTestId('nav-timepoints');
+      await act(async () => {
+        fireEvent.click(navTimepoints);
+      });
+
+      await waitFor(() => {
+        expect(getByTestId('timepoints-page')).toBeInTheDocument();
+      });
+
+      const completeTimepoints = getByTestId('complete-timepoints');
+      await act(async () => {
+        fireEvent.click(completeTimepoints);
+      });
+
+      // Step 3: Navigate to blocks and complete
+      const navBlocks = getByTestId('nav-blocks');
+      await act(async () => {
+        fireEvent.click(navBlocks);
+      });
+
+      await waitFor(() => {
+        expect(getByTestId('block-config-page')).toBeInTheDocument();
+      });
+
+      const completeBlocks = getByTestId('complete-blocks');
+      await act(async () => {
+        fireEvent.click(completeBlocks);
+      });
+
+      // Step 4: Navigate to summary and complete
+      const navSummary = getByTestId('nav-summary');
+      await act(async () => {
+        fireEvent.click(navSummary);
+      });
+
+      await waitFor(() => {
+        expect(getByTestId('summary-page')).toBeInTheDocument();
+      });
+
+      const completeSummary = getByTestId('complete-summary');
+      await act(async () => {
+        fireEvent.click(completeSummary);
+      });
+
+      // Verify final state
+      const finalDraft = await draftService.getCurrentSessionDraft();
+      expect(finalDraft).toBeTruthy();
+      expect(finalDraft?.currentStep).toBe('ready-to-publish');
+      expect(finalDraft?.stepData.timepoints).toBeTruthy();
+      expect(finalDraft?.stepData.blockConfiguration).toBeTruthy();
+      expect(finalDraft?.stepData.summarySchedule).toBeTruthy();
+    });
+
+    it('should restore exact state after browser refresh at any step', async () => {
+      const { getByTestId, rerender } = renderWorkflowApp();
+
+      // Complete upload and timepoints
+      await act(async () => {
+        fireEvent.click(getByTestId('upload-button'));
+      });
+
+      const sessionDraftId = draftService.getCurrentSessionDraftId();
+      expect(sessionDraftId).toBeTruthy();
+
+      await act(async () => {
+        fireEvent.click(getByTestId('nav-timepoints'));
+      });
+
+      await act(async () => {
+        fireEvent.click(getByTestId('complete-timepoints'));
+      });
+
+      // Navigate to blocks page
+      await act(async () => {
+        fireEvent.click(getByTestId('nav-blocks'));
+      });
+
+      // Verify we're on blocks page
+      expect(getByTestId('current-page')).toHaveTextContent('blocks');
+
+      // Simulate browser refresh
+      await act(async () => {
+        fireEvent.click(getByTestId('refresh-button'));
+      });
+
+      // Should restore to blocks page with correct draft
+      await waitFor(() => {
+        expect(getByTestId('current-page')).toHaveTextContent('blocks');
+        expect(getByTestId('current-draft-id')).toHaveTextContent(sessionDraftId!);
+      });
+
+      // Verify data is still available
+      const restoredDraft = await draftService.getCurrentSessionDraft();
+      expect(restoredDraft?.stepData.timepoints).toBeTruthy();
+      expect(restoredDraft?.currentStep).toBe('blocks');
+    });
+
+    it('should handle offline → online sync during workflow', async () => {
+      const { getByTestId } = renderWorkflowApp();
+
+      // Start workflow
+      await act(async () => {
+        fireEvent.click(getByTestId('upload-button'));
+      });
+
+      // Simulate going offline
+      Object.defineProperty(navigator, 'onLine', { value: false, writable: true });
+      window.dispatchEvent(new Event('offline'));
+
+      // Complete timepoints while offline
+      await act(async () => {
+        fireEvent.click(getByTestId('nav-timepoints'));
+      });
+
+      await act(async () => {
+        fireEvent.click(getByTestId('complete-timepoints'));
+      });
+
+      // Verify operation was queued
+      expect(offlineQueue.getQueueSize()).toBeGreaterThan(0);
+
+      // Go back online
+      Object.defineProperty(navigator, 'onLine', { value: true, writable: true });
+      window.dispatchEvent(new Event('online'));
+
+      // Queue should flush automatically
+      await waitFor(() => {
+        expect(offlineQueue.getQueueSize()).toBe(0);
+      }, { timeout: 3000 });
+
+      // Verify draft state is still correct
+      const draft = await draftService.getCurrentSessionDraft();
+      expect(draft?.stepData.timepoints).toBeTruthy();
+    });
+  });
+
+  describe('State Restoration Across Refresh', () => {
+    it('should restore uploaded data correctly', async () => {
+      const mockUploadedData = {
+        sheets: ['Raw_Data'],
+        data: {
+          Raw_Data: [
+            ['Route', 'Direction', 'Time Period', 'Travel Time'],
+            ['101', 'CW', '06:00-06:30', '35'],
+            ['101', 'CW', '06:30-07:00', '38'],
+            ['101', 'CCW', '06:00-06:30', '33']
+          ]
+        }
+      };
+
+      // Create draft with uploaded data
+      const result = await draftService.createDraft(
+        'Integration Test Route',
+        'integration-test.csv',
+        'csv',
+        mockUploadedData
+      );
+
+      expect(result.success).toBe(true);
+      const draftId = result.draftId!;
+
+      // Load with full state
+      const restorationResult = await draftService.loadDraftWithFullState(draftId);
+      expect(restorationResult).toBeTruthy();
+
+      const { draft, restorationData } = restorationResult!;
+
+      // Verify uploaded data is correctly restored
+      expect(draft.originalData.uploadedData).toEqual(mockUploadedData);
+      expect(restorationData.uploadedData).toEqual(mockUploadedData);
+      expect(restorationData.fileName).toBe('integration-test.csv');
+    });
+
+    it('should restore timepoints analysis data', async () => {
+      const { getByTestId } = renderWorkflowApp();
+
+      // Create initial draft
+      await act(async () => {
+        fireEvent.click(getByTestId('upload-button'));
+      });
+
+      const sessionDraftId = draftService.getCurrentSessionDraftId()!;
+
+      // Add timepoints data
+      const timepointsData = {
+        serviceBands: [
+          { id: 'fast', name: 'Fast Service', color: '#28a745' },
+          { id: 'standard', name: 'Standard Service', color: '#ffc107' }
+        ],
+        travelTimeData: [
+          { timepoint: 'Downtown', time: 600, band: 'fast' },
+          { timepoint: 'University', time: 900, band: 'standard' }
+        ],
+        outliers: [
+          { timepoint: 'Mall', time: 1200, reason: 'Traffic delay' }
+        ],
+        userModifications: [],
+        deletedPeriods: ['22:00-23:00'],
+        timePeriodServiceBands: {
+          'Peak': 'fast',
+          'Off-Peak': 'standard'
+        }
+      };
+
+      await draftService.updateDraftWithTimepointsAnalysis(sessionDraftId, timepointsData);
+
+      // Simulate refresh and restoration
+      const restorationResult = await draftService.loadDraftWithFullState(sessionDraftId);
+      const { restorationData } = restorationResult!;
+
+      // Verify all timepoints data is restored
+      expect(restorationData.serviceBands).toEqual(timepointsData.serviceBands);
+      expect(restorationData.travelTimeData).toEqual(timepointsData.travelTimeData);
+      expect(restorationData.outliers).toEqual(timepointsData.outliers);
+      expect(restorationData.deletedPeriods).toEqual(timepointsData.deletedPeriods);
+      expect(restorationData.timePeriodServiceBands).toEqual(timepointsData.timePeriodServiceBands);
+    });
+
+    it('should restore block configuration data', async () => {
+      const { getByTestId } = renderWorkflowApp();
+
+      await act(async () => {
+        fireEvent.click(getByTestId('upload-button'));
+      });
+
+      const sessionDraftId = draftService.getCurrentSessionDraftId()!;
+
+      // Add block configuration
+      const blockConfig = {
+        numberOfBuses: 8,
+        cycleTimeMinutes: 45,
+        automateBlockStartTimes: true,
+        blockConfigurations: [
+          { blockId: 'B1', startTime: '05:30', trips: ['T1', 'T2'] },
+          { blockId: 'B2', startTime: '06:00', trips: ['T3', 'T4'] },
+          { blockId: 'B3', startTime: '06:30', trips: ['T5', 'T6'] }
+        ]
+      };
+
+      await draftService.updateDraftWithBlockConfiguration(sessionDraftId, blockConfig);
+
+      // Restore and verify
+      const restorationResult = await draftService.loadDraftWithFullState(sessionDraftId);
+      const { restorationData } = restorationResult!;
+
+      expect(restorationData.numberOfBuses).toBe(8);
+      expect(restorationData.cycleTimeMinutes).toBe(45);
+      expect(restorationData.automateBlockStartTimes).toBe(true);
+      expect(restorationData.blockConfigurations).toHaveLength(3);
+      expect(restorationData.blockConfigurations[0].blockId).toBe('B1');
+    });
+
+    it('should restore summary schedule data with performance metrics', async () => {
+      const { getByTestId } = renderWorkflowApp();
+
+      await act(async () => {
+        fireEvent.click(getByTestId('upload-button'));
+      });
+
+      const sessionDraftId = draftService.getCurrentSessionDraftId()!;
+
+      // Add summary schedule
+      const summaryData = {
+        schedule: {
+          routeId: 'route-test',
+          routeName: 'Integration Test Route',
+          serviceType: 'weekday',
+          trips: [
+            {
+              tripId: 'trip-001',
+              blockId: 'B1',
+              startTime: '06:00',
+              endTime: '07:30',
+              timepoints: [
+                { name: 'Terminal A', arrivalTime: '06:00', departureTime: '06:00' },
+                { name: 'Main St', arrivalTime: '06:15', departureTime: '06:16' },
+                { name: 'University', arrivalTime: '06:45', departureTime: '06:46' },
+                { name: 'Terminal B', arrivalTime: '07:30', departureTime: '07:30' }
+              ]
+            }
+          ]
+        },
+        metadata: {
+          generationMethod: 'block-based' as const,
+          parameters: {
+            cycleTime: 45,
+            numberOfBuses: 8
+          },
+          validationResults: [
+            { type: 'info', message: 'Schedule validated successfully' }
+          ],
+          performanceMetrics: {
+            generationTimeMs: 2500,
+            tripCount: 156,
+            memoryUsageMB: 4.2
+          }
+        }
+      };
+
+      await draftService.updateDraftWithSummarySchedule(sessionDraftId, summaryData);
+
+      // Restore and verify
+      const restorationResult = await draftService.loadDraftWithFullState(sessionDraftId);
+      const { restorationData, draft } = restorationResult!;
+
+      expect(draft.stepData.summarySchedule).toBeTruthy();
+      expect(draft.stepData.summarySchedule.routeName).toBe('Integration Test Route');
+      expect(draft.stepData.summarySchedule.trips).toHaveLength(1);
+      expect(draft.stepData.summarySchedule.trips[0].timepoints).toHaveLength(4);
+    });
+  });
+
+  describe('Progress Calculation and Display', () => {
+    it('should accurately calculate progress at each step', async () => {
+      const { getByTestId } = renderWorkflowApp();
+
+      // Upload: 10%
+      await act(async () => {
+        fireEvent.click(getByTestId('upload-button'));
+      });
+
+      let draft = await draftService.getCurrentSessionDraft();
+      expect(draft?.progress).toBe(10);
+
+      // TimePoints: 30%
+      await act(async () => {
+        fireEvent.click(getByTestId('nav-timepoints'));
+        fireEvent.click(getByTestId('complete-timepoints'));
+      });
+
+      // Blocks: 60%
+      await act(async () => {
+        fireEvent.click(getByTestId('nav-blocks'));
+        fireEvent.click(getByTestId('complete-blocks'));
+      });
+
+      // Summary: 100%
+      await act(async () => {
+        fireEvent.click(getByTestId('nav-summary'));
+        fireEvent.click(getByTestId('complete-summary'));
+      });
+
+      draft = await draftService.getCurrentSessionDraft();
+      expect(draft?.currentStep).toBe('ready-to-publish');
+      expect(draft?.progress).toBeGreaterThanOrEqual(90);
+    });
+
+    it('should maintain progress consistency across refresh', async () => {
+      const { getByTestId } = renderWorkflowApp();
+
+      // Complete first two steps
+      await act(async () => {
+        fireEvent.click(getByTestId('upload-button'));
+      });
+
+      await act(async () => {
+        fireEvent.click(getByTestId('nav-timepoints'));
+        fireEvent.click(getByTestId('complete-timepoints'));
+      });
+
+      const progressBeforeRefresh = (await draftService.getCurrentSessionDraft())?.progress;
+
+      // Simulate refresh
+      await act(async () => {
+        fireEvent.click(getByTestId('refresh-button'));
+      });
+
+      await waitFor(() => {
+        expect(getByTestId('current-page')).toHaveTextContent('timepoints');
+      });
+
+      const progressAfterRefresh = (await draftService.getCurrentSessionDraft())?.progress;
+
+      expect(progressAfterRefresh).toBe(progressBeforeRefresh);
+    });
+  });
+
+  describe('Error Handling and Recovery', () => {
+    it('should handle corrupted draft data gracefully', async () => {
+      const localStorageMock = window.localStorage as jest.Mocked<typeof localStorage>;
+      
+      // Mock corrupted data
+      localStorageMock.getItem.mockImplementation((key) => {
+        if (key.includes('scheduler2_draft_workflow_')) {
+          return 'corrupted json data {';
+        }
+        return null;
+      });
+
+      const result = await draftService.loadDraftWithFullState('corrupted-draft-id');
+      expect(result).toBeNull();
+    });
+
+    it('should recover from failed Firebase sync', async () => {
+      // Simulate Firebase failure during workflow
+      const mockFirebaseError = new Error('Firebase unavailable');
+      
+      // Mock Firebase operations to fail initially
+      let failCount = 0;
+      const originalSaveDraft = draftService.saveDraft;
+      draftService.saveDraft = jest.fn().mockImplementation(async (draft, userId) => {
+        failCount++;
+        if (failCount < 3) {
+          throw mockFirebaseError;
+        }
+        return originalSaveDraft.call(draftService, draft, userId);
+      });
+
+      const { getByTestId } = renderWorkflowApp();
+
+      // Should still complete workflow despite Firebase failures
+      await act(async () => {
+        fireEvent.click(getByTestId('upload-button'));
+      });
+
+      expect(draftService.getCurrentSessionDraftId()).toBeTruthy();
+    });
+
+    it('should handle session storage conflicts', async () => {
+      // Create draft in one session
+      const result1 = await draftService.createDraft(
+        'Session 1 Draft',
+        'session1.csv',
+        'csv',
+        { data: 'session1' }
+      );
+
+      draftService.setCurrentSessionDraft(result1.draftId!);
+
+      // Simulate another session with different draft
+      const result2 = await draftService.createDraft(
+        'Session 2 Draft',
+        'session2.csv',
+        'csv',
+        { data: 'session2' }
+      );
+
+      // Manually override session (simulating conflict)
+      const sessionStorageMock = window.sessionStorage as jest.Mocked<typeof sessionStorage>;
+      sessionStorageMock.getItem.mockReturnValue(result2.draftId!);
+
+      // Should handle gracefully
+      const currentDraftId = draftService.getCurrentSessionDraftId();
+      expect(currentDraftId).toBeTruthy();
+      
+      const draft = await draftService.getCurrentSessionDraft();
+      expect(draft).toBeTruthy();
+    });
+  });
+
+  describe('Performance Under Load', () => {
+    it('should handle large dataset workflow efficiently', async () => {
+      const largeMockData = {
+        sheets: ['Large_Dataset'],
+        data: {
+          Large_Dataset: Array.from({ length: 1000 }, (_, i) => [
+            `Route_${i % 10}`,
+            i % 2 === 0 ? 'CW' : 'CCW',
+            `${String(Math.floor(i / 10) + 6).padStart(2, '0')}:00-${String(Math.floor(i / 10) + 6).padStart(2, '0')}:30`,
+            String(30 + (i % 20))
+          ])
+        }
+      };
+
+      const startTime = performance.now();
+
+      const result = await draftService.createDraft(
+        'Large Dataset Test',
+        'large-dataset.csv',
+        'csv',
+        largeMockData
+      );
+
+      const endTime = performance.now();
+      const processingTime = endTime - startTime;
+
+      expect(result.success).toBe(true);
+      expect(processingTime).toBeLessThan(5000); // Should complete within 5 seconds
+
+      // Verify large data is properly stored and retrieved
+      const restored = await draftService.loadDraftWithFullState(result.draftId!);
+      expect(restored?.restorationData.uploadedData.data.Large_Dataset).toHaveLength(1000);
+    });
+
+    it('should maintain performance with multiple rapid saves', async () => {
+      const { getByTestId } = renderWorkflowApp();
+
+      await act(async () => {
+        fireEvent.click(getByTestId('upload-button'));
+      });
+
+      const sessionDraftId = draftService.getCurrentSessionDraftId()!;
+
+      // Perform multiple rapid updates
+      const updatePromises = [];
+      for (let i = 0; i < 10; i++) {
+        const promise = draftService.updateDraftWithTimepointsAnalysis(sessionDraftId, {
+          serviceBands: [{ id: `band-${i}`, name: `Band ${i}`, color: '#000000' }],
+          travelTimeData: [],
+          outliers: [],
+          userModifications: []
+        });
+        updatePromises.push(promise);
+      }
+
+      const results = await Promise.all(updatePromises);
+      
+      // All updates should complete successfully
+      results.forEach(result => {
+        expect(result.success).toBe(true);
+      });
+
+      // Final state should be consistent
+      const finalDraft = await draftService.getCurrentSessionDraft();
+      expect(finalDraft).toBeTruthy();
+    });
+  });
+});

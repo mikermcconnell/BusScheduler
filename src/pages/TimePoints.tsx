@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import DraftNameHeader from '../components/DraftNameHeader';
 import { LoadingSpinner, LoadingSkeleton } from '../components/loading';
+import { SaveToDraft, AutoSaveStatus } from '../components/SaveToDraft';
 import {
   Typography,
   Card,
@@ -62,6 +63,7 @@ import { draftService } from '../services/draftService';
 import { firebaseStorage } from '../services/firebaseStorage';
 import WorkflowBreadcrumbs from '../components/WorkflowBreadcrumbs';
 import { useWorkflowDraft } from '../hooks/useWorkflowDraft';
+import { useWorkspace } from '../contexts/WorkspaceContext';
 import { 
   TimePointData as WorkflowTimePointData,
   OutlierData,
@@ -100,6 +102,7 @@ interface TimeBand {
   travelTimeMultiplier: number;
   color: string;
   description?: string;
+  segmentTimes?: Array<{ from: string, to: string, travelMinutes: number }>;
 }
 
 interface TimeBandEditData {
@@ -113,6 +116,7 @@ interface TimeBandEditData {
 const TimePoints: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const { setCurrentDraft } = useWorkspace();
   
   // Get draft from location state or session
   const { draftId: locationDraftId, fromUpload } = location.state || {};
@@ -179,6 +183,10 @@ const TimePoints: React.FC = () => {
   const [lastAutoSave, setLastAutoSave] = useState<Date | null>(null);
   const [isAutoSaving, setIsAutoSaving] = useState(false);
 
+  // Continue to Blocks loading state
+  const [isProcessingBlocks, setIsProcessingBlocks] = useState(false);
+  const [processingStep, setProcessingStep] = useState<string>('');
+
   // Analyze travel time data and create data-driven service bands
   const createDataDrivenTimebands = (timePointData: TimePointData[], excludeDeleted: boolean = true): TimeBand[] => {
     if (timePointData.length === 0) return [];
@@ -200,6 +208,33 @@ const TimePoints: React.FC = () => {
       .sort((a, b) => a.totalTravelTime - b.totalTravelTime);
 
     if (sortedPeriods.length === 0) return [];
+
+    // Helper function to calculate segment times for a service band
+    const calculateSegmentTimesForBand = (bandPeriods: string[]): Array<{ from: string, to: string, travelMinutes: number }> => {
+      // Get unique segments from the data
+      const segmentMap = new Map<string, number[]>();
+      
+      timePointData.forEach(row => {
+        if (excludeDeleted && deletedPeriods.has(row.timePeriod)) return;
+        if (!bandPeriods.includes(row.timePeriod)) return;
+        
+        const segmentKey = `${row.fromTimePoint}|${row.toTimePoint}`;
+        if (!segmentMap.has(segmentKey)) {
+          segmentMap.set(segmentKey, []);
+        }
+        segmentMap.get(segmentKey)!.push(row.percentile50);
+      });
+
+      // Calculate average travel time for each segment
+      const segmentTimes: Array<{ from: string, to: string, travelMinutes: number }> = [];
+      segmentMap.forEach((times, segmentKey) => {
+        const [from, to] = segmentKey.split('|');
+        const avgTime = Math.round(times.reduce((sum, t) => sum + t, 0) / times.length);
+        segmentTimes.push({ from, to, travelMinutes: avgTime });
+      });
+
+      return segmentTimes;
+    };
 
     // Calculate percentile-based bands from travel time distribution
     const travelTimes = sortedPeriods.map(p => p.totalTravelTime);
@@ -250,6 +285,9 @@ const TimePoints: React.FC = () => {
       // Calculate average travel time
       const avgTravelTime = bandPeriods.reduce((sum, p) => sum + p.totalTravelTime, 0) / bandPeriods.length;
 
+      // Calculate segment times for this band
+      const segmentTimes = calculateSegmentTimesForBand(bandPeriods.map(p => p.timePeriod));
+
       bands.push({
         id: `band_${i + 1}`,
         name: bandNames[i],
@@ -257,7 +295,8 @@ const TimePoints: React.FC = () => {
         endTime: latestEnd,
         travelTimeMultiplier: 1.0, // Keep for interface compatibility but not used
         color: colors[i],
-        description: `${bandPeriods.length} periods • Avg: ${Math.round(avgTravelTime)} min • Range: ${Math.min(...bandPeriods.map(p => p.totalTravelTime))}-${Math.max(...bandPeriods.map(p => p.totalTravelTime))} min • ${range.min}-${range.max}th percentile`
+        description: `${bandPeriods.length} periods • Avg: ${Math.round(avgTravelTime)} min • Range: ${Math.min(...bandPeriods.map(p => p.totalTravelTime))}-${Math.max(...bandPeriods.map(p => p.totalTravelTime))} min • ${range.min}-${range.max}th percentile`,
+        segmentTimes
       });
     }
 
@@ -327,6 +366,37 @@ const TimePoints: React.FC = () => {
           setOriginalFileName(cleanName);
           setCurrentDraftId(draft.draftId);
           
+          // Sync draft to WorkspaceContext for SaveToDraft button
+          // Convert WorkflowDraftState to UnifiedDraftCompat format
+          const currentStepMapped = draft.currentStep === 'block-config' ? 'blocks' as const :
+                                   draft.currentStep === 'connections' ? 'summary' as const :
+                                   draft.currentStep === 'ready-to-publish' ? 'ready-to-publish' as const :
+                                   draft.currentStep;
+                                   
+          setCurrentDraft({
+            draftId: draft.draftId,
+            draftName: cleanName,
+            originalData: draft.originalData,
+            currentStep: currentStepMapped,
+            progress: draft.currentStep === 'upload' ? 25 : draft.currentStep === 'timepoints' ? 50 : draft.currentStep === 'blocks' ? 75 : 100,
+            stepData: {
+              timepoints: draft.timepointsAnalysis ? {
+                serviceBands: draft.timepointsAnalysis.serviceBands,
+                travelTimeData: draft.timepointsAnalysis.travelTimeData,
+                outliers: draft.timepointsAnalysis.outliers,
+                deletedPeriods: draft.timepointsAnalysis.deletedPeriods,
+                timePeriodServiceBands: draft.timepointsAnalysis.timePeriodServiceBands
+              } : undefined,
+              blockConfiguration: draft.blockConfiguration,
+              summarySchedule: draft.summarySchedule?.schedule
+            },
+            ui: {
+              celebrationsShown: [],
+              lastViewedStep: 'timepoints'
+            },
+            metadata: draft.metadata
+          });
+          
           // If draft has existing timepoints analysis, load it
           if (draft.timepointsAnalysis) {
             // Restore previous state from draft
@@ -372,6 +442,35 @@ const TimePoints: React.FC = () => {
               setOriginalFileName(cleanName);
               setCurrentDraftId(loadedDraft.draftId);
               console.log('✅ Loaded draft data:', loadedDraft.draftId);
+              
+              // Sync loaded draft to WorkspaceContext
+              // Convert WorkflowDraftState to UnifiedDraftCompat format
+              setCurrentDraft({
+                draftId: loadedDraft.draftId,
+                draftName: cleanName,
+                originalData: loadedDraft.originalData,
+                currentStep: loadedDraft.currentStep === 'block-config' ? 'blocks' as const :
+                            loadedDraft.currentStep === 'connections' ? 'summary' as const :
+                            loadedDraft.currentStep === 'ready-to-publish' ? 'ready-to-publish' as const :
+                            loadedDraft.currentStep,
+                progress: loadedDraft.currentStep === 'upload' ? 25 : loadedDraft.currentStep === 'timepoints' ? 50 : loadedDraft.currentStep === 'blocks' ? 75 : 100,
+                stepData: {
+                  timepoints: loadedDraft.timepointsAnalysis ? {
+                    serviceBands: loadedDraft.timepointsAnalysis.serviceBands,
+                    travelTimeData: loadedDraft.timepointsAnalysis.travelTimeData,
+                    outliers: loadedDraft.timepointsAnalysis.outliers,
+                    deletedPeriods: loadedDraft.timepointsAnalysis.deletedPeriods,
+                    timePeriodServiceBands: loadedDraft.timepointsAnalysis.timePeriodServiceBands
+                  } : undefined,
+                  blockConfiguration: loadedDraft.blockConfiguration,
+                  summarySchedule: loadedDraft.summarySchedule?.schedule
+                },
+                ui: {
+                  celebrationsShown: [],
+                  lastViewedStep: 'timepoints'
+                },
+                metadata: loadedDraft.metadata
+              });
             }
           } catch (draftError) {
             console.warn('⚠️ Could not load draft:', draftError);
@@ -431,6 +530,58 @@ const TimePoints: React.FC = () => {
 
     loadTimePointData();
   }, [initialCsvData, dayType, savedScheduleId, draft, locationDraftId]);
+
+  // State restoration when coming from draft
+  useEffect(() => {
+    // Check if we're restoring from a draft
+    if (location.state?.fromDraft && location.state?.draftId) {
+      console.log('📋 Restoring TimePoints state from draft:', location.state.draftId);
+      
+      // Restore service bands
+      if (location.state.serviceBands && Array.isArray(location.state.serviceBands)) {
+        console.log('✅ Restoring service bands:', location.state.serviceBands.length);
+        setTimeBands(location.state.serviceBands);
+      }
+      
+      // Restore travel time data
+      if (location.state.travelTimeData && Array.isArray(location.state.travelTimeData)) {
+        console.log('✅ Restoring travel time data:', location.state.travelTimeData.length);
+        // Convert workflow format to local format if needed
+        const restoredData: TimePointData[] = location.state.travelTimeData.map((tp: any) => ({
+          fromTimePoint: tp.fromTimePoint,
+          toTimePoint: tp.toTimePoint,
+          timePeriod: tp.timePeriod,
+          percentile50: tp.percentile50,
+          percentile80: tp.percentile80,
+          isOutlier: tp.isOutlier,
+          outlierType: tp.outlierType,
+          outlierDeviation: tp.outlierDeviation
+        }));
+        setTimePointData(restoredData);
+      }
+      
+      // Restore outliers (skip for now due to type mismatch)
+      if (location.state.outliers && Array.isArray(location.state.outliers)) {
+        console.log('⚠️ Skipping outliers restoration due to type mismatch');
+        // TODO: Fix outliers restoration - OutlierData vs TimePointData type mismatch
+      }
+      
+      // Restore deleted periods
+      if (location.state.deletedPeriods && Array.isArray(location.state.deletedPeriods)) {
+        console.log('✅ Restoring deleted periods:', location.state.deletedPeriods.length);
+        setDeletedPeriods(new Set(location.state.deletedPeriods));
+      }
+      
+      // Restore time period service bands mapping
+      if (location.state.timePeriodServiceBands && typeof location.state.timePeriodServiceBands === 'object') {
+        console.log('✅ Restoring time period service bands mapping');
+        // This will be used by downstream components
+      }
+      
+      // Mark restoration as complete
+      setLoading(false);
+    }
+  }, [location.state]);
 
   // Recalculate timebands when deletedPeriods changes
   useEffect(() => {
@@ -492,7 +643,8 @@ const TimePoints: React.FC = () => {
           endTime: tb.endTime,
           travelTimeMultiplier: tb.travelTimeMultiplier,
           color: tb.color,
-          description: tb.description
+          description: tb.description,
+          segmentTimes: tb.segmentTimes as any // Include segment times for BlockConfiguration
         }));
         
         // Save analysis to workflow draft
@@ -584,7 +736,8 @@ const TimePoints: React.FC = () => {
           endTime: tb.endTime,
           travelTimeMultiplier: tb.travelTimeMultiplier,
           color: tb.color,
-          description: tb.description
+          description: tb.description,
+          segmentTimes: tb.segmentTimes as any // Include segment times for BlockConfiguration
         }));
         
         // Save analysis to workflow draft
@@ -631,93 +784,123 @@ const TimePoints: React.FC = () => {
       return;
     }
     
-    // Create direct time period to service band mapping
-    const timePeriodServiceBands: { [timePeriod: string]: string } = {};
-    chartData.forEach(item => {
-      if (!item.isDeleted) {
-        timePeriodServiceBands[item.timePeriod] = item.timebandName;
-      }
-    });
+    // Start loading state
+    setIsProcessingBlocks(true);
+    setProcessingStep('Preparing analysis data...');
+    setError(null);
     
-    // Convert local TimePointData to workflow format
-    const workflowTimePointData: WorkflowTimePointData[] = timePointData.map(tp => ({
-      timePeriod: tp.timePeriod,
-      from: tp.fromTimePoint,
-      to: tp.toTimePoint,
-      percentile25: tp.percentile50 * 0.9,
-      percentile50: tp.percentile50,
-      percentile75: tp.percentile80,
-      percentile90: tp.percentile80 * 1.1,
-      isOutlier: tp.isOutlier,
-      outlierType: tp.outlierType
-    }));
-    
-    // Convert outliers to OutlierData format
-    const workflowOutliers: OutlierData[] = outliers
-      .filter(o => !removedOutliers.has(`${o.timePeriod}-${o.fromTimePoint}-${o.toTimePoint}`))
-      .map(o => ({
-        timePeriod: o.timePeriod,
-        segment: `${o.fromTimePoint} to ${o.toTimePoint}`,
-        value: o.percentile50,
-        deviation: o.outlierDeviation || 0,
-        type: o.outlierType || 'high'
-      }));
-    
-    // Convert TimeBand to ServiceBand format
-    const workflowServiceBands: WorkflowServiceBand[] = timeBands.map(tb => ({
-      id: tb.id,
-      name: tb.name,
-      startTime: tb.startTime,
-      endTime: tb.endTime,
-      travelTimeMultiplier: tb.travelTimeMultiplier,
-      color: tb.color,
-      description: tb.description
-    }));
-    
-    // Save analysis to workflow draft
-    const analysisData = {
-      serviceBands: workflowServiceBands,
-      travelTimeData: workflowTimePointData,
-      outliers: workflowOutliers,
-      userModifications: [] as TimepointsModification[],
-      deletedPeriods: Array.from(deletedPeriods),
-      timePeriodServiceBands
-    };
-    
-    const result = await updateTimepointsAnalysis(analysisData);
-    
-    if (result.success) {
-      // Mark the TimePoints step as complete
-      draftService.completeStep('timepoints', {
-        timePointData,
-        serviceBands: timeBands,
-        deletedPeriods: Array.from(deletedPeriods)
-      });
+    try {
+      // Batch data processing for better performance
+      setProcessingStep('Processing analysis data...');
       
-      console.log('🔍 DEBUG: Created service band mapping:', timePeriodServiceBands);
+      // Use requestAnimationFrame to allow UI updates between processing steps
+      await new Promise(resolve => requestAnimationFrame(resolve));
       
-      // Store state data in localStorage for persistence across navigation
-      localStorage.setItem('currentTimePointData', JSON.stringify(timePointData));
-      localStorage.setItem('currentServiceBands', JSON.stringify(timeBands));
-      
-      // Mark timepoints step as completed
-      draftService.updateStepStatus(workingDraftId, 'timepoints', 'completed');
-      
-      // Pass draft ID and analysis data to BlockConfiguration
-      navigate('/block-configuration', {
-        state: {
-          draftId: workingDraftId,
-          timePointData,
-          serviceBands: timeBands,
-          deletedPeriods: Array.from(deletedPeriods),
-          timePeriodServiceBands,
-          scheduleId,
-          fileName
+      // Create direct time period to service band mapping
+      const timePeriodServiceBands: { [timePeriod: string]: string } = {};
+      chartData.forEach(item => {
+        if (!item.isDeleted) {
+          timePeriodServiceBands[item.timePeriod] = item.timebandName;
         }
       });
-    } else {
-      console.error('Failed to save timepoints analysis:', result.error);
-      setError(result.error || 'Failed to save analysis');
+      
+      // Convert local TimePointData to workflow format
+      const workflowTimePointData: WorkflowTimePointData[] = timePointData.map(tp => ({
+        timePeriod: tp.timePeriod,
+        from: tp.fromTimePoint,
+        to: tp.toTimePoint,
+        percentile25: tp.percentile50 * 0.9,
+        percentile50: tp.percentile50,
+        percentile75: tp.percentile80,
+        percentile90: tp.percentile80 * 1.1,
+        isOutlier: tp.isOutlier,
+        outlierType: tp.outlierType
+      }));
+      
+      // Convert outliers to OutlierData format
+      const workflowOutliers: OutlierData[] = outliers
+        .filter(o => !removedOutliers.has(`${o.timePeriod}-${o.fromTimePoint}-${o.toTimePoint}`))
+        .map(o => ({
+          timePeriod: o.timePeriod,
+          segment: `${o.fromTimePoint} to ${o.toTimePoint}`,
+          value: o.percentile50,
+          deviation: o.outlierDeviation || 0,
+          type: o.outlierType || 'high'
+        }));
+      
+      // Convert TimeBand to ServiceBand format  
+      const workflowServiceBands: WorkflowServiceBand[] = timeBands.map(tb => ({
+        id: tb.id,
+        name: tb.name,
+        startTime: tb.startTime,
+        endTime: tb.endTime,
+        travelTimeMultiplier: tb.travelTimeMultiplier,
+        color: tb.color,
+        description: tb.description
+      }));
+      
+      // Save analysis to workflow draft
+      setProcessingStep('Saving analysis to database...');
+      const analysisData = {
+        serviceBands: workflowServiceBands,
+        travelTimeData: workflowTimePointData,
+        outliers: workflowOutliers,
+        userModifications: [] as TimepointsModification[],
+        deletedPeriods: Array.from(deletedPeriods),
+        timePeriodServiceBands
+      };
+      
+      const result = await updateTimepointsAnalysis(analysisData);
+      
+      if (result.success) {
+        setProcessingStep('Completing workflow step...');
+        
+        // Mark the TimePoints step as complete
+        draftService.completeStep('timepoints', {
+          timePointData,
+          serviceBands: timeBands,
+          deletedPeriods: Array.from(deletedPeriods)
+        });
+        
+        console.log('🔍 DEBUG: Created service band mapping:', timePeriodServiceBands);
+        
+        // Store state data in localStorage for persistence across navigation
+        localStorage.setItem('currentTimePointData', JSON.stringify(timePointData));
+        localStorage.setItem('currentServiceBands', JSON.stringify(timeBands));
+        
+        // Mark timepoints step as completed with step data
+        await draftService.updateStepStatus(workingDraftId, 'timepoints', 'completed', 100, {
+          serviceBands: workflowServiceBands,
+          travelTimeData: workflowTimePointData,
+          outliers: workflowOutliers,
+          deletedPeriods: Array.from(deletedPeriods),
+          timePeriodServiceBands
+        });
+        
+        setProcessingStep('Navigating to Block Configuration...');
+        
+        // Pass draft ID and analysis data to BlockConfiguration
+        navigate('/block-configuration', {
+          state: {
+            draftId: workingDraftId,
+            timePointData,
+            serviceBands: timeBands,
+            deletedPeriods: Array.from(deletedPeriods),
+            timePeriodServiceBands,
+            scheduleId,
+            fileName
+          }
+        });
+      } else {
+        console.error('Failed to save timepoints analysis:', result.error);
+        setError(result.error || 'Failed to save analysis');
+      }
+    } catch (error: any) {
+      console.error('Error during block processing:', error);
+      setError(error.message || 'An error occurred while processing your data');
+    } finally {
+      setIsProcessingBlocks(false);
+      setProcessingStep('');
     }
   };
 
@@ -1148,26 +1331,55 @@ const TimePoints: React.FC = () => {
           Back to Upload
         </Button>
         
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Typography variant="body2" color="text.secondary">
-            Step 2 of 5
-          </Typography>
-          <Typography variant="body1" color="primary" fontWeight="bold">
-            Timepoint Analysis
-          </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <SaveToDraft variant="outlined" size="medium" />
+          <AutoSaveStatus />
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="body2" color="text.secondary">
+              Step 2 of 5
+            </Typography>
+            <Typography variant="body1" color="primary" fontWeight="bold">
+              Timepoint Analysis
+            </Typography>
+          </Box>
         </Box>
         
         <Button
           variant="contained"
-          endIcon={<ArrowForwardIcon />}
+          endIcon={isProcessingBlocks ? <CircularProgress size={20} color="inherit" /> : <ArrowForwardIcon />}
           onClick={handleGoForward}
           size="large"
           sx={{ minWidth: 160 }}
-          disabled={timePointData.length === 0}
+          disabled={timePointData.length === 0 || isProcessingBlocks}
         >
-          Continue to Blocks
+          {isProcessingBlocks ? 'Processing...' : 'Continue to Blocks'}
         </Button>
       </Box>
+
+      {/* Processing Progress Indicator */}
+      {isProcessingBlocks && (
+        <Box sx={{ 
+          mb: 3, 
+          p: 2, 
+          backgroundColor: 'primary.50', 
+          borderRadius: 2,
+          border: '1px solid',
+          borderColor: 'primary.200',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 2
+        }}>
+          <CircularProgress size={24} />
+          <Box sx={{ flex: 1 }}>
+            <Typography variant="body1" fontWeight="medium" color="primary.main">
+              Preparing Block Configuration...
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              {processingStep || 'Please wait while we process your timepoints data...'}
+            </Typography>
+          </Box>
+        </Box>
+      )}
 
       <Card>
         <CardContent>

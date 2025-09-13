@@ -17,22 +17,33 @@ import {
   RadioGroup,
   Radio,
   Paper,
-  Divider
+  Divider,
+  Autocomplete
 } from '@mui/material';
 import {
   Save as SaveIcon,
   Schedule as ScheduleIcon,
   Edit as RenameIcon,
   Add as AddIcon,
-  SwapHoriz as ReplaceIcon
+  SwapHoriz as ReplaceIcon,
+  DirectionsBus as RouteIcon,
+  AutoAwesome as AutoIcon
 } from '@mui/icons-material';
 import { draftService } from '../services/draftService';
 import { WorkflowDraftState } from '../types/workflow';
+import { RouteDetector, RouteDetectionResult } from '../utils/routeDetector';
+import { ParsedCsvData } from '../utils/csvParser';
+import { ParsedExcelData } from '../utils/excelParser';
 
 export interface DraftNamingResult {
   action: 'create' | 'replace';
   draftName: string;
   existingDraftId?: string;
+  routeInfo?: {
+    routeNumber?: string;
+    routeName?: string;
+    direction?: string;
+  };
 }
 
 interface DraftNamingDialogProps {
@@ -41,6 +52,7 @@ interface DraftNamingDialogProps {
   onConfirm: (result: DraftNamingResult) => void;
   fileName: string;
   suggestedName?: string;
+  uploadedData?: ParsedCsvData | ParsedExcelData;
 }
 
 const DraftNamingDialog: React.FC<DraftNamingDialogProps> = ({
@@ -48,13 +60,21 @@ const DraftNamingDialog: React.FC<DraftNamingDialogProps> = ({
   onClose,
   onConfirm,
   fileName,
-  suggestedName
+  suggestedName,
+  uploadedData
 }) => {
   const [draftName, setDraftName] = useState('');
   const [action, setAction] = useState<'create' | 'replace'>('create');
   const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null);
   const [existingDrafts, setExistingDrafts] = useState<WorkflowDraftState[]>([]);
   const [nameError, setNameError] = useState<string | null>(null);
+  
+  // Route detection states
+  const [routeDetection, setRouteDetection] = useState<RouteDetectionResult | null>(null);
+  const [routeNumber, setRouteNumber] = useState('');
+  const [routeName, setRouteName] = useState('');
+  const [direction, setDirection] = useState('');
+  const [routeNameSuggestions, setRouteNameSuggestions] = useState<string[]>([]);
 
   // Load existing drafts and set up initial state
   useEffect(() => {
@@ -70,14 +90,44 @@ const DraftNamingDialog: React.FC<DraftNamingDialogProps> = ({
           setExistingDrafts([]);
         }
         
-        // Generate suggested name from file name
-        const baseName = fileName.replace(/\.(csv|xlsx?)$/i, '');
-        const cleanName = baseName
-          .replace(/[_-]/g, ' ')
-          .replace(/\b\w/g, l => l.toUpperCase())
-          .trim();
+        // Perform route detection if uploaded data is available
+        if (uploadedData) {
+          const detection = RouteDetector.detect(uploadedData);
+          setRouteDetection(detection);
+          
+          // Set route fields from detection
+          setRouteNumber(detection.routeNumber || '');
+          setRouteName(detection.routeName || '');
+          setDirection(detection.direction || '');
+          
+          // Generate alternative name suggestions
+          const alternatives = RouteDetector.generateAlternativeNames(detection);
+          setRouteNameSuggestions(alternatives);
+          
+          // Use the detected route name as the draft name if we have high confidence
+          if (detection.confidence === 'high') {
+            setDraftName(detection.suggestedName);
+          } else {
+            // Generate suggested name from file name
+            const baseName = fileName.replace(/\.(csv|xlsx?)$/i, '');
+            const cleanName = baseName
+              .replace(/[_-]/g, ' ')
+              .replace(/\b\w/g, l => l.toUpperCase())
+              .trim();
+            
+            setDraftName(suggestedName || cleanName || 'New Schedule Draft');
+          }
+        } else {
+          // No uploaded data, use filename-based name
+          const baseName = fileName.replace(/\.(csv|xlsx?)$/i, '');
+          const cleanName = baseName
+            .replace(/[_-]/g, ' ')
+            .replace(/\b\w/g, l => l.toUpperCase())
+            .trim();
+          
+          setDraftName(suggestedName || cleanName || 'New Schedule Draft');
+        }
         
-        setDraftName(suggestedName || cleanName || 'New Schedule Draft');
         setAction('create');
         setSelectedDraftId(null);
         setNameError(null);
@@ -85,7 +135,7 @@ const DraftNamingDialog: React.FC<DraftNamingDialogProps> = ({
     };
     
     loadDrafts();
-  }, [open, fileName, suggestedName]);
+  }, [open, fileName, suggestedName, uploadedData]);
 
   const validateDraftName = (name: string): string | null => {
     if (!name.trim()) {
@@ -149,7 +199,12 @@ const DraftNamingDialog: React.FC<DraftNamingDialogProps> = ({
     const result: DraftNamingResult = {
       action,
       draftName: draftName.trim(),
-      existingDraftId: action === 'replace' ? selectedDraftId || undefined : undefined
+      existingDraftId: action === 'replace' ? selectedDraftId || undefined : undefined,
+      routeInfo: {
+        routeNumber: routeNumber.trim() || undefined,
+        routeName: routeName.trim() || undefined,
+        direction: direction.trim() || undefined
+      }
     };
 
     onConfirm(result);
@@ -221,6 +276,71 @@ const DraftNamingDialog: React.FC<DraftNamingDialogProps> = ({
             📄 Uploading: <strong>{fileName}</strong>
           </Typography>
         </Box>
+
+        {/* Route Detection Section */}
+        {routeDetection && (
+          <Box sx={{ mb: 3, p: 2, backgroundColor: 'rgba(76, 175, 80, 0.05)', borderRadius: 2, border: '1px solid rgba(76, 175, 80, 0.2)' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+              <RouteIcon color="success" />
+              <Typography variant="subtitle1" fontWeight="bold" color="success.dark">
+                Route Detected
+              </Typography>
+              <Chip 
+                size="small" 
+                label={`${routeDetection.confidence} confidence`}
+                color={routeDetection.confidence === 'high' ? 'success' : routeDetection.confidence === 'medium' ? 'warning' : 'default'}
+                variant="outlined"
+              />
+            </Box>
+            
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              {routeDetection.detectionMethod}: <strong>{routeDetection.suggestedName}</strong>
+            </Typography>
+
+            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+              <TextField
+                label="Route Number"
+                value={routeNumber}
+                onChange={(e) => setRouteNumber(e.target.value)}
+                size="small"
+                sx={{ minWidth: 120 }}
+                placeholder="e.g., 101"
+              />
+              
+              <Autocomplete
+                options={routeNameSuggestions}
+                value={routeName}
+                onInputChange={(_, newValue) => setRouteName(newValue)}
+                freeSolo
+                size="small"
+                sx={{ minWidth: 200 }}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Route Name"
+                    placeholder="e.g., Downtown Express"
+                  />
+                )}
+              />
+              
+              <TextField
+                label="Direction"
+                value={direction}
+                onChange={(e) => setDirection(e.target.value)}
+                size="small"
+                sx={{ minWidth: 140 }}
+                placeholder="e.g., Clockwise"
+              />
+            </Box>
+            
+            <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+              <AutoIcon fontSize="small" color="primary" />
+              <Typography variant="caption" color="text.secondary">
+                Route information was automatically detected from your data. You can modify it above.
+              </Typography>
+            </Box>
+          </Box>
+        )}
 
         {/* Action Selection */}
         <Box sx={{ mb: 3 }}>

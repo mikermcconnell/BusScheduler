@@ -120,7 +120,7 @@ const BusBlockCreator: React.FC<BusBlockCreatorProps> = ({
   };
 
   // Direct mapping based on total travel times from your table
-  const detectTimeBandForTrip = (tripStartTime: string): ServiceBand | null => {
+  const detectTimeBandForTrip = useCallback((tripStartTime: string): ServiceBand | null => {
     const tripMinutes = timeToMinutes(tripStartTime);
     
     // Find all time periods from travel time data
@@ -166,7 +166,7 @@ const BusBlockCreator: React.FC<BusBlockCreatorProps> = ({
     
     // Find the matching service band
     return serviceBands.find(band => band.name === targetBandName) || null;
-  };
+  }, [travelTimeData, serviceBands]);
 
   // Predefined travel times by service band (from the table)
   const getServiceBandTravelTimes = () => {
@@ -249,7 +249,7 @@ const BusBlockCreator: React.FC<BusBlockCreatorProps> = ({
 
 
   // Generate schedule entries for a single trip using automatic time band detection
-  const generateTripScheduleEntries = (
+  const generateTripScheduleEntries = useCallback((
     tripStartTime: string
   ): ScheduleEntry[] => {
     const scheduleEntries: ScheduleEntry[] = [];
@@ -285,10 +285,10 @@ const BusBlockCreator: React.FC<BusBlockCreatorProps> = ({
     }
 
     return scheduleEntries;
-  };
+  }, [timePoints, detectTimeBandForTrip]);
 
   // Helper function to get time period for a trip start time
-  const getTimePeriodForTrip = (tripStartTime: string): string | null => {
+  const getTimePeriodForTrip = useCallback((tripStartTime: string): string | null => {
     const tripMinutes = timeToMinutes(tripStartTime);
     const timePeriods = Array.from(new Set(travelTimeData.map(data => data.timePeriod)));
     
@@ -303,7 +303,7 @@ const BusBlockCreator: React.FC<BusBlockCreatorProps> = ({
     }
     
     return null;
-  };
+  }, [travelTimeData]);
 
   // Generate complete bus block
   const generateBusBlock = useMemo((): BusBlock | null => {
@@ -404,7 +404,7 @@ const BusBlockCreator: React.FC<BusBlockCreatorProps> = ({
       setError(err instanceof Error ? err.message : 'Failed to generate bus block');
       return null;
     }
-  }, [blockStartTime, blockEndTime, numberOfBuses, dayType, timePoints, travelTimeData, serviceBands, detectTimeBandForTrip, existingBlocks, generateTripScheduleEntries, getTimePeriodForTrip]);
+  }, [blockStartTime, blockEndTime, numberOfBuses, dayType, timePoints, travelTimeData, serviceBands, existingBlocks, detectTimeBandForTrip, generateTripScheduleEntries, getTimePeriodForTrip]);
 
   // Update preview when parameters change
   React.useEffect(() => {
