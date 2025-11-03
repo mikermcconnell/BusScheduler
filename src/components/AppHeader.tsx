@@ -8,7 +8,8 @@ import {
   useTheme,
   alpha,
   IconButton,
-  useMediaQuery
+  useMediaQuery,
+  Button
 } from '@mui/material';
 import { 
   DirectionsBus as BusIcon,
@@ -21,12 +22,16 @@ interface AppHeaderProps {
   title?: string;
   showLogo?: boolean;
   onMenuClick?: () => void;
+  userName?: string | null;
+  onSignOut?: () => void;
 }
 
 const AppHeader: React.FC<AppHeaderProps> = ({ 
   title = 'Bus Route Scheduler',
   showLogo = true,
-  onMenuClick 
+  onMenuClick,
+  userName,
+  onSignOut
 }) => {
   const theme = useTheme();
   const location = useLocation();
@@ -37,14 +42,15 @@ const AppHeader: React.FC<AppHeaderProps> = ({
   const getPageTitle = () => {
     const path = location.pathname;
     if (path === '/') return 'Dashboard';
-    if (path === '/upload') return 'Upload Schedule';
+    if (path === '/new-schedule') return 'New Schedule';
+    if (path === '/edit-schedule') return 'Edit Existing Schedule';
     if (path === '/timepoints') return 'TimePoints Analysis';
     if (path === '/block-configuration') return 'Block Configuration';
     if (path === '/summary-schedule') return 'Summary Schedule';
     if (path === '/drafts') return 'Draft Schedules';
     if (path === '/schedules') return 'Published Schedules';
     if (path === '/routes') return 'Manage Routes';
-    if (path === '/tod-shifts') return 'Tod Shifts';
+    if (path === '/tod-shifts') return 'TOD Shift Management';
     return title;
   };
 
@@ -152,6 +158,18 @@ const AppHeader: React.FC<AppHeaderProps> = ({
             >
               {getPageTitle()}
             </Typography>
+            {userName && (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Typography variant="body2" color="text.secondary">
+                  {userName}
+                </Typography>
+                {onSignOut && (
+                  <Button size="small" variant="outlined" onClick={onSignOut}>
+                    Sign Out
+                  </Button>
+                )}
+              </Box>
+            )}
           </Box>
         </Box>
       </Toolbar>

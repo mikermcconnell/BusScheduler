@@ -35,6 +35,7 @@ import {
   Speed as SpeedIcon,
   PlayCircleOutline as PublishIcon,
   Edit as EditIcon,
+  Drafts as DraftsIcon,
   Visibility as ViewIcon,
   NavigateNext as NavigateNextIcon,
 } from '@mui/icons-material';
@@ -110,17 +111,25 @@ const Dashboard: React.FC = () => {
   // Quick actions for scheduling tasks
   const quickActions = [
     {
-      title: 'Start New Schedule',
-      description: 'Upload and process schedule data',
+      title: 'New Schedule',
+      description: 'Upload raw inputs to build a brand-new schedule',
       icon: <UploadIcon fontSize="large" />,
-      path: '/upload',
+      path: '/new-schedule',
       color: 'primary',
       variant: 'contained' as const,
     },
     {
+      title: 'Edit Existing Schedule',
+      description: 'Import a published schedule for quick adjustments',
+      icon: <EditIcon fontSize="large" />,
+      path: '/edit-schedule',
+      color: 'secondary',
+      variant: 'outlined' as const,
+    },
+    {
       title: 'Continue Draft',
       description: `${metrics?.draftPipeline.totalDrafts || 0} drafts in progress`,
-      icon: <EditIcon fontSize="large" />,
+      icon: <DraftsIcon fontSize="large" />,
       path: '/draft-library',
       color: 'secondary',
       variant: 'outlined' as const,

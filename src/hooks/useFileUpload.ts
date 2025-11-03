@@ -3,7 +3,13 @@ import { ScheduleDataExtractor } from '../utils/dataExtractor';
 import { ParsedExcelData } from '../utils/excelParser';
 import { ValidationResult } from '../utils/validator';
 import { sanitizeFileName as sanitizeFileNameUtil, sanitizeErrorMessage } from '../utils/inputSanitizer';
-import { CsvParser, ParsedCsvData } from '../utils/csvParser';
+import { CsvParser, ParsedCsvData, TimeSegment } from '../utils/csvParser';
+import { Trip } from '../types/schedule';
+import parseQuickAdjustSchedule, {
+  parseQuickAdjustCsv,
+  QuickAdjustParseResult
+} from '../utils/quickAdjustImporter';
+import { normalizeSummaryScheduleTrips } from '../utils/blockAssignment';
 
 // Security constants
 const EXCEL_MIME_TYPES = [
@@ -28,6 +34,7 @@ interface FileUploadState {
   rawData: any[] | null;
   extractedData: ParsedExcelData | null;
   csvData: ParsedCsvData | null;
+  tripsByDay: Record<'weekday' | 'saturday' | 'sunday', Trip[]> | null;
   validation: ValidationResult | null;
   fileName: string | null;
   qualityReport: string | null;
@@ -39,6 +46,7 @@ interface FileUploadResult {
   rawData?: any[];
   extractedData?: ParsedExcelData;
   csvData?: ParsedCsvData;
+  tripsByDay?: Record<'weekday' | 'saturday' | 'sunday', Trip[]>;
   validation?: ValidationResult;
   error?: string;
   fileName: string;
@@ -57,6 +65,94 @@ const SUSPICIOUS_FILENAME_PATTERNS = [
   /\.(exe|bat|cmd|scr|vbs|js|jar|com|pif)$/i // Executable extensions
 ];
 
+const QUICK_ADJUST_DAY_ORDER: Array<'weekday' | 'saturday' | 'sunday'> = ['weekday', 'saturday', 'sunday'];
+
+const timeStringToMinutes = (value: string): number => {
+  const [hoursStr, minutesStr] = value.split(':');
+  const hours = Number.parseInt(hoursStr, 10);
+  const minutes = Number.parseInt(minutesStr, 10);
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) {
+    return Number.NaN;
+  }
+  return hours * 60 + minutes;
+};
+
+const calculateDurationInMinutes = (start: string, end: string): number | null => {
+  const startMinutes = timeStringToMinutes(start);
+  const endMinutes = timeStringToMinutes(end);
+  if (Number.isNaN(startMinutes) || Number.isNaN(endMinutes)) {
+    return null;
+  }
+  let diff = endMinutes - startMinutes;
+  if (diff < 0) {
+    diff += 24 * 60;
+  }
+  return diff;
+};
+
+const deriveQuickAdjustSegments = (parseResult: QuickAdjustParseResult): TimeSegment[] => {
+  const candidateDay = QUICK_ADJUST_DAY_ORDER.find(day => parseResult.trips[day]?.length > 0);
+  if (!candidateDay) {
+    return [];
+  }
+
+  const firstTrip = parseResult.trips[candidateDay][0];
+  if (!firstTrip) {
+    return [];
+  }
+
+  const segments: TimeSegment[] = [];
+  const points = parseResult.timePoints;
+
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const origin = points[i];
+    const destination = points[i + 1];
+    const depart =
+      firstTrip.departureTimes[origin.id] ||
+      firstTrip.arrivalTimes[origin.id];
+    const arrive =
+      firstTrip.arrivalTimes[destination.id] ||
+      firstTrip.departureTimes[destination.id];
+
+    if (!depart || !arrive) {
+      continue;
+    }
+
+    const duration = calculateDurationInMinutes(depart, arrive);
+    if (duration === null) {
+      continue;
+    }
+
+    segments.push({
+      fromLocation: origin.name,
+      toLocation: destination.name,
+      timeSlot: `${depart} - ${arrive}`,
+      percentile25: duration,
+      percentile50: duration,
+      percentile80: duration,
+      percentile90: duration
+    });
+  }
+
+  if (segments.length === 0 && points.length >= 2) {
+    for (let i = 0; i < points.length - 1; i += 1) {
+      const origin = points[i];
+      const destination = points[i + 1];
+      segments.push({
+        fromLocation: origin.name,
+        toLocation: destination.name,
+        timeSlot: `Quick Adjust Segment ${i + 1}`,
+        percentile25: 0,
+        percentile50: 0,
+        percentile80: 0,
+        percentile90: 0
+      });
+    }
+  }
+
+  return segments;
+};
+
 export const useFileUpload = () => {
   const [state, setState] = useState<FileUploadState>({
     isLoading: false,
@@ -64,6 +160,7 @@ export const useFileUpload = () => {
     rawData: null,
     extractedData: null,
     csvData: null,
+    tripsByDay: null,
     validation: null,
     fileName: null,
     qualityReport: null,
@@ -214,31 +311,105 @@ export const useFileUpload = () => {
     try {
       const processingPromise = (async () => {
         const parser = new CsvParser();
-        const result = await parser.parseCsvFile(file);
-        
-        if (!result.success) {
-          const sanitizedError = sanitizeErrorMessage(result.error || 'Failed to process CSV file');
-          return {
-            success: false,
-            error: sanitizedError,
-            fileName: sanitizeFileName(file.name),
-            fileType: 'csv' as const
-          };
+        const baseResult = await parser.parseCsvFile(file);
+
+        const attemptQuickAdjustParse = async (): Promise<{
+          data: ParsedCsvData;
+          warnings: string[];
+          tripsByDay: Record<'weekday' | 'saturday' | 'sunday', Trip[]>;
+        } | null> => {
+          try {
+            const rawContent = await file.text();
+            const rows = parseQuickAdjustCsv(rawContent).filter(row => row.some(cell => cell.trim().length > 0));
+            if (rows.length === 0) {
+              return null;
+            }
+
+            const quickResult = parseQuickAdjustSchedule(rows);
+            if (!quickResult.timePoints.length) {
+              return null;
+            }
+
+            const normalizedSummary = normalizeSummaryScheduleTrips(quickResult.summarySchedule);
+            quickResult.summarySchedule = normalizedSummary.summary;
+            const tripsByDay = normalizedSummary.tripsByDay;
+
+            const segments = deriveQuickAdjustSegments(quickResult);
+            const timePoints = quickResult.timePoints.map(tp => tp.name);
+            const totalSegments = segments.length > 0 ? segments.length : Math.max(timePoints.length - 1, 1);
+            const parsedData: ParsedCsvData = {
+              segments,
+              timePoints,
+              validationSummary: {
+                totalSegments,
+                validSegments: segments.length > 0 ? segments.length : totalSegments,
+                invalidSegments: 0,
+                timeSlots: segments.length > 0 ? new Set(segments.map(segment => segment.timeSlot)).size : totalSegments
+              }
+            };
+
+            return {
+              data: parsedData,
+              warnings: quickResult.warnings,
+              tripsByDay
+            };
+          } catch (quickError) {
+            console.warn('Quick adjust CSV parse fallback failed:', quickError);
+            return null;
+          }
+        };
+
+        let csvData: ParsedCsvData | null = null;
+        let warnings: string[] = [];
+        let usedQuickAdjustFallback = false;
+        let quickAdjustTripsByDay: Record<'weekday' | 'saturday' | 'sunday', any[]> | undefined;
+
+        if (baseResult.success && baseResult.data) {
+          csvData = baseResult.data;
+          warnings = baseResult.warnings;
+        } else {
+          const fallback = await attemptQuickAdjustParse();
+          if (!fallback) {
+            const sanitizedError = sanitizeErrorMessage(baseResult.error || 'Failed to process CSV file');
+            return {
+              success: false,
+              error: sanitizedError,
+              fileName: sanitizeFileName(file.name),
+              fileType: 'csv' as const
+            };
+          }
+          csvData = fallback.data;
+          warnings = fallback.warnings;
+          quickAdjustTripsByDay = fallback.tripsByDay;
+          usedQuickAdjustFallback = true;
         }
+
+        const segmentDurations = csvData.segments.flatMap(segment =>
+          [segment.percentile25, segment.percentile50, segment.percentile80, segment.percentile90].filter(value =>
+            typeof value === 'number' && Number.isFinite(value) && value >= 0
+          )
+        );
+
+        const averageTravelTime = csvData.segments.length > 0
+          ? csvData.segments.reduce((sum, segment) => sum + (segment.percentile50 + segment.percentile80) / 2, 0) / csvData.segments.length
+          : 0;
+        const minTravelTime = segmentDurations.length > 0 ? Math.min(...segmentDurations) : 0;
+        const maxTravelTime = segmentDurations.length > 0 ? Math.max(...segmentDurations) : 0;
 
         // Create a simple validation result for CSV data
         const validation: ValidationResult = {
-          isValid: result.data!.validationSummary.validSegments > 0,
-          errors: result.data!.validationSummary.validSegments === 0 ? 
-            [{ type: 'ERROR' as const, code: 'NO_VALID_DATA', message: 'No valid percentile data found in CSV file' }] : [],
-          warnings: result.warnings.map(warning => ({ type: 'WARNING' as const, code: 'CSV_WARNING', message: warning })),
+          isValid: csvData.validationSummary.validSegments > 0 || usedQuickAdjustFallback,
+          errors: csvData.validationSummary.validSegments > 0 || usedQuickAdjustFallback
+            ? []
+            : [{ type: 'ERROR' as const, code: 'NO_VALID_DATA', message: 'No valid percentile data found in CSV file' }],
+          warnings: warnings.map(warning => ({ type: 'WARNING' as const, code: 'CSV_WARNING', message: warning })),
           statistics: {
-            totalTimePoints: result.data!.timePoints.length,
-            totalTravelTimes: result.data!.validationSummary.totalSegments,
-            averageTravelTime: result.data!.segments.reduce((sum, s) => sum + (s.percentile50 + s.percentile80) / 2, 0) / Math.max(1, result.data!.segments.length),
-            minTravelTime: Math.min(...result.data!.segments.map(s => Math.min(s.percentile50, s.percentile80))),
-            maxTravelTime: Math.max(...result.data!.segments.map(s => Math.max(s.percentile50, s.percentile80))),
-            missingConnections: result.data!.validationSummary.invalidSegments,
+            totalTimePoints: csvData.timePoints.length,
+            totalTravelTimes: csvData.validationSummary.totalSegments,
+            averageTravelTime,
+            minTravelTime,
+            maxTravelTime,
+            missingConnections: csvData.validationSummary.invalidSegments,
             duplicateConnections: 0,
             dayTypeCoverage: {
               weekday: 100,
@@ -248,23 +419,27 @@ export const useFileUpload = () => {
           }
         };
 
+        const processingMode = usedQuickAdjustFallback ? 'Quick Adjust Schedule' : 'Travel Time Segments';
+
         // Create quality report
         const qualityReport = `CSV Processing Report:
-Total Segments: ${result.data!.validationSummary.totalSegments}
-Valid Segments: ${result.data!.validationSummary.validSegments}
-Invalid Segments: ${result.data!.validationSummary.invalidSegments}
-Time Slots: ${result.data!.validationSummary.timeSlots}
-Timepoints Found: ${result.data!.timePoints.length}
+Processing Mode: ${processingMode}
+Total Segments: ${csvData.validationSummary.totalSegments}
+Valid Segments: ${csvData.validationSummary.validSegments}
+Invalid Segments: ${csvData.validationSummary.invalidSegments}
+Time Slots: ${csvData.validationSummary.timeSlots}
+Timepoints Found: ${csvData.timePoints.length}
 
-Warnings: ${result.warnings.length > 0 ? result.warnings.join('\n') : 'None'}`;
+Warnings: ${warnings.length > 0 ? warnings.join('\n') : 'None'}`;
 
         return {
           success: true,
-          csvData: result.data,
+          csvData,
           validation,
           qualityReport,
           fileName: sanitizeFileName(file.name),
-          fileType: 'csv' as const
+          fileType: 'csv' as const,
+          tripsByDay: quickAdjustTripsByDay
         };
       })();
 
@@ -296,6 +471,7 @@ Warnings: ${result.warnings.length > 0 ? result.warnings.join('\n') : 'None'}`;
       rawData: null,
       extractedData: null,
       csvData: null,
+      tripsByDay: null,
       validation: null,
       qualityReport: null,
       fileName: file.name,
@@ -333,6 +509,7 @@ Warnings: ${result.warnings.length > 0 ? result.warnings.join('\n') : 'None'}`;
       rawData: result.rawData || null,
       extractedData: result.extractedData || null,
       csvData: result.csvData || null,
+      tripsByDay: result.tripsByDay || null,
       validation: result.validation || null,
       qualityReport: result.qualityReport || null,
       fileName: result.fileName,
@@ -349,6 +526,7 @@ Warnings: ${result.warnings.length > 0 ? result.warnings.join('\n') : 'None'}`;
       rawData: null,
       extractedData: null,
       csvData: null,
+      tripsByDay: null,
       validation: null,
       fileName: null,
       qualityReport: null,

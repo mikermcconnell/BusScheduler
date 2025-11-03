@@ -60,7 +60,7 @@ import DraftNameHeader from '../components/DraftNameHeader';
 import WorkflowBreadcrumbs from '../components/WorkflowBreadcrumbs';
 import ConnectionLibrary from '../components/ConnectionLibrary';
 import ConnectionPriorityList from '../components/ConnectionPriorityList';
-import { LoadingSpinner, LoadingSkeleton } from '../components/loading';
+import { LoadingSkeleton } from '../components/loading';
 import { SaveToDraft, AutoSaveStatus } from '../components/SaveToDraft';
 
 import { useWorkflowDraft } from '../hooks/useWorkflowDraft';
@@ -71,16 +71,20 @@ import {
   OptimizationProgress,
   ConnectionOpportunity,
   ConnectionPointType,
+  ConnectionType,
+  DayType,
 } from '../types/connectionOptimization';
-import { ConnectionType, ConnectionStatus, Schedule } from '../types/schedule';
+import { Schedule, SummarySchedule } from '../types/schedule';
 import { ConnectionPoint } from '../types/connectionOptimization';
+import { convertSummaryScheduleToSchedule } from '../utils/summaryScheduleConverter';
 
 interface ConnectionOptimizationState {
   selectedConnections: ConnectionPoint[];
   optimizationProgress: OptimizationProgress | null;
   isOptimizing: boolean;
   optimizationResult: ConnectionOptimizationResult | null;
-  originalSchedule: any | null;
+  summarySchedule: SummarySchedule | null;
+  baselineSchedule: Schedule | null;
   showResultsComparison: boolean;
   optimizationHistory: ConnectionOptimizationResult[];
   canApplyResult: boolean;
@@ -96,7 +100,8 @@ const ConnectionOptimization: React.FC = () => {
   const { 
     draft,
     loading: draftLoading,
-    error: draftError 
+    error: draftError,
+    updateConnectionOptimization,
   } = useWorkflowDraft(locationDraftId);
 
   // Component state
@@ -105,7 +110,8 @@ const ConnectionOptimization: React.FC = () => {
     optimizationProgress: null,
     isOptimizing: false,
     optimizationResult: null,
-    originalSchedule: null,
+    summarySchedule: null,
+    baselineSchedule: null,
     showResultsComparison: false,
     optimizationHistory: [],
     canApplyResult: false,
@@ -122,9 +128,9 @@ const ConnectionOptimization: React.FC = () => {
       try {
         // Load connection optimization data
         let selectedConnections: ConnectionPoint[] = [];
-        let optimizationResult = null;
-        let optimizationHistory: any[] = [];
-        let originalSchedule = null;
+        let optimizationResult: ConnectionOptimizationResult | null = null;
+        let optimizationHistory: ConnectionOptimizationResult[] = [];
+        let summarySchedule: SummarySchedule | null = null;
 
         if (draft?.connectionOptimization) {
           // Ensure selectedConnections have the correct ConnectionPoint type structure
@@ -141,17 +147,17 @@ const ConnectionOptimization: React.FC = () => {
           optimizationHistory = draft.connectionOptimization?.optimizationHistory || [];
         }
 
-        // Try to load schedule data from multiple sources (for originalSchedule fallback)
-        if (!originalSchedule) {
-          // First: Try draft summarySchedule
-          if (draft && draft.summarySchedule && draft.summarySchedule.schedule) {
-            originalSchedule = draft.summarySchedule.schedule;
-            console.log('📋 Loaded original schedule from draft');
+        // Try to load schedule data from multiple sources (for summary schedule fallback)
+        if (!summarySchedule) {
+          // First: Try draft summary schedule
+          if (draft?.summarySchedule?.schedule) {
+            summarySchedule = draft.summarySchedule.schedule;
+            console.log('📋 Loaded summary schedule from draft');
           }
           // Second: Try navigation state
           else if (location.state?.summarySchedule) {
-            originalSchedule = location.state.summarySchedule;
-            console.log('📋 Loaded original schedule from navigation state');
+            summarySchedule = location.state.summarySchedule;
+            console.log('📋 Loaded summary schedule from navigation state');
           }
           // Third: Try localStorage
           else {
@@ -159,9 +165,9 @@ const ConnectionOptimization: React.FC = () => {
               const savedSchedule = localStorage.getItem('currentSummarySchedule');
               if (savedSchedule) {
                 const parsedSchedule = JSON.parse(savedSchedule);
-                if (parsedSchedule && parsedSchedule.trips && parsedSchedule.trips.length > 0) {
-                  originalSchedule = parsedSchedule;
-                  console.log('📋 Loaded original schedule from localStorage');
+                if (parsedSchedule && parsedSchedule.timePoints && parsedSchedule.timePoints.length > 0) {
+                  summarySchedule = parsedSchedule;
+                  console.log('📋 Loaded summary schedule from localStorage');
                 }
               }
             } catch (error) {
@@ -170,13 +176,27 @@ const ConnectionOptimization: React.FC = () => {
           }
         }
 
+        let baselineSchedule: Schedule | null = null;
+        if (summarySchedule) {
+          try {
+            baselineSchedule = convertSummaryScheduleToSchedule(summarySchedule, {
+              dayType: 'weekday',
+              blockConfigurations: draft?.blockConfiguration?.blockConfigurations,
+              serviceBands: draft?.timepointsAnalysis?.serviceBands,
+            });
+          } catch (conversionError) {
+            console.warn('Failed to convert summary schedule for baseline:', conversionError);
+          }
+        }
+
         setState(prev => ({
           ...prev,
           selectedConnections,
           optimizationResult,
           optimizationHistory,
-          originalSchedule,
-          error: !originalSchedule ? 'Schedule data not found. Please ensure you completed the Block Summary Schedule step.' : null,
+          summarySchedule,
+          baselineSchedule,
+          error: !summarySchedule ? 'Schedule data not found. Please ensure you completed the Block Summary Schedule step.' : null,
         }));
 
       } catch (err) {
@@ -219,54 +239,69 @@ const ConnectionOptimization: React.FC = () => {
     }));
   };
 
-  // Store original schedule before optimization
-  const storeOriginalSchedule = () => {
-    if (draft?.summarySchedule?.schedule && !state.originalSchedule) {
+  // Ensure summary schedule is available before optimization
+  const ensureSummarySchedule = () => {
+    if (state.summarySchedule) {
+      return;
+    }
+
+    if (draft?.summarySchedule?.schedule) {
       setState(prev => ({
         ...prev,
-        originalSchedule: { ...draft.summarySchedule!.schedule }
+        summarySchedule: draft.summarySchedule!.schedule,
+      }));
+    } else if (location.state?.summarySchedule) {
+      setState(prev => ({
+        ...prev,
+        summarySchedule: location.state.summarySchedule,
       }));
     }
   };
 
+  const resolveActiveDayType = (): DayType => {
+    if (state.selectedConnections.length === 0) {
+      return 'weekday';
+    }
+
+    const priorityOrder: DayType[] = ['weekday', 'saturday', 'sunday'];
+    for (const day of priorityOrder) {
+      if (state.selectedConnections.some(connection => connection.dayTypes?.includes(day))) {
+        return day;
+      }
+    }
+
+    return 'weekday';
+  };
+
   // Run optimization
   const handleRunOptimization = async () => {
-    storeOriginalSchedule();
+    ensureSummarySchedule();
 
-    // Try multiple data sources for schedule data
-    let scheduleData = null;
-    let dataSource = '';
+    let summarySchedule = state.summarySchedule;
+    let dataSource = 'state';
 
-    // First: Try draft summarySchedule (most reliable)
-    if (draft && draft.summarySchedule && draft.summarySchedule.schedule) {
-      scheduleData = draft.summarySchedule.schedule;
+    if (!summarySchedule && draft?.summarySchedule?.schedule) {
+      summarySchedule = draft.summarySchedule.schedule;
       dataSource = 'draft';
-      console.log('📋 Using schedule data from draft');
-    }
-    // Second: Try location state (navigation from BlockSummarySchedule)
-    else if (location.state?.summarySchedule) {
-      scheduleData = location.state.summarySchedule;
+    } else if (!summarySchedule && location.state?.summarySchedule) {
+      summarySchedule = location.state.summarySchedule;
       dataSource = 'navigation';
-      console.log('📋 Using schedule data from navigation state');
-    }
-    // Third: Try localStorage fallback
-    else {
+    } else if (!summarySchedule) {
       try {
         const savedSchedule = localStorage.getItem('currentSummarySchedule');
         if (savedSchedule) {
           const parsedSchedule = JSON.parse(savedSchedule);
-          if (parsedSchedule && parsedSchedule.trips && parsedSchedule.trips.length > 0) {
-            scheduleData = parsedSchedule;
+          if (parsedSchedule && parsedSchedule.timePoints && parsedSchedule.timePoints.length > 0) {
+            summarySchedule = parsedSchedule;
             dataSource = 'localStorage';
-            console.log('📋 Using schedule data from localStorage fallback');
           }
         }
       } catch (error) {
-        console.warn('Failed to load schedule from localStorage:', error);
+        console.warn('Failed to load summary schedule from localStorage:', error);
       }
     }
 
-    if (!scheduleData) {
+    if (!summarySchedule) {
       setState(prev => ({
         ...prev,
         error: `No schedule data found. Please ensure you've completed the Block Summary Schedule step and that the data was saved successfully.
@@ -280,9 +315,29 @@ const ConnectionOptimization: React.FC = () => {
       return;
     }
 
-    console.log(`✅ Found schedule data from ${dataSource}:`, {
-      timePoints: scheduleData.timePoints?.length || 0,
-      trips: scheduleData.trips?.length || 0
+    const activeDayType = resolveActiveDayType();
+
+    let preparedSchedule;
+    try {
+      preparedSchedule = convertSummaryScheduleToSchedule(summarySchedule, {
+        dayType: activeDayType,
+        blockConfigurations: draft?.blockConfiguration?.blockConfigurations,
+        serviceBands: draft?.timepointsAnalysis?.serviceBands,
+      });
+    } catch (conversionError) {
+      setState(prev => ({
+        ...prev,
+        error: conversionError instanceof Error
+          ? conversionError.message
+          : 'Unable to prepare schedule for optimization. Please regenerate the summary schedule.',
+      }));
+      return;
+    }
+
+    console.log(`✅ Prepared schedule from ${dataSource}:`, {
+      timePoints: preparedSchedule.timePoints.length,
+      trips: preparedSchedule.trips.length,
+      dayType: preparedSchedule.dayType,
     });
 
     setState(prev => ({
@@ -290,10 +345,11 @@ const ConnectionOptimization: React.FC = () => {
       isOptimizing: true,
       optimizationProgress: null,
       error: null,
+      summarySchedule,
+      baselineSchedule: prev.baselineSchedule ?? preparedSchedule,
     }));
 
     try {
-      // Helper function to map ConnectionPointType to ConnectionType
       const mapConnectionType = (pointType: ConnectionPointType): ConnectionType => {
         switch (pointType) {
           case 'go-train':
@@ -307,7 +363,6 @@ const ConnectionOptimization: React.FC = () => {
         }
       };
 
-      // Convert selected connections to optimization opportunities
       const connectionOpportunities: ConnectionOpportunity[] = state.selectedConnections.map(conn => ({
         id: conn.id,
         type: mapConnectionType(conn.type),
@@ -316,7 +371,7 @@ const ConnectionOptimization: React.FC = () => {
         priority: conn.priority,
         windowType: 'ideal' as const,
         currentConnectionTime: undefined,
-        affectedTrips: [], // Would be populated by analysis
+        affectedTrips: [],
         operatingDays: conn.dayTypes,
         metadata: {
           serviceName: conn.metadata?.serviceName || conn.name,
@@ -325,26 +380,10 @@ const ConnectionOptimization: React.FC = () => {
         },
       }));
 
-      // Build optimization request - convert SummarySchedule to Schedule format
-      const summarySchedule = scheduleData;
-      const convertedSchedule: Schedule = {
-        id: summarySchedule.routeId,
-        name: summarySchedule.routeName,
-        routeId: summarySchedule.routeId,
-        routeName: summarySchedule.routeName,
-        direction: summarySchedule.direction,
-        dayType: 'weekday', // Default to weekday
-        timePoints: summarySchedule.timePoints,
-        serviceBands: [],
-        trips: [], // Would need to convert from schedule matrix
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-
       const optimizationRequest: ConnectionOptimizationRequest = {
-        schedule: convertedSchedule,
+        schedule: preparedSchedule,
         connectionOpportunities,
-        connectionWindows: new Map(), // Would be populated with actual connection window configurations
+        connectionWindows: new Map(),
         constraints: {
           maxTripDeviation: 10,
           maxScheduleShift: 30,
@@ -371,7 +410,7 @@ const ConnectionOptimization: React.FC = () => {
         },
         headwayCorrection: {
           strategyId: 'default',
-          targetHeadway: 15, // 15 minutes
+          targetHeadway: 15,
           maxDeviationThreshold: 3,
           correctionHorizon: 5,
           correctionStrength: 0.7,
@@ -432,19 +471,28 @@ const ConnectionOptimization: React.FC = () => {
     
     try {
       setLoading(true);
-      
-      // Update the draft with optimized schedule
-      // Note: This would need to be implemented in the draftService
-      // For now, we'll just update local state to show applied state
+
+      const history = [state.optimizationResult, ...state.optimizationHistory].slice(0, 5);
+      const result = await updateConnectionOptimization({
+        selectedConnections: state.selectedConnections,
+        lastResult: state.optimizationResult,
+        optimizationHistory: history,
+      });
+
+      if (!result.success) {
+        setState(prev => ({
+          ...prev,
+          error: result.error || 'Failed to apply optimization',
+        }));
+        return;
+      }
+
       setState(prev => ({
         ...prev,
         canApplyResult: false,
         showResultsComparison: false,
+        optimizationHistory: history,
       }));
-      
-      // Show success message
-      alert('Optimization applied successfully! The schedule has been updated.');
-      
     } catch (err) {
       setState(prev => ({
         ...prev,
@@ -485,23 +533,17 @@ const ConnectionOptimization: React.FC = () => {
   };
 
   const handleGoForward = () => {
-    // Validate data before allowing progression
-    if (!state.originalSchedule && !draft?.summarySchedule && !location.state?.summarySchedule) {
+    if (!state.summarySchedule && !draft?.summarySchedule?.schedule && !location.state?.summarySchedule) {
       setState(prev => ({
         ...prev,
-        error: `Cannot proceed to export: No schedule data available.
-
-        Please:
-        1. Return to Block Summary Schedule
-        2. Ensure the schedule is generated and saved
-        3. Navigate back to Connection Optimization when save is complete`
+        error: 'Cannot proceed to export: No schedule data available.\n\nPlease:\n1. Return to Block Summary Schedule\n2. Ensure the schedule is generated and saved\n3. Navigate back to Connection Optimization when save is complete'
       }));
       return;
     }
 
-    // Additional validation for data integrity
-    const scheduleData = state.originalSchedule || draft?.summarySchedule?.schedule || location.state?.summarySchedule;
-    if (!scheduleData?.timePoints || scheduleData.timePoints.length === 0) {
+    const summarySchedule = state.summarySchedule || draft?.summarySchedule?.schedule || location.state?.summarySchedule;
+
+    if (!summarySchedule?.timePoints || summarySchedule.timePoints.length === 0) {
       setState(prev => ({
         ...prev,
         error: 'Invalid schedule data: No time points found. Please regenerate the schedule from Block Configuration.'
@@ -509,7 +551,13 @@ const ConnectionOptimization: React.FC = () => {
       return;
     }
 
-    if (!scheduleData?.trips || scheduleData.trips.length === 0) {
+    const hasTrips = Boolean(
+      (Array.isArray(summarySchedule?.weekday) && summarySchedule.weekday.length > 0) ||
+      (Array.isArray(summarySchedule?.saturday) && summarySchedule.saturday.length > 0) ||
+      (Array.isArray(summarySchedule?.sunday) && summarySchedule.sunday.length > 0)
+    );
+
+    if (!hasTrips) {
       setState(prev => ({
         ...prev,
         error: 'Invalid schedule data: No trips found. Please regenerate the schedule from Block Configuration.'
@@ -517,14 +565,13 @@ const ConnectionOptimization: React.FC = () => {
       return;
     }
 
-    console.log('✅ Data validation passed, proceeding to export');
+    console.log('✅ Summary schedule validation passed, proceeding to export');
 
-    // Navigate to next step or export
     navigate('/export', {
       state: {
         draftId: draft?.draftId,
         optimizationResult: state.optimizationResult,
-        scheduleData: scheduleData, // Pass validated schedule data
+        scheduleData: summarySchedule,
         fromWorkflowNavigation: true,
       }
     });
@@ -551,10 +598,10 @@ const ConnectionOptimization: React.FC = () => {
   };
 
   // Get connection status color
-  const getConnectionStatusColor = (type: ConnectionType, priority: number): 'success' | 'warning' | 'error' | 'default' => {
-    if (priority === 1) return 'error'; // High priority
-    if (priority === 2) return 'warning'; // Medium priority
-    return 'default'; // Low priority
+  const getConnectionStatusColor = (priority: number): 'success' | 'warning' | 'error' | 'default' => {
+    if (priority >= 8) return 'error';
+    if (priority >= 5) return 'warning';
+    return 'default';
   };
 
   // Generate summary statistics
@@ -662,7 +709,7 @@ const ConnectionOptimization: React.FC = () => {
           sx={{ minWidth: 160 }}
           disabled={
             // Disable if no schedule data is available from any source
-            (!state.originalSchedule && !draft?.summarySchedule?.schedule && !location.state?.summarySchedule) ||
+            (!state.summarySchedule && !draft?.summarySchedule?.schedule && !location.state?.summarySchedule) ||
             // Also disable if there's a current error
             !!state.error ||
             // Standard validation: need connections or optimization result
@@ -925,7 +972,7 @@ const ConnectionOptimization: React.FC = () => {
                 </Grid>
                 
                 {/* Show comparison button if we have original schedule */}
-                {state.originalSchedule && (
+                {state.baselineSchedule && (
                   <Box sx={{ mt: 2, textAlign: 'center', display: 'flex', gap: 2, justifyContent: 'center' }}>
                     <Button
                       variant="outlined"
@@ -962,7 +1009,7 @@ const ConnectionOptimization: React.FC = () => {
       )}
 
       {/* Before/After Schedule Comparison */}
-      {state.showResultsComparison && state.optimizationResult && state.originalSchedule && (
+      {state.showResultsComparison && state.optimizationResult && state.baselineSchedule && (
         <Card sx={{ mb: 3 }}>
           <CardContent>
             <Typography variant="h6" gutterBottom>
@@ -976,7 +1023,7 @@ const ConnectionOptimization: React.FC = () => {
                   </Typography>
                   <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                     <Typography variant="body2">
-                      Trips: {state.originalSchedule.trips?.length || 0}
+                      Trips: {state.baselineSchedule?.trips?.length || 0}
                     </Typography>
                     <Typography variant="body2">
                       Connections Made: 0 (baseline)
@@ -1052,7 +1099,7 @@ const ConnectionOptimization: React.FC = () => {
                         <TableCell>
                           <Chip 
                             label={`P${connection.priority}`} 
-                            color={getConnectionStatusColor(connection.type, connection.priority)}
+                            color={getConnectionStatusColor(connection.priority)}
                             size="small"
                           />
                         </TableCell>
@@ -1073,7 +1120,7 @@ const ConnectionOptimization: React.FC = () => {
                         <TableCell>
                           <Chip 
                             label={`P${failedConnection.opportunity.priority}`} 
-                            color={getConnectionStatusColor(failedConnection.opportunity.type, failedConnection.opportunity.priority)}
+                            color={getConnectionStatusColor(failedConnection.opportunity.priority)}
                             size="small"
                           />
                         </TableCell>
@@ -1332,3 +1379,4 @@ const ConnectionOptimization: React.FC = () => {
 };
 
 export default ConnectionOptimization;
+

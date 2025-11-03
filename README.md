@@ -10,9 +10,9 @@ A professional bus route scheduling application that automates the conversion of
 
 ## Complete Documentation
 
-📖 **[See CLAUDE.md for complete documentation](./CLAUDE.md)**
+📖 **[See agents.md for complete documentation](./agents.md)**
 
-The CLAUDE.md file contains comprehensive information about:
+The agents.md file contains comprehensive information about:
 - Detailed setup and configuration
 - Architecture and technical implementation
 - Feature documentation and usage guides

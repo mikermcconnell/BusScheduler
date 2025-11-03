@@ -1,3 +1,4 @@
+import { invitationService } from '../services/invitationService';
 import { Request, Response } from 'express';
 import { body, validationResult } from 'express-validator';
 import { authService } from '../services/authService';
@@ -20,10 +21,9 @@ export const registerValidation = [
     .optional()
     .isLength({ min: 2, max: 100 })
     .withMessage('Full name must be 2-100 characters'),
-  body('role')
-    .optional()
-    .isIn(['admin', 'scheduler', 'operator', 'viewer'])
-    .withMessage('Invalid role'),
+  body('invitationCode')
+    .notEmpty()
+    .withMessage('Invitation code is required')
 ];
 
 export const loginValidation = [
@@ -47,10 +47,10 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
     throw new ValidationError('Validation failed', errors.array());
   }
 
-  const { email, username, password, fullName, role } = req.body;
+  const { email, username, password, fullName, invitationCode } = req.body;
 
   // Register user
-  const user = await authService.register(email, username, password, fullName, role);
+  const user = await authService.register(email, username, password, fullName, invitationCode);
 
   // Auto-login after registration
   const loginResult = await authService.login(email, password);
@@ -160,3 +160,45 @@ export const changePassword = asyncHandler(async (req: Request, res: Response) =
     message: 'Password changed successfully. Please login again.',
   });
 });
+
+
+
+export const createInvitationValidation = [
+  body('email')
+    .optional()
+    .isEmail()
+    .withMessage('Email must be a valid email address'),
+  body('role')
+    .optional()
+    .isIn(['admin', 'scheduler', 'operator', 'viewer'])
+    .withMessage('Invalid role'),
+  body('expiresInHours')
+    .optional()
+    .isInt({ min: 1, max: 24 * 30 })
+    .withMessage('Expiration must be between 1 and 720 hours')
+];
+
+export const createInvitation = asyncHandler(async (req: Request, res: Response) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ValidationError('Validation failed', errors.array());
+  }
+
+  const { email, role, expiresInHours } = req.body;
+  const invitation = await invitationService.createInvitation(
+    { email, role, expiresInHours },
+    req.user?.userId
+  );
+
+  res.status(201).json({
+    invitation
+  });
+});
+
+export const listInvitations = asyncHandler(async (_req: Request, res: Response) => {
+  const invitations = await invitationService.listActiveInvitations();
+  res.json({ invitations });
+});
+
+
+

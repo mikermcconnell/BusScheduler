@@ -59,7 +59,7 @@ export interface PanelStateEvent extends BaseWorkspaceEvent {
 export interface ScheduleDataEvent extends BaseWorkspaceEvent {
   type: 'schedule-data';
   payload: {
-    dataType: 'upload' | 'timepoints' | 'service-bands' | 'blocks' | 'trips' | 'recovery-times';
+    dataType: 'upload' | 'timepoints' | 'service-bands' | 'blocks' | 'trips' | 'recovery-times' | 'summary-schedule';
     action: 'create' | 'update' | 'delete' | 'bulk-update';
     entityId?: string;
     data: any;

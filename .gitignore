@@ -46,3 +46,4 @@ Thumbs.db
 # Firebase debug logs
 firebase-debug.log
 firebase-debug.*.log
+backend/credentials/

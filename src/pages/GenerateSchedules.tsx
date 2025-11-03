@@ -69,7 +69,7 @@ const GenerateSchedules: React.FC = () => {
   };
 
   const handleUploadData = () => {
-    navigate('/upload');
+    navigate('/new-schedule');
   };
 
   return (

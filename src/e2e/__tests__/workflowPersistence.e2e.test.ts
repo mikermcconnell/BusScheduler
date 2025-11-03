@@ -21,7 +21,7 @@ class WorkflowPage {
   constructor(private page: Page) {}
 
   async navigateToUpload() {
-    await this.page.goto('/upload');
+    await this.page.goto('/new-schedule');
   }
 
   async uploadFile(filePath: string) {

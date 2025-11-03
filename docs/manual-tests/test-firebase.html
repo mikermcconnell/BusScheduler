@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Firebase Connection Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .pending {
+            background-color: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <h1>Firebase Connection Test</h1>
+    
+    <div id="status" class="status pending">Initializing Firebase...</div>
+    
+    <h2>Test Actions:</h2>
+    <button onclick="testAnonymousAuth()">Test Anonymous Auth</button>
+    <button onclick="testFirestore()">Test Firestore</button>
+    <button onclick="checkCurrentUser()">Check Current User</button>
+    
+    <h2>Results:</h2>
+    <pre id="results"></pre>
+
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+        import { getFirestore, collection, addDoc, getDocs } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+        import { getAnalytics } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js';
+
+        // Your Firebase configuration
+        const firebaseConfig = {
+            apiKey: "YOUR_FIREBASE_API_KEY",
+            authDomain: "your-project.firebaseapp.com",
+            projectId: "your-project",
+            storageBucket: "your-project.firebasestorage.app",
+            messagingSenderId: "210547873017",
+            appId: "1:YOUR_APP_ID",
+            measurementId: "G-YOUR_MEASUREMENT_ID"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const analytics = getAnalytics(app);
+
+        // Update status
+        function updateStatus(message, type = 'pending') {
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = message;
+            statusEl.className = 'status ' + type;
+        }
+
+        // Log results
+        function logResult(message) {
+            const resultsEl = document.getElementById('results');
+            resultsEl.textContent += new Date().toLocaleTimeString() + ' - ' + message + '\n';
+        }
+
+        // Initialize
+        updateStatus('Firebase initialized successfully!', 'success');
+        logResult('Firebase app initialized with project: ' + firebaseConfig.projectId);
+
+        // Monitor auth state
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                logResult('Auth state changed - User signed in: ' + (user.isAnonymous ? 'Anonymous' : user.email || user.uid));
+            } else {
+                logResult('Auth state changed - No user signed in');
+            }
+        });
+
+        // Test functions (exposed globally)
+        window.testAnonymousAuth = async function() {
+            try {
+                updateStatus('Testing anonymous authentication...', 'pending');
+                const result = await signInAnonymously(auth);
+                updateStatus('Anonymous auth successful!', 'success');
+                logResult('Anonymous user created with UID: ' + result.user.uid);
+            } catch (error) {
+                updateStatus('Anonymous auth failed: ' + error.message, 'error');
+                logResult('Auth error: ' + error.code + ' - ' + error.message);
+            }
+        };
+
+        window.testFirestore = async function() {
+            try {
+                updateStatus('Testing Firestore...', 'pending');
+                
+                // Try to write a test document
+                const testData = {
+                    test: true,
+                    timestamp: new Date().toISOString(),
+                    message: 'Test from Firebase connection test page'
+                };
+                
+                const docRef = await addDoc(collection(db, 'test_collection'), testData);
+                logResult('Test document written with ID: ' + docRef.id);
+                
+                // Try to read documents
+                const querySnapshot = await getDocs(collection(db, 'test_collection'));
+                logResult('Found ' + querySnapshot.size + ' documents in test_collection');
+                
+                updateStatus('Firestore test successful!', 'success');
+            } catch (error) {
+                updateStatus('Firestore test failed: ' + error.message, 'error');
+                logResult('Firestore error: ' + error.code + ' - ' + error.message);
+            }
+        };
+
+        window.checkCurrentUser = function() {
+            const user = auth.currentUser;
+            if (user) {
+                updateStatus('Current user found', 'success');
+                logResult('Current user: ' + JSON.stringify({
+                    uid: user.uid,
+                    email: user.email,
+                    isAnonymous: user.isAnonymous
+                }, null, 2));
+            } else {
+                updateStatus('No current user', 'pending');
+                logResult('No user is currently signed in');
+            }
+        };
+    </script>
+</body>
+</html>

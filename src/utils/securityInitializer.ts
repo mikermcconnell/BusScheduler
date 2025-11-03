@@ -15,20 +15,30 @@ export interface SecurityConfig {
   enableCSP?: boolean;
   enableAuditLogging?: boolean;
   environment?: 'development' | 'staging' | 'production';
-  cspReportEndpoint?: string;
-  auditEndpoint?: string;
+  cspReportEndpoint?: string | null;
+  auditEndpoint?: string | null;
 }
+
+type ResolvedSecurityConfig = {
+  enableCSRF: boolean;
+  enableRateLimiting: boolean;
+  enableCSP: boolean;
+  enableAuditLogging: boolean;
+  environment: 'development' | 'staging' | 'production';
+  cspReportEndpoint: string | null;
+  auditEndpoint: string | null;
+};
 
 class SecurityInitializer {
   private initialized = false;
-  private config: Required<SecurityConfig> = {
+  private config: ResolvedSecurityConfig = {
     enableCSRF: true,
     enableRateLimiting: true,
     enableCSP: true,
     enableAuditLogging: true,
     environment: 'production',
-    cspReportEndpoint: '/api/csp-report',
-    auditEndpoint: '/api/audit'
+    cspReportEndpoint: null,
+    auditEndpoint: null
   };
 
   /**
@@ -47,6 +57,17 @@ class SecurityInitializer {
 
     // Detect environment
     this.detectEnvironment();
+
+    // Apply environment-specific endpoint defaults if not provided
+    if (!config || config.cspReportEndpoint === undefined) {
+      this.config.cspReportEndpoint =
+        this.config.environment === 'production' ? '/api/csp-report' : null;
+    }
+
+    if (!config || config.auditEndpoint === undefined) {
+      this.config.auditEndpoint =
+        this.config.environment === 'production' ? '/api/audit' : null;
+    }
 
     // Initialize CSRF Protection
     if (this.config.enableCSRF) {
@@ -129,7 +150,18 @@ class SecurityInitializer {
     const originalFetch = window.fetch;
     
     window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-      const url = typeof input === 'string' ? input : input.toString();
+      const url = (() => {
+        if (typeof input === 'string') {
+          return input;
+        }
+        if (input instanceof URL) {
+          return input.toString();
+        }
+        if (typeof Request !== 'undefined' && input instanceof Request) {
+          return input.url;
+        }
+        return String(input);
+      })();
       
       // Check rate limit
       const check = await rateLimiter.checkLimit(url);
@@ -157,12 +189,18 @@ class SecurityInitializer {
         );
       }
 
-      // Add rate limit headers to request
+      // Add rate limit headers to request for same-origin calls only
       if (init && check.remaining !== undefined) {
-        if (!init.headers) {
-          init.headers = {};
+        try {
+          const requestUrl = new URL(url, window.location.origin);
+          if (requestUrl.origin === window.location.origin) {
+            const headers = new Headers(init.headers || {});
+            headers.set('X-RateLimit-Remaining', String(check.remaining));
+            init.headers = headers;
+          }
+        } catch (error) {
+          // Skip header injection when URL parsing fails (non-HTTP requests, etc.)
         }
-        (init.headers as any)['X-RateLimit-Remaining'] = String(check.remaining);
       }
 
       return originalFetch(input, init);
@@ -176,6 +214,8 @@ class SecurityInitializer {
     // Set report endpoint
     if (this.config.cspReportEndpoint) {
       csp.setReportEndpoint(this.config.cspReportEndpoint);
+    } else {
+      csp.clearReportEndpoint();
     }
 
     // Apply environment-specific config

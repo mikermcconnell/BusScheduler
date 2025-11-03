@@ -68,7 +68,12 @@ class ContentSecurityPolicy {
       ],
       'media-src': ["'self'"],
       'object-src': ["'none'"],
-      'frame-src': ["'none'"],
+      // Allow Firebase authentication helpers (hosted on firebaseapp.com) and Google's auth bridge iframe
+      'frame-src': [
+        "'self'",
+        'https://apis.google.com',
+        'https://*.firebaseapp.com'
+      ],
       'frame-ancestors': ["'none'"],
       'form-action': ["'self'"],
       'base-uri': ["'self'"],
@@ -134,6 +139,15 @@ class ContentSecurityPolicy {
     
     // Also set report-to for newer browsers
     this.directives['report-to'] = ['csp-endpoint'];
+  }
+
+  /**
+   * Disable CSP violation reporting
+   */
+  clearReportEndpoint(): void {
+    this.reportEndpoint = null;
+    delete this.directives['report-uri'];
+    delete this.directives['report-to'];
   }
 
   /**

@@ -5,10 +5,11 @@
  * Replaces: firebaseDraftService, workflowDraftService, unifiedDraftService, draftWorkflowService
  */
 
-import { 
+import {
   collection,
   doc,
   setDoc,
+  updateDoc,
   getDoc,
   getDocs,
   deleteDoc,
@@ -16,9 +17,12 @@ import {
   orderBy,
   limit,
   serverTimestamp,
-  runTransaction
+  runTransaction,
+  increment,
+  QueryConstraint,
+  where
 } from 'firebase/firestore';
-import { db } from '../config/firebase';
+import { db, hasValidFirebaseConfig, isEmulatorMode } from '../config/firebase';
 import { 
   WorkflowDraftState,
   WorkflowDraftResult,
@@ -28,19 +32,23 @@ import {
   BlockConfiguration,
   ScheduleGenerationMetadata
 } from '../types/workflow';
-import { SummarySchedule, ServiceBand, ScheduleValidationResult } from '../types/schedule';
+import { SummarySchedule, ServiceBand, ScheduleValidationResult, Trip, TimePoint } from '../types/schedule';
+import { ConnectionOptimizationResult, ConnectionPoint } from '../types/connectionOptimization';
 import { ParsedExcelData } from '../utils/excelParser';
 import { ParsedCsvData } from '../utils/csvParser';
 import { ValidationResult } from '../utils/validator';
 import { sanitizeText } from '../utils/inputSanitizer';
 import { emit } from './workspaceEventBus';
 import { offlineQueue } from './offlineQueue';
+import { QuickAdjustParseResult } from '../utils/quickAdjustImporter';
+import { computeBlocksForTrips, computeBlocksFromMatrix, needsBlockRecompute } from '../utils/blockAssignment';
 
 // Enhanced draft interface for compatibility with unifiedDraftService
 export interface UnifiedDraftCompat {
   // Core Identity
   draftId: string;
   draftName: string;
+  userId?: string;
   
   // Original Upload Data
   originalData: {
@@ -91,6 +99,8 @@ export interface UnifiedDraftCompat {
     lastConflictResolution?: string;
     conflictResolutionFailed?: boolean;
     syncStatus?: 'synced' | 'pending' | 'conflict' | 'error';
+    isQuickAdjust?: boolean;
+    quickAdjustPrimaryDay?: 'weekday' | 'saturday' | 'sunday';
   };
 }
 
@@ -146,7 +156,7 @@ export interface WorkflowStepData {
   description: string;
   icon: string; // Icon name for dynamic loading
   color: string; // Theme color for the step
-  status: 'not-started' | 'in-progress' | 'completed';
+  status: 'not-started' | 'in-progress' | 'completed' | 'skipped';
   completedAt?: string;
   progress?: number; // 0-100 for partial completion
   metadata?: any; // Step-specific data
@@ -157,10 +167,12 @@ export interface DraftWorkflowState {
   draftName: string;
   routeName?: string;
   currentStep: string;
+  workflowMode?: 'full' | 'quick-adjust';
   steps: WorkflowStepData[];
   overallProgress: number;
   lastModified: string;
   createdAt: string;
+  userId?: string;
   celebrationsShown?: string[]; // Track which celebrations have been shown
   stepData?: any; // Store step-specific data synced from Firebase
 }
@@ -189,12 +201,16 @@ const STEP_TIPS = {
 };
 
 class UnifiedDraftService {
-  private readonly COLLECTION_NAME = 'workflow_drafts';
-  private readonly LEGACY_COLLECTION = 'draft_schedules';
+  // NOTE: Draft documents live under users/{uid}/draft_schedules in Firestore.
+  // Keep the constant aligned with FirebaseStorage so both services hit the same collection.
+  private readonly COLLECTION_NAME = 'draft_schedules';
+  private readonly useSharedCollection = process.env.REACT_APP_FIREBASE_SHARED_DRAFTS === 'true';
   private readonly MAX_DRAFTS = 50;
   private readonly LOCK_TIMEOUT = 5000; // 5 seconds
   private readonly SESSION_KEY = 'current_workflow_draft';
   private readonly WORKFLOW_KEY_PREFIX = 'scheduler2_draft_workflow_';
+  
+  private currentUserId: string | null = null;
   
   // In-memory lock for client-side atomic operations
   private operationLocks = new Map<string, number>();
@@ -205,6 +221,7 @@ class UnifiedDraftService {
   // Cache for draft data to reduce Firebase calls
   private draftCache = new Map<string, { draft: UnifiedDraftCompat, timestamp: number }>();
   private readonly CACHE_DURATION = 30000; // 30 seconds
+  private readonly cloudSyncAvailable = hasValidFirebaseConfig || isEmulatorMode;
   
   // Online/offline state tracking
   private isOnline: boolean = navigator.onLine;
@@ -214,6 +231,42 @@ class UnifiedDraftService {
     this.initializeOnlineListeners();
   }
   
+  setCurrentUser(userId: string | null): void {
+    this.currentUserId = userId;
+  }
+
+  private requireUserId(userId?: string): string {
+    const resolved = userId ?? this.currentUserId;
+    if (!resolved) {
+      throw new Error('User is not authenticated');
+    }
+    return resolved;
+  }
+
+  private getDraftCollection(userId?: string) {
+    if (this.useSharedCollection) {
+      return collection(db, this.COLLECTION_NAME);
+    }
+    const uid = this.requireUserId(userId);
+    return collection(db, 'users', uid, this.COLLECTION_NAME);
+  }
+
+  private getDraftDoc(draftId: string, userId?: string) {
+    if (this.useSharedCollection) {
+      return doc(db, this.COLLECTION_NAME, draftId);
+    }
+    const uid = this.requireUserId(userId);
+    return doc(db, 'users', uid, this.COLLECTION_NAME, draftId);
+  }
+
+  private getUserCollectionPath(userId?: string): string {
+    if (this.useSharedCollection) {
+      return this.COLLECTION_NAME;
+    }
+    const uid = this.requireUserId(userId);
+    return 'users/' + uid + '/' + this.COLLECTION_NAME;
+  }
+
   /**
    * Initialize online/offline event listeners
    */
@@ -244,6 +297,25 @@ class UnifiedDraftService {
    */
   private notifyOnlineListeners(): void {
     this.onlineListeners.forEach(listener => listener());
+  }
+
+  /**
+   * Determine if Firebase operations should run
+   */
+  private canUseCloudSync(requireAuth: boolean = true): boolean {
+    if (!this.cloudSyncAvailable) {
+      return false;
+    }
+
+    if (!navigator.onLine && !isEmulatorMode) {
+      return false;
+    }
+
+    if (requireAuth && !this.currentUserId) {
+      return false;
+    }
+
+    return true;
   }
   
   /**
@@ -359,6 +431,52 @@ class UnifiedDraftService {
     return data; // Primitive values are fine as-is
   }
 
+  private sanitizeOptimizationResultForStorage(result?: ConnectionOptimizationResult | null): any {
+    if (!result) {
+      return null;
+    }
+
+    const accountsSource = result.finalRecoveryState?.accounts;
+    const accounts = accountsSource instanceof Map
+      ? Array.from(accountsSource.entries()).map(([stopId, account]) => ({ stopId, account }))
+      : Array.isArray(accountsSource)
+        ? accountsSource
+        : [];
+
+    return {
+      ...result,
+      finalRecoveryState: result.finalRecoveryState
+        ? {
+            ...result.finalRecoveryState,
+            accounts,
+          }
+        : result.finalRecoveryState,
+    };
+  }
+
+  private restoreOptimizationResultFromStorage(result: any): ConnectionOptimizationResult | null {
+    if (!result) {
+      return null;
+    }
+
+    const accountsSource = result.finalRecoveryState?.accounts;
+    const accounts = Array.isArray(accountsSource)
+      ? new Map(accountsSource.map((entry: any) => [entry.stopId, entry.account]))
+      : accountsSource instanceof Map
+        ? accountsSource
+        : new Map();
+
+    return {
+      ...result,
+      finalRecoveryState: result.finalRecoveryState
+        ? {
+            ...result.finalRecoveryState,
+            accounts,
+          }
+        : result.finalRecoveryState,
+    } as ConnectionOptimizationResult;
+  }
+
   /**
    * Deserialize data from Firebase (reconstructs nested arrays)
    */
@@ -366,7 +484,7 @@ class UnifiedDraftService {
     if (data === null || data === undefined) {
       return data;
     }
-    
+
     if (Array.isArray(data) && data.length > 0 && data[0]?._index !== undefined) {
       // Reconstruct nested arrays
       return data
@@ -387,6 +505,140 @@ class UnifiedDraftService {
     }
     
     return data;
+  }
+
+  private buildFallbackTripDetails(
+    matrix: string[][],
+    timePoints: TimePoint[],
+    blockNumbers: number[]
+  ): Trip[] {
+    return matrix.map((row, index) => {
+      const arrivalTimes: Record<string, string> = {};
+      const departureTimes: Record<string, string> = {};
+
+      timePoints.forEach((timePoint, timePointIndex) => {
+        if (!row || timePointIndex >= row.length) {
+          return;
+        }
+        const value = row[timePointIndex];
+        if (typeof value !== 'string' || !value.trim()) {
+          return;
+        }
+        arrivalTimes[timePoint.id] = value;
+        departureTimes[timePoint.id] = value;
+      });
+
+      const departureTime = typeof row?.[0] === 'string' ? row[0] : '';
+
+      return {
+        tripNumber: index + 1,
+        blockNumber: blockNumbers[index] ?? index + 1,
+        departureTime,
+        serviceBand: 'Legacy Import',
+        arrivalTimes,
+        departureTimes,
+        recoveryTimes: {},
+        recoveryMinutes: 0
+      };
+    });
+  }
+
+  private ensureTripDetailsIntegrity(schedule?: SummarySchedule | null): SummarySchedule | undefined {
+    if (!schedule) {
+      return schedule ?? undefined;
+    }
+
+    const timePoints = Array.isArray(schedule.timePoints) ? schedule.timePoints : [];
+    let normalizedDetails = schedule.tripDetails
+      ? { ...schedule.tripDetails }
+      : undefined;
+    let mutated = false;
+
+    const ensureDay = (day: 'weekday' | 'saturday' | 'sunday') => {
+      const existingTrips = normalizedDetails?.[day];
+      if (Array.isArray(existingTrips) && existingTrips.length > 0) {
+        if (needsBlockRecompute(existingTrips)) {
+          normalizedDetails = normalizedDetails ? { ...normalizedDetails } : {};
+          normalizedDetails[day] = computeBlocksForTrips(existingTrips, timePoints);
+          mutated = true;
+        }
+        return;
+      }
+
+      const matrix = (schedule as Record<string, any>)[day] as string[][] | undefined;
+      if (!Array.isArray(matrix) || matrix.length === 0 || timePoints.length === 0) {
+        return;
+      }
+
+      const blocks = computeBlocksFromMatrix(matrix, timePoints);
+      if (!blocks) {
+        return;
+      }
+
+      const fallbackTrips = this.buildFallbackTripDetails(matrix, timePoints, blocks);
+      normalizedDetails = normalizedDetails ? { ...normalizedDetails } : {};
+      normalizedDetails[day] = fallbackTrips;
+      mutated = true;
+    };
+
+    (['weekday', 'saturday', 'sunday'] as const).forEach(ensureDay);
+
+    if (!mutated) {
+      return schedule;
+    }
+
+    if (normalizedDetails && Object.keys(normalizedDetails).length > 0) {
+      return {
+        ...schedule,
+        tripDetails: normalizedDetails
+      };
+    }
+
+    const clearedSchedule = { ...schedule } as SummarySchedule & {
+      tripDetails?: SummarySchedule['tripDetails'];
+    };
+    delete clearedSchedule.tripDetails;
+    return clearedSchedule;
+  }
+
+  private hydrateSummaryScheduleFromStorage(schedule: any): SummarySchedule | undefined {
+    if (!schedule) {
+      return undefined;
+    }
+
+    const deserialized = this.deserializeFromFirebase(schedule);
+    return this.ensureTripDetailsIntegrity(deserialized as SummarySchedule);
+  }
+
+  private prepareSummaryScheduleForStorage(schedule: SummarySchedule): SummarySchedule {
+    return this.ensureTripDetailsIntegrity(schedule) || schedule;
+  }
+
+  private logDraftLoadMetrics(draftId: string, draft: any, durationMs: number): void {
+    try {
+      const uploadedData = draft?.originalData?.uploadedData;
+      const segmentCount = Array.isArray(uploadedData?.segments) ? uploadedData.segments.length : 0;
+      const timePointCount = Array.isArray(uploadedData?.timePoints) ? uploadedData.timePoints.length : 0;
+      const travelTimeRows = Array.isArray(draft?.timepointsAnalysis?.travelTimeData) ? draft.timepointsAnalysis.travelTimeData.length : 0;
+      const tripCount = Array.isArray(draft?.summarySchedule?.schedule?.weekday)
+        ? draft.summarySchedule.schedule.weekday.length
+        : Array.isArray(draft?.stepData?.summarySchedule?.weekday)
+          ? draft.stepData.summarySchedule.weekday.length
+          : 0;
+
+      if (durationMs > 25 || segmentCount > 0) {
+        console.info('⏱️ [DraftService] Draft load metrics', {
+          draftId,
+          durationMs: Number(durationMs.toFixed(2)),
+          segmentCount,
+          timePointCount,
+          travelTimeRows,
+          tripCount
+        });
+      }
+    } catch (metricError) {
+      console.warn('Failed to log draft metrics:', metricError);
+    }
   }
 
   /**
@@ -419,6 +671,7 @@ class UnifiedDraftService {
       const unifiedDraft: UnifiedDraftCompat = {
         draftId,
         draftName: sanitizeText(draftName),
+        userId: this.currentUserId || undefined,
         originalData,
         currentStep: 'upload',
         progress: 10, // Upload completed
@@ -431,7 +684,8 @@ class UnifiedDraftService {
           createdAt: now,
           lastModifiedAt: now,
           version: 1,
-          isPublished: false
+          isPublished: false,
+          isQuickAdjust: false
         }
       };
 
@@ -489,37 +743,45 @@ class UnifiedDraftService {
   ): Promise<WorkflowDraftResult> {
     try {
       console.log('🔥 [FirebaseDraftService] Updating timepoints for draft:', draftId);
-      
-      const draftRef = doc(db, this.COLLECTION_NAME, draftId);
-      const draftSnap = await getDoc(draftRef);
-      
-      if (!draftSnap.exists()) {
-        console.error('🔥 Draft not found in Firebase:', draftId);
-        return { success: false, error: 'Draft not found' };
-      }
-      
-      const draft = draftSnap.data() as WorkflowDraftState;
-      
-      // Update the draft with new data
-      const updatedDraft = {
-        ...draft,
+      const draftRef = this.getDraftDoc(draftId);
+      const analysisTimestamp = new Date().toISOString();
+      const sanitizedAnalysis = this.serializeForFirebase({
+        ...analysisData,
+        analysisTimestamp
+      });
+
+      const updatePayload: Record<string, unknown> = {
         currentStep: 'timepoints',
-        timepointsAnalysis: {
-          ...analysisData,
-          analysisTimestamp: new Date().toISOString()
-        },
-        metadata: {
-          ...draft.metadata,
-          lastModifiedAt: new Date().toISOString(),
-          lastModifiedStep: 'timepoints',
-          version: (draft.metadata.version || 0) + 1
-        },
+        timepointsAnalysis: sanitizedAnalysis,
         serverTimestamp: serverTimestamp()
       };
-      
-      // Serialize for Firebase compatibility (removes undefined values and handles nested arrays)
-      const serializedDraft = this.serializeForFirebase(updatedDraft);
-      await setDoc(draftRef, serializedDraft);
+
+      updatePayload['metadata.lastModifiedAt'] = analysisTimestamp;
+      updatePayload['metadata.lastModifiedStep'] = 'timepoints';
+      updatePayload['metadata.version'] = increment(1);
+
+      try {
+        await updateDoc(draftRef, updatePayload);
+      } catch (firestoreError: any) {
+        if (firestoreError?.code === 'not-found' || firestoreError?.message?.includes('No document to update')) {
+          await setDoc(draftRef, {
+            currentStep: 'timepoints',
+            timepointsAnalysis: sanitizedAnalysis,
+            metadata: {
+              lastModifiedAt: analysisTimestamp,
+              lastModifiedStep: 'timepoints',
+              version: 1,
+              isPublished: false
+            },
+            userId: this.currentUserId || null,
+            serverTimestamp: serverTimestamp()
+          }, { merge: true });
+        } else {
+          throw firestoreError;
+        }
+      }
+
+      this.invalidateCache(draftId);
       
       // Mark timepoints step as completed in workflow progress
       this.updateStepStatus(draftId, 'timepoints', 'completed', 100, {
@@ -552,34 +814,45 @@ class UnifiedDraftService {
     }
   ): Promise<WorkflowDraftResult> {
     try {
-      const draftRef = doc(db, this.COLLECTION_NAME, draftId);
-      const draftSnap = await getDoc(draftRef);
-      
-      if (!draftSnap.exists()) {
-        return { success: false, error: 'Draft not found' };
-      }
-      
-      const draft = draftSnap.data() as WorkflowDraftState;
-      
-      const updatedDraft = {
-        ...draft,
+      const draftRef = this.getDraftDoc(draftId);
+      const configurationTimestamp = new Date().toISOString();
+      const sanitizedConfig = this.serializeForFirebase({
+        ...blockConfig,
+        configurationTimestamp
+      });
+
+      const updatePayload: Record<string, unknown> = {
         currentStep: 'blocks',
-        blockConfiguration: {
-          ...blockConfig,
-          configurationTimestamp: new Date().toISOString()
-        },
-        metadata: {
-          ...draft.metadata,
-          lastModifiedAt: new Date().toISOString(),
-          lastModifiedStep: 'blocks',
-          version: (draft.metadata.version || 0) + 1
-        },
+        blockConfiguration: sanitizedConfig,
         serverTimestamp: serverTimestamp()
       };
-      
-      // Serialize for Firebase compatibility (removes undefined values and handles nested arrays)
-      const serializedDraft = this.serializeForFirebase(updatedDraft);
-      await setDoc(draftRef, serializedDraft);
+
+      updatePayload['metadata.lastModifiedAt'] = configurationTimestamp;
+      updatePayload['metadata.lastModifiedStep'] = 'blocks';
+      updatePayload['metadata.version'] = increment(1);
+
+      try {
+        await updateDoc(draftRef, updatePayload);
+      } catch (firestoreError: any) {
+        if (firestoreError?.code === 'not-found' || firestoreError?.message?.includes('No document to update')) {
+          await setDoc(draftRef, {
+            currentStep: 'blocks',
+            blockConfiguration: sanitizedConfig,
+            metadata: {
+              lastModifiedAt: configurationTimestamp,
+              lastModifiedStep: 'blocks',
+              version: 1,
+              isPublished: false
+            },
+            userId: this.currentUserId || null,
+            serverTimestamp: serverTimestamp()
+          }, { merge: true });
+        } else {
+          throw firestoreError;
+        }
+      }
+
+      this.invalidateCache(draftId);
       
       // Mark blocks step as completed in workflow progress
       this.updateStepStatus(draftId, 'blocks', 'completed', 100, {
@@ -611,34 +884,47 @@ class UnifiedDraftService {
     }
   ): Promise<WorkflowDraftResult> {
     try {
-      const draftRef = doc(db, this.COLLECTION_NAME, draftId);
-      const draftSnap = await getDoc(draftRef);
-      
-      if (!draftSnap.exists()) {
-        return { success: false, error: 'Draft not found' };
-      }
-      
-      const draft = draftSnap.data() as WorkflowDraftState;
-      
-      const updatedDraft = {
-        ...draft,
+      const draftRef = this.getDraftDoc(draftId);
+      const generationTimestamp = new Date().toISOString();
+      const scheduleForStorage = this.prepareSummaryScheduleForStorage(summaryData.schedule);
+      const sanitizedSummary = this.serializeForFirebase({
+        schedule: scheduleForStorage,
+        metadata: summaryData.metadata,
+        generationTimestamp
+      });
+
+      const updatePayload: Record<string, unknown> = {
         currentStep: 'ready-to-publish',
-        summarySchedule: {
-          ...summaryData,
-          generationTimestamp: new Date().toISOString()
-        },
-        metadata: {
-          ...draft.metadata,
-          lastModifiedAt: new Date().toISOString(),
-          lastModifiedStep: 'summary',
-          version: (draft.metadata.version || 0) + 1
-        },
+        summarySchedule: sanitizedSummary,
         serverTimestamp: serverTimestamp()
       };
-      
-      // Serialize for Firebase compatibility (removes undefined values and handles nested arrays)
-      const serializedDraft = this.serializeForFirebase(updatedDraft);
-      await setDoc(draftRef, serializedDraft);
+
+      updatePayload['metadata.lastModifiedAt'] = generationTimestamp;
+      updatePayload['metadata.lastModifiedStep'] = 'summary';
+      updatePayload['metadata.version'] = increment(1);
+
+      try {
+        await updateDoc(draftRef, updatePayload);
+      } catch (firestoreError: any) {
+        if (firestoreError?.code === 'not-found' || firestoreError?.message?.includes('No document to update')) {
+          await setDoc(draftRef, {
+            currentStep: 'ready-to-publish',
+            summarySchedule: sanitizedSummary,
+            metadata: {
+              lastModifiedAt: generationTimestamp,
+              lastModifiedStep: 'summary',
+              version: 1,
+              isPublished: false
+            },
+            userId: this.currentUserId || null,
+            serverTimestamp: serverTimestamp()
+          }, { merge: true });
+        } else {
+          throw firestoreError;
+        }
+      }
+
+      this.invalidateCache(draftId);
       
       // Mark summary step as completed in workflow progress
       this.updateStepStatus(draftId, 'summary', 'completed', 100, {
@@ -657,7 +943,151 @@ class UnifiedDraftService {
       return { success: false, error: `Failed to update: ${error.message}` };
     }
   }
+
+  async applyQuickAdjustImport(
+    draftId: string,
+    parseResult: QuickAdjustParseResult,
+    options?: { fileName?: string; validation?: ValidationResult; warnings?: string[] }
+  ): Promise<void> {
+    const primaryDay: 'weekday' | 'saturday' | 'sunday' =
+      parseResult.trips.weekday.length > 0
+        ? 'weekday'
+        : parseResult.trips.saturday.length > 0
+          ? 'saturday'
+          : 'sunday';
+
+    const summaryMetadata: ScheduleGenerationMetadata = {
+      generationMethod: 'quick-adjust',
+      parameters: {
+        source: 'quick-adjust-import',
+        fileName: options?.fileName,
+        warningCount: options?.warnings?.length || 0,
+        primaryDay
+      },
+      validationResults: [],
+      performanceMetrics: {
+        generationTimeMs: 0,
+        tripCount: parseResult.trips[primaryDay]?.length || 0,
+        memoryUsageMB: 0
+      }
+    };
+
+    await this.updateDraftWithSummarySchedule(draftId, {
+      schedule: parseResult.summarySchedule,
+      metadata: summaryMetadata
+    });
+
+    const workflow = this.getOrCreateWorkflow(draftId);
+    workflow.workflowMode = 'quick-adjust';
+    workflow.steps = workflow.steps.map(step => {
+      if (step.key === 'upload') {
+        return { ...step, status: 'completed', progress: 100 };
+      }
+      if (['drafts', 'timepoints', 'block-config'].includes(step.key)) {
+        return { ...step, status: 'skipped', progress: 100 };
+      }
+      if (step.key === 'summary') {
+        return { ...step, status: 'in-progress', progress: Math.max(step.progress ?? 0, 75) };
+      }
+      if (step.key === 'connections') {
+        return { ...step, status: 'not-started', progress: 0 };
+      }
+      return step;
+    });
+    workflow.currentStep = 'summary';
+    workflow.overallProgress = this.calculateWorkflowProgress(workflow.steps);
+    await this.saveWorkflow(workflow);
+
+    try {
+      const draftRef = this.getDraftDoc(draftId);
+      await setDoc(draftRef, {
+        'metadata.isQuickAdjust': true,
+        'metadata.quickAdjustPrimaryDay': primaryDay,
+        'metadata.lastModifiedAt': serverTimestamp()
+      }, { merge: true });
+    } catch (error) {
+      console.warn('Failed to persist quick adjust metadata:', error);
+    }
+
+    this.invalidateCache(draftId);
+    console.log('🚀 Quick adjust workflow applied:', { draftId, primaryDay, tripCounts: {
+      weekday: parseResult.trips.weekday.length,
+      saturday: parseResult.trips.saturday.length,
+      sunday: parseResult.trips.sunday.length
+    }});
+  }
   
+  async updateDraftWithConnectionOptimization(
+    draftId: string,
+    optimizationData: {
+      selectedConnections: ConnectionPoint[];
+      lastResult?: ConnectionOptimizationResult | null;
+      optimizationHistory: ConnectionOptimizationResult[];
+    }
+  ): Promise<WorkflowDraftResult> {
+    try {
+      const draftRef = this.getDraftDoc(draftId);
+      const optimizationTimestamp = new Date().toISOString();
+
+      const sanitizedLastResult = this.sanitizeOptimizationResultForStorage(optimizationData.lastResult ?? null);
+      const sanitizedHistory = (optimizationData.optimizationHistory || []).map(result =>
+        this.sanitizeOptimizationResultForStorage(result)
+      );
+
+      const sanitizedOptimization = this.serializeForFirebase({
+        selectedConnections: optimizationData.selectedConnections,
+        lastResult: sanitizedLastResult ?? undefined,
+        optimizationHistory: sanitizedHistory,
+        optimizationTimestamp,
+      });
+
+      const updatePayload: Record<string, unknown> = {
+        currentStep: 'connections',
+        connectionOptimization: sanitizedOptimization,
+        serverTimestamp: serverTimestamp(),
+      };
+
+      updatePayload['metadata.lastModifiedAt'] = optimizationTimestamp;
+      updatePayload['metadata.lastModifiedStep'] = 'connections';
+      updatePayload['metadata.version'] = increment(1);
+
+      try {
+        await updateDoc(draftRef, updatePayload);
+      } catch (firestoreError: any) {
+        if (firestoreError?.code === 'not-found' || firestoreError?.message?.includes('No document to update')) {
+          await setDoc(draftRef, {
+            currentStep: 'connections',
+            connectionOptimization: sanitizedOptimization,
+            metadata: {
+              lastModifiedAt: optimizationTimestamp,
+              lastModifiedStep: 'connections',
+              version: 1,
+              isPublished: false
+            },
+            userId: this.currentUserId || null,
+            serverTimestamp: serverTimestamp()
+          }, { merge: true });
+        } else {
+          throw firestoreError;
+        }
+      }
+
+      this.invalidateCache(draftId);
+
+      this.updateStepStatus(draftId, 'connections', 'completed', 100, {
+        connectionsConfigured: optimizationData.selectedConnections.length,
+        lastOptimizationAt: optimizationTimestamp
+      });
+
+      console.log('🔥 Updated connection optimization in Firebase');
+      return { success: true, draftId };
+    } catch (error: any) {
+      console.error('🔥 Failed to update connection optimization in Firebase:', error);
+      return { success: false, error: 'Failed to update: ' + (error?.message || 'Unknown error') };
+    }
+  }
+
+
   /**
    * Load draft with full state restoration data
    * This method loads everything needed to restore the user to exactly where they left off
@@ -778,7 +1208,7 @@ class UnifiedDraftService {
       this.setCurrentSessionDraft(draftId);
       
       // Determine target navigation step
-      let targetStep = '/upload'; // Default
+      let targetStep = '/new-schedule'; // Default
       
       switch (draft.currentStep) {
         case 'timepoints':
@@ -792,7 +1222,7 @@ class UnifiedDraftService {
           targetStep = '/summary-schedule';
           break;
         default:
-          targetStep = '/upload';
+          targetStep = '/new-schedule';
       }
       
       console.log(`📍 Resuming workflow at step: ${targetStep}`);
@@ -821,6 +1251,7 @@ class UnifiedDraftService {
    */
   async getDraftByIdUnified(draftId: string): Promise<UnifiedDraftCompat | null> {
     try {
+      const loadStart = typeof performance !== 'undefined' ? performance.now() : Date.now();
       // Check cache first
       const cached = this.getCachedDraft(draftId);
       if (cached) {
@@ -829,7 +1260,7 @@ class UnifiedDraftService {
       }
 
       console.log('🔥 Fetching unified draft from Firebase:', draftId);
-      const draftRef = doc(db, this.COLLECTION_NAME, draftId);
+      const draftRef = this.getDraftDoc(draftId);
       const draftSnap = await getDoc(draftRef);
       
       if (draftSnap.exists()) {
@@ -850,17 +1281,50 @@ class UnifiedDraftService {
         if (data.timepointsAnalysis?.serviceBands) {
           data.timepointsAnalysis.serviceBands = this.deserializeFromFirebase(data.timepointsAnalysis.serviceBands);
         }
-        
+
+        if (data.connectionOptimization?.selectedConnections) {
+          data.connectionOptimization.selectedConnections = this.deserializeFromFirebase(data.connectionOptimization.selectedConnections);
+        }
+
+        if (data.connectionOptimization?.lastResult) {
+          const restoredLastResult = this.restoreOptimizationResultFromStorage(
+            this.deserializeFromFirebase(data.connectionOptimization.lastResult)
+          );
+          data.connectionOptimization.lastResult = restoredLastResult || undefined;
+        }
+
+        if (data.connectionOptimization?.optimizationHistory) {
+          const history = this.deserializeFromFirebase(data.connectionOptimization.optimizationHistory);
+          data.connectionOptimization.optimizationHistory = Array.isArray(history)
+            ? history
+                .map((result: any) => this.restoreOptimizationResultFromStorage(result))
+                .filter((result): result is ConnectionOptimizationResult => Boolean(result))
+            : [];
+        }
+
+        if (data.summarySchedule?.schedule) {
+          data.summarySchedule.schedule = this.hydrateSummaryScheduleFromStorage(data.summarySchedule.schedule);
+        }
+
+        if (data.stepData?.summarySchedule) {
+          data.stepData.summarySchedule = this.hydrateSummaryScheduleFromStorage(data.stepData.summarySchedule);
+        }
+
         // Ensure draft has all required unified fields
         const unifiedDraft = this.ensureUnifiedFormat(data);
         
         // Cache the result
         this.setCachedDraft(draftId, unifiedDraft);
         
+        const loadEnd = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        const durationMs = loadEnd - loadStart;
+
+        this.logDraftLoadMetrics(draftId, unifiedDraft, durationMs);
+
         console.log('🔥 Unified draft loaded from Firebase and cached:', draftId, 'has uploadedData:', !!unifiedDraft.originalData?.uploadedData);
         return unifiedDraft;
       }
-      
+
       console.log('🔥 Draft not found in Firebase:', draftId);
       return null;
     } catch (error) {
@@ -883,13 +1347,23 @@ class UnifiedDraftService {
       // Update metadata
       draft.metadata.lastModifiedAt = new Date().toISOString();
       draft.metadata.version = (draft.metadata.version || 0) + 1;
+      if (!draft.userId && this.currentUserId) {
+        draft.userId = this.currentUserId;
+      }
+
+      if (draft.stepData?.summarySchedule) {
+        draft.stepData = {
+          ...draft.stepData,
+          summarySchedule: this.prepareSummaryScheduleForStorage(draft.stepData.summarySchedule)
+        };
+      }
       
       // Serialize the entire draft for Firebase compatibility (removes undefined values and handles nested arrays)
       const serializedDraft = this.serializeForFirebase(draft);
       
       // Save to Firestore using transaction for consistency
       await runTransaction(db, async (transaction) => {
-        const draftRef = doc(db, this.COLLECTION_NAME, draft.draftId);
+        const draftRef = this.getDraftDoc(draft.draftId);
         transaction.set(draftRef, {
           ...serializedDraft,
           serverTimestamp: serverTimestamp()
@@ -909,7 +1383,7 @@ class UnifiedDraftService {
       if (this.isNetworkError(error)) {
         const queued = offlineQueue.enqueue({
           type: 'save',
-          collection: this.COLLECTION_NAME,
+          collection: this.getUserCollectionPath(),
           documentId: draft.draftId,
           data: this.serializeForFirebase(draft)
         });
@@ -1047,7 +1521,7 @@ class UnifiedDraftService {
     // All retries failed, queue for offline
     const queued = offlineQueue.enqueue({
       type: 'save',
-      collection: this.COLLECTION_NAME,
+      collection: this.getUserCollectionPath(),
       documentId: draft.draftId,
       data: this.serializeForFirebase(draft)
     });
@@ -1068,7 +1542,7 @@ class UnifiedDraftService {
    */
   private async getRemoteDraft(draftId: string): Promise<UnifiedDraftCompat | null> {
     try {
-      const draftRef = doc(db, this.COLLECTION_NAME, draftId);
+      const draftRef = this.getDraftDoc(draftId);
       const draftSnap = await getDoc(draftRef);
       
       if (draftSnap.exists()) {
@@ -1078,6 +1552,14 @@ class UnifiedDraftService {
         // Deserialize data
         if (data.originalData?.uploadedData) {
           data.originalData.uploadedData = this.deserializeFromFirebase(data.originalData.uploadedData);
+        }
+
+        if (data.summarySchedule?.schedule) {
+          data.summarySchedule.schedule = this.hydrateSummaryScheduleFromStorage(data.summarySchedule.schedule);
+        }
+
+        if (data.stepData?.summarySchedule) {
+          data.stepData.summarySchedule = this.hydrateSummaryScheduleFromStorage(data.stepData.summarySchedule);
         }
         
         return this.ensureUnifiedFormat(data);
@@ -1313,20 +1795,25 @@ class UnifiedDraftService {
    */
   async getAllDraftsUnified(): Promise<UnifiedDraftCompat[]> {
     try {
-      // No authentication needed
       console.log('🔥 Loading all unified drafts from Firebase', {
-        isAuthenticated: false,
-        userId: 'anonymous',
-        isAnonymous: true,
+        isAuthenticated: Boolean(this.currentUserId),
+        userId: this.currentUserId || 'unknown',
         timestamp: new Date().toISOString()
       });
-      const draftsRef = collection(db, this.COLLECTION_NAME);
+      const draftsRef = this.getDraftCollection();
+      const queryConstraints: QueryConstraint[] = [];
+
+      if (this.useSharedCollection) {
+        const userId = this.requireUserId();
+        queryConstraints.push(where('userId', '==', userId));
+      }
       
       // Try ordered query first, fallback to unordered if it fails
       let querySnapshot;
       try {
         const q = query(
           draftsRef,
+          ...queryConstraints,
           orderBy('serverTimestamp', 'desc'),
           limit(this.MAX_DRAFTS)
         );
@@ -1335,7 +1822,11 @@ class UnifiedDraftService {
       } catch (orderError) {
         console.warn('🔥 Ordered query failed, trying unordered fallback:', orderError);
         // Fallback: get all drafts without ordering
-        const fallbackQuery = query(draftsRef, limit(this.MAX_DRAFTS));
+        const fallbackQuery = query(
+          draftsRef,
+          ...queryConstraints,
+          limit(this.MAX_DRAFTS)
+        );
         querySnapshot = await getDocs(fallbackQuery);
         console.log('🔥 Using unordered fallback query');
       }
@@ -1350,8 +1841,16 @@ class UnifiedDraftService {
         delete data.serverTimestamp;
         
         // Ensure draft has all required unified fields
+        if (data.summarySchedule?.schedule) {
+          data.summarySchedule.schedule = this.hydrateSummaryScheduleFromStorage(data.summarySchedule.schedule);
+        }
+
+        if (data.stepData?.summarySchedule) {
+          data.stepData.summarySchedule = this.hydrateSummaryScheduleFromStorage(data.stepData.summarySchedule);
+        }
+
         const unifiedDraft = this.ensureUnifiedFormat(data);
-        drafts.push(unifiedDraft);
+      drafts.push(unifiedDraft);
       });
       
       console.log(`🔥 Loaded ${drafts.length} unified drafts from Firebase`);
@@ -1364,7 +1863,7 @@ class UnifiedDraftService {
       });
     } catch (error) {
       console.error('🔥 Error loading unified drafts from Firebase:', error);
-      return [];
+      throw error;
     }
   }
   
@@ -1373,7 +1872,7 @@ class UnifiedDraftService {
    */
   async deleteDraft(draftId: string): Promise<WorkflowDraftResult> {
     try {
-      const draftRef = doc(db, this.COLLECTION_NAME, draftId);
+      const draftRef = this.getDraftDoc(draftId);
       await deleteDoc(draftRef);
       
       console.log('🔥 Deleted draft from Firebase:', draftId);
@@ -1459,29 +1958,29 @@ class UnifiedDraftService {
     }
 
     try {
-      // Import scheduleStorage to save as completed schedule
-      const { scheduleStorage } = await import('./scheduleStorage');
+      // Persist final schedule to Firebase
+      const { firebaseStorage } = await import('./firebaseStorage');
       
-      const result = scheduleStorage.saveSchedule(
+      const result = await firebaseStorage.saveSchedule(
         draft.stepData.summarySchedule,
         draft.originalData.fileType,
         draft.draftName,
-        null // userId - will use current user from scheduleStorage
+        null
       );
 
-      if (result.success && result.scheduleId) {
-        // Mark draft as published rather than delete it
-        draft.metadata.isPublished = true;
-        draft.metadata.publishedAt = new Date().toISOString();
-        draft.metadata.publishedScheduleId = result.scheduleId;
-        
-        await this.saveDraftInternal(draft);
-        
-        console.log('🔥 Promoted draft to schedule:', result.scheduleId);
-        return { success: true, scheduleId: result.scheduleId, draftId };
-      } else {
-        return { success: false, error: result.error };
+      if (!result.success || !result.scheduleId) {
+        return { success: false, error: result.error || 'Failed to save schedule to cloud' };
       }
+
+      // Mark draft as published rather than delete it
+      draft.metadata.isPublished = true;
+      draft.metadata.publishedAt = new Date().toISOString();
+      draft.metadata.publishedScheduleId = result.scheduleId;
+
+      await this.saveDraftInternal(draft);
+
+      console.log('✅ Promoted draft to schedule:', result.scheduleId);
+      return { success: true, scheduleId: result.scheduleId, draftId };
     } catch (error: any) {
       return { success: false, error: sanitizeErrorMessage(error) };
     }
@@ -1713,10 +2212,12 @@ class UnifiedDraftService {
       hasUploadedData: !!data.originalData?.uploadedData,
       uploadedDataKeys: data.originalData?.uploadedData ? Object.keys(data.originalData.uploadedData).slice(0, 5) : [],
       originalFileName: data.originalData?.fileName,
-      currentStep: data.currentStep
+      currentStep: data.currentStep,
+      hasUserId: !!data.userId
     });
 
     const now = new Date().toISOString();
+    const ownerId = typeof data.userId === 'string' ? data.userId : this.currentUserId || undefined;
     
     // If it's already a WorkflowDraftState, convert it
     if (data.currentStep && data.originalData && data.metadata && !data.draftName) {
@@ -1730,10 +2231,16 @@ class UnifiedDraftService {
         originalData.uploadedData = data.originalData.uploadedData;
         console.log('🔧 Preserving uploadedData in conversion, data exists:', !!originalData.uploadedData);
       }
+
+      const legacySummarySchedule = (data.summarySchedule?.schedule || data.summarySchedule) as SummarySchedule | undefined;
+      const normalizedSummarySchedule = legacySummarySchedule
+        ? this.ensureTripDetailsIntegrity(legacySummarySchedule)
+        : undefined;
       
       return {
         draftId: data.draftId,
         draftName: data.originalData.fileName?.replace(/\.[^/.]+$/, '') || 'Draft',
+        userId: ownerId,
         originalData: originalData, // Use the preserved originalData
         currentStep: data.currentStep === 'ready-to-publish' ? 'ready' : data.currentStep,
         progress: this.calculateProgress(data.currentStep),
@@ -1746,7 +2253,7 @@ class UnifiedDraftService {
             timePeriodServiceBands: data.timepointsAnalysis.timePeriodServiceBands
           } : undefined,
           blockConfiguration: data.blockConfiguration,
-          summarySchedule: data.summarySchedule?.schedule || data.summarySchedule
+          summarySchedule: normalizedSummarySchedule
         },
         ui: data.ui || {
           celebrationsShown: [],
@@ -1760,9 +2267,20 @@ class UnifiedDraftService {
     }
     
     // If it's already unified format, ensure all fields exist
+    const normalizedStepData = data.stepData ? { ...data.stepData } : {};
+    if (normalizedStepData.summarySchedule) {
+      const ensuredSummary = this.ensureTripDetailsIntegrity(normalizedStepData.summarySchedule);
+      if (ensuredSummary) {
+        normalizedStepData.summarySchedule = ensuredSummary;
+      } else {
+        delete normalizedStepData.summarySchedule;
+      }
+    }
+
     return {
       draftId: data.draftId || this.generateDraftId(),
       draftName: data.draftName || 'Draft',
+      userId: ownerId,
       originalData: data.originalData || {
         fileName: 'Unknown',
         fileType: 'csv',
@@ -1771,7 +2289,7 @@ class UnifiedDraftService {
       },
       currentStep: data.currentStep || 'upload',
       progress: data.progress || 10,
-      stepData: data.stepData || {},
+      stepData: normalizedStepData,
       ui: data.ui || {
         celebrationsShown: [],
         lastViewedStep: 'upload'
@@ -1803,6 +2321,9 @@ class UnifiedDraftService {
       switch (step) {
         case 'ready': return 'ready-to-publish';
         case 'connections': return 'timepoints'; // Map connections to timepoints
+        case 'block-config': 
+          // Preserve explicit block-config step for quick adjust and redesigned workflows
+          return 'block-config';
         case 'upload':
         case 'timepoints':
         case 'blocks':
@@ -1823,19 +2344,20 @@ class UnifiedDraftService {
       uploadTimestamp: draft.metadata.createdAt
     };
 
-    const converted = {
+    const converted: WorkflowDraftState = {
       draftId: draft.draftId,
       currentStep: mapStep(draft.currentStep),
+      workflowMode: draft.metadata?.isQuickAdjust ? 'quick-adjust' : 'full',
       originalData: safeOriginalData,
       timepointsAnalysis: draft.stepData.timepoints ? {
         serviceBands: draft.stepData.timepoints.serviceBands,
         travelTimeData: draft.stepData.timepoints.travelTimeData,
         outliers: draft.stepData.timepoints.outliers,
         userModifications: [],
-        deletedPeriods: draft.stepData.timepoints.deletedPeriods,
-        timePeriodServiceBands: draft.stepData.timepoints.timePeriodServiceBands,
-        analysisTimestamp: draft.metadata.lastModifiedAt
-      } : undefined,
+          deletedPeriods: draft.stepData.timepoints.deletedPeriods,
+          timePeriodServiceBands: draft.stepData.timepoints.timePeriodServiceBands,
+          analysisTimestamp: draft.metadata.lastModifiedAt
+        } : undefined,
       blockConfiguration: draft.stepData.blockConfiguration ? {
         ...draft.stepData.blockConfiguration,
         configurationTimestamp: draft.metadata.lastModifiedAt
@@ -1843,7 +2365,7 @@ class UnifiedDraftService {
       summarySchedule: draft.stepData.summarySchedule ? {
         schedule: draft.stepData.summarySchedule,
         metadata: {
-          generationMethod: 'block-based' as const,
+          generationMethod: (draft.metadata?.isQuickAdjust ? 'quick-adjust' : 'block-based') as 'block-based' | 'quick-adjust',
           parameters: {},
           validationResults: [],
           performanceMetrics: {
@@ -1961,6 +2483,10 @@ class UnifiedDraftService {
   getOrCreateWorkflow(draftId: string, draftName?: string): DraftWorkflowState {
     const existingWorkflow = this.getWorkflow(draftId);
     if (existingWorkflow) {
+      if (!existingWorkflow.userId && this.currentUserId) {
+        existingWorkflow.userId = this.currentUserId;
+        this.saveWorkflow(existingWorkflow).catch(() => undefined);
+      }
       return existingWorkflow;
     }
 
@@ -1969,10 +2495,12 @@ class UnifiedDraftService {
       draftId,
       draftName: draftName || `Draft ${draftId.substring(0, 8)}`,
       currentStep: 'upload',
+      workflowMode: 'full',
       steps: this.initializeSteps(),
       overallProgress: 0,
       lastModified: now,
       createdAt: now,
+       userId: this.currentUserId || undefined,
       celebrationsShown: []
     };
 
@@ -2018,28 +2546,32 @@ class UnifiedDraftService {
    * Load workflow from cloud (Firebase first, fallback to localStorage)
    */
   async loadWorkflowFromCloud(draftId: string): Promise<DraftWorkflowState | null> {
-    try {
-      // Try loading from Firebase first
-      console.log('🔥 Loading workflow from Firebase:', draftId);
-      const workflowProgressRef = doc(db, 'workflow_progress', draftId);
-      const workflowSnap = await getDoc(workflowProgressRef);
-      
-      if (workflowSnap.exists()) {
-        const firebaseWorkflow = workflowSnap.data();
-        console.log('✅ Workflow loaded from Firebase:', draftId);
-        
-        // Cache in localStorage for offline use
-        localStorage.setItem(
-          this.WORKFLOW_KEY_PREFIX + draftId,
-          JSON.stringify(firebaseWorkflow)
-        );
-        
-        return firebaseWorkflow as DraftWorkflowState;
-      } else {
-        console.log('🔍 No workflow found in Firebase, checking localStorage');
+    if (!this.canUseCloudSync()) {
+      console.log('⚠️  Skipping Firebase workflow load (cloud sync disabled or user not authenticated)');
+    } else {
+      try {
+        // Try loading from Firebase first
+        console.log('🔥 Loading workflow from Firebase:', draftId);
+        const workflowProgressRef = doc(db, 'workflow_progress', draftId);
+        const workflowSnap = await getDoc(workflowProgressRef);
+
+        if (workflowSnap.exists()) {
+          const firebaseWorkflow = workflowSnap.data();
+          console.log('✅ Workflow loaded from Firebase:', draftId);
+
+          // Cache in localStorage for offline use
+          localStorage.setItem(
+            this.WORKFLOW_KEY_PREFIX + draftId,
+            JSON.stringify(firebaseWorkflow)
+          );
+
+          return firebaseWorkflow as DraftWorkflowState;
+        } else {
+          console.log('🔍 No workflow found in Firebase, checking localStorage');
+        }
+      } catch (error) {
+        console.warn('🔥 Firebase load failed, falling back to localStorage:', error);
       }
-    } catch (error) {
-      console.warn('🔥 Firebase load failed, falling back to localStorage:', error);
     }
     
     // Fall back to localStorage if Firebase fails or no data
@@ -2094,6 +2626,9 @@ class UnifiedDraftService {
   private async performWorkflowSave(workflow: DraftWorkflowState): Promise<void> {
     try {
       workflow.lastModified = new Date().toISOString();
+      if (!workflow.userId && this.currentUserId) {
+        workflow.userId = this.currentUserId;
+      }
 
       // Save to localStorage first (instant feedback)
       localStorage.setItem(
@@ -2112,16 +2647,46 @@ class UnifiedDraftService {
   /**
    * Save workflow to Firebase with retry logic
    */
+  private cleanForFirebase(data: any): any {
+    if (data === null || data === undefined) {
+      return null;
+    }
+    if (Array.isArray(data)) {
+      return data
+        .map(item => this.cleanForFirebase(item))
+        .filter(item => item !== undefined);
+    }
+    if (typeof data === 'object') {
+      const cleaned: any = {};
+      for (const [key, value] of Object.entries(data)) {
+        if (value === undefined) {
+          continue;
+        }
+        const cleanedValue = this.cleanForFirebase(value);
+        if (cleanedValue !== undefined) {
+          cleaned[key] = cleanedValue;
+        }
+      }
+      return cleaned;
+    }
+    return data;
+  }
+
   private async saveWorkflowToFirebase(
     workflow: DraftWorkflowState, 
     maxRetries: number = 2
   ): Promise<void> {
+    if (!this.canUseCloudSync()) {
+      console.log('⚠️  Skipping Firebase workflow sync (cloud sync disabled or user not authenticated)');
+      return;
+    }
+
     let retryCount = 0;
     
     while (retryCount <= maxRetries) {
       try {
         const workflowProgressRef = doc(db, 'workflow_progress', workflow.draftId);
-        const workflowData = {
+        const workflowData = this.cleanForFirebase({
           draftId: workflow.draftId,
           draftName: workflow.draftName,
           routeName: workflow.routeName || null,
@@ -2133,7 +2698,11 @@ class UnifiedDraftService {
           celebrationsShown: workflow.celebrationsShown || [],
           stepData: workflow.stepData || {},
           serverTimestamp: serverTimestamp()
-        };
+        });
+
+        if (!workflowData.userId && this.currentUserId) {
+          (workflowData as any).userId = this.currentUserId;
+        }
         
         await setDoc(workflowProgressRef, workflowData);
         console.log('✅ Workflow synced to Firebase:', workflow.draftId);
@@ -2160,7 +2729,8 @@ class UnifiedDraftService {
                 lastModified: workflow.lastModified,
                 createdAt: workflow.createdAt,
                 celebrationsShown: workflow.celebrationsShown || [],
-                stepData: workflow.stepData || {}
+                stepData: workflow.stepData || {},
+                userId: workflow.userId || this.currentUserId || null
               }
             });
             
@@ -2184,7 +2754,7 @@ class UnifiedDraftService {
   async updateStepStatus(
     draftId: string,
     stepKey: string,
-    status: 'not-started' | 'in-progress' | 'completed',
+    status: 'not-started' | 'in-progress' | 'completed' | 'skipped',
     progress?: number,
     metadata?: any
   ): Promise<DraftWorkflowState | null> {
@@ -2197,16 +2767,22 @@ class UnifiedDraftService {
     const oldStatus = workflow.steps[stepIndex].status;
     
     // Update the step
+    const resolvedProgress = progress ?? (
+      status === 'completed' || status === 'skipped' ? 100 :
+      status === 'in-progress' ? 50 : 0
+    );
+
     workflow.steps[stepIndex] = {
       ...workflow.steps[stepIndex],
       status,
-      progress: progress ?? (status === 'completed' ? 100 : status === 'in-progress' ? 50 : 0),
-      completedAt: status === 'completed' ? new Date().toISOString() : undefined,
+      progress: resolvedProgress,
+      completedAt: status === 'completed' || status === 'skipped' ? new Date().toISOString() : undefined,
       metadata
     };
 
     // If completing a step, mark the next one as available
-    if (status === 'completed' && oldStatus !== 'completed') {
+    const isFinalizedStatus = (status === 'completed' || status === 'skipped');
+    if (isFinalizedStatus && oldStatus !== 'completed' && oldStatus !== 'skipped') {
       if (stepIndex < workflow.steps.length - 1) {
         workflow.steps[stepIndex + 1].status = 'in-progress';
         workflow.currentStep = workflow.steps[stepIndex + 1].key;
@@ -2225,7 +2801,7 @@ class UnifiedDraftService {
     
     // Also persist to Firebase for proper sync
     try {
-      const draftRef = doc(db, this.COLLECTION_NAME, draftId);
+      const draftRef = this.getDraftDoc(draftId);
       const draftSnap = await getDoc(draftRef);
       
       if (draftSnap.exists()) {
@@ -2244,8 +2820,8 @@ class UnifiedDraftService {
         
         updateData[`stepData.${stepKey}`] = {
           status,
-          completedAt: status === 'completed' ? new Date().toISOString() : null,
-          progress: progress || 0,
+          completedAt: status === 'completed' || status === 'skipped' ? new Date().toISOString() : null,
+          progress: resolvedProgress || 0,
           metadata
         };
         
@@ -2271,7 +2847,7 @@ class UnifiedDraftService {
         payload: {
           currentStep: currentStepMapped,
           progress: workflow.overallProgress || 0,
-          canProceed: status === 'completed'
+          canProceed: status === 'completed' || status === 'skipped'
         }
       });
     } catch (eventError) {
@@ -2286,7 +2862,7 @@ class UnifiedDraftService {
    */
   private calculateWorkflowProgress(steps: WorkflowStepData[]): number {
     const totalSteps = steps.length;
-    const completedSteps = steps.filter(s => s.status === 'completed').length;
+    const completedSteps = steps.filter(s => s.status === 'completed' || s.status === 'skipped').length;
     const inProgressSteps = steps.filter(s => s.status === 'in-progress').length;
     
     // Give partial credit for in-progress steps
@@ -2495,6 +3071,13 @@ class UnifiedDraftService {
    */
   async saveDraft(draft: UnifiedDraftCompat, userId: string): Promise<DraftOperationResult> {
     try {
+      const resolvedUserId = userId?.trim();
+      if (!resolvedUserId) {
+        return { success: false, error: 'User is not authenticated' };
+      }
+
+      this.setCurrentUser(resolvedUserId);
+
       // Mark sync status as pending
       draft.metadata.syncStatus = 'pending';
       
@@ -2525,6 +3108,11 @@ class UnifiedDraftService {
    */
   async getDraft(draftId: string, userId: string): Promise<UnifiedDraftCompat | null> {
     try {
+      const resolvedUserId = userId?.trim();
+      if (!resolvedUserId) {
+        throw new Error('User is not authenticated');
+      }
+      this.setCurrentUser(resolvedUserId);
       return await this.getDraftByIdUnified(draftId);
     } catch (error) {
       console.error('Failed to get draft:', error);

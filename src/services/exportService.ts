@@ -22,6 +22,9 @@ import {
 } from '../types/export';
 import { SummarySchedule, TimePoint, ServiceBand } from '../types/schedule';
 import { sanitizeText } from '../utils/inputSanitizer';
+import { computeBlocksFromMatrix } from '../utils/blockAssignment';
+
+type DayKey = 'weekday' | 'saturday' | 'sunday';
 
 /**
  * System export templates
@@ -573,44 +576,23 @@ class ExportService {
   }
 
   private generateSampleData(options: ExportOptions, dataBundle: ExportDataBundle, limit: number): { headers: string[], rows: any[][] } {
-    // Generate sample based on template and scope
-    const headers: string[] = [];
-    const rows: any[][] = [];
-
     if (options.scope.includeGeneratedSchedule && dataBundle.summarySchedule) {
-      headers.push('Trip', 'Block', 'Day Type', 'Departure Time');
-      
-      // Add timepoint headers
-      if (dataBundle.summarySchedule.timePoints) {
-        dataBundle.summarySchedule.timePoints.forEach(tp => {
-          headers.push(tp.name);
-        });
+      const actualData = this.generateActualScheduleData(dataBundle);
+      if (limit > 0 && actualData.rows.length > limit) {
+        return {
+          headers: actualData.headers,
+          rows: actualData.rows.slice(0, limit)
+        };
       }
-
-      // Add sample rows (limited)
-      let rowCount = 0;
-      const addSampleTrips = (trips: any[], dayType: string) => {
-        for (let i = 0; i < Math.min(trips.length, limit - rowCount); i++) {
-          const trip = trips[i];
-          const row = [i + 1, Math.ceil((i + 1) / 3), dayType, '06:00'];
-          
-          // Add sample times for each timepoint
-          if (dataBundle.summarySchedule?.timePoints) {
-            dataBundle.summarySchedule.timePoints.forEach((_, idx) => {
-              row.push(`06:${String(idx * 5).padStart(2, '0')}`);
-            });
-          }
-          
-          rows.push(row);
-          rowCount++;
-        }
-      };
-
-      if (dataBundle.summarySchedule.weekday?.length) {
-        addSampleTrips(dataBundle.summarySchedule.weekday, 'Weekday');
-      }
+      return actualData;
     }
 
+    // Fallback sample when no schedule is available
+    const headers = ['Trip', 'Block', 'Day Type', 'Departure Time'];
+    const rows: any[][] = [];
+    for (let i = 0; i < Math.min(limit, 10); i++) {
+      rows.push([i + 1, '', 'Weekday', '06:00']);
+    }
     return { headers, rows };
   }
 
@@ -772,6 +754,37 @@ class ExportService {
     };
   }
 
+
+  private createBlockResolver(dataBundle: ExportDataBundle) {
+    const schedule = dataBundle.summarySchedule;
+    const cache: Partial<Record<DayKey, number[]>> = {};
+
+    return (dayType: DayKey, tripIndex: number): number | null => {
+      if (!schedule || !schedule.timePoints) {
+        return null;
+      }
+
+      const tripsSource = dataBundle.tripsByDay?.[dayType]
+        || schedule.tripDetails?.[dayType];
+      const trip = tripsSource && tripsSource[tripIndex];
+
+      if (trip && typeof trip.blockNumber === 'number' && trip.blockNumber > 0) {
+        return trip.blockNumber;
+      }
+
+      if (!cache[dayType]) {
+        const matrix = (schedule as any)[dayType];
+        cache[dayType] = computeBlocksFromMatrix(matrix, schedule.timePoints) || [];
+      }
+
+      const fallback = cache[dayType];
+      if (fallback && fallback[tripIndex] !== undefined) {
+        return fallback[tripIndex];
+      }
+
+      return null;
+    };
+  }
   private generateActualScheduleData(dataBundle: ExportDataBundle): { headers: string[], rows: any[][] } {
     const headers: string[] = [];
     const rows: any[][] = [];
@@ -782,7 +795,8 @@ class ExportService {
     }
 
     const schedule = dataBundle.summarySchedule;
-    
+    const resolveBlock = this.createBlockResolver(dataBundle);
+
     // Create headers: Trip info + Timepoint columns
     headers.push('Trip', 'Block', 'Day Type');
     
@@ -792,74 +806,42 @@ class ExportService {
       });
     }
 
-    // Process weekday trips
+    const appendTripRow = (tripTimes: string[] | undefined, dayType: DayKey, tripIndex: number) => {
+      const blockNumber = resolveBlock(dayType, tripIndex);
+      const row: any[] = [
+        tripIndex + 1,
+        blockNumber ?? '',
+        dayType.charAt(0).toUpperCase() + dayType.slice(1)
+      ];
+
+      if (Array.isArray(tripTimes)) {
+        tripTimes.forEach(time => {
+          row.push(time || '');
+        });
+      } else {
+        schedule.timePoints?.forEach(() => {
+          row.push('');
+        });
+      }
+
+      rows.push(row);
+    };
+
     if (schedule.weekday && schedule.weekday.length > 0) {
       schedule.weekday.forEach((tripTimes, tripIndex) => {
-        const row = [
-          tripIndex + 1, // Trip number
-          Math.ceil((tripIndex + 1) / 3), // Block number (assuming 3 trips per block)
-          'Weekday' // Day type
-        ];
-        
-        // Add time for each timepoint
-        if (Array.isArray(tripTimes)) {
-          tripTimes.forEach(time => {
-            row.push(time || '');
-          });
-        } else {
-          // Handle case where tripTimes might not be an array
-          schedule.timePoints?.forEach(() => {
-            row.push('');
-          });
-        }
-        
-        rows.push(row);
+        appendTripRow(tripTimes, 'weekday', tripIndex);
       });
     }
 
-    // Process Saturday trips (if available)
     if (schedule.saturday && schedule.saturday.length > 0) {
       schedule.saturday.forEach((tripTimes, tripIndex) => {
-        const row = [
-          tripIndex + 1,
-          Math.ceil((tripIndex + 1) / 3),
-          'Saturday'
-        ];
-        
-        if (Array.isArray(tripTimes)) {
-          tripTimes.forEach(time => {
-            row.push(time || '');
-          });
-        } else {
-          schedule.timePoints?.forEach(() => {
-            row.push('');
-          });
-        }
-        
-        rows.push(row);
+        appendTripRow(tripTimes, 'saturday', tripIndex);
       });
     }
 
-    // Process Sunday trips (if available)
     if (schedule.sunday && schedule.sunday.length > 0) {
       schedule.sunday.forEach((tripTimes, tripIndex) => {
-        const row = [
-          tripIndex + 1,
-          Math.ceil((tripIndex + 1) / 3),
-          'Sunday'
-        ];
-        
-        if (Array.isArray(tripTimes)) {
-          tripTimes.forEach(time => {
-            row.push(time || '');
-          });
-        } else {
-          schedule.timePoints?.forEach(() => {
-            row.push('');
-          });
-        }
-        
-        rows.push(row);
+        appendTripRow(tripTimes, 'sunday', tripIndex);
       });
     }
 
@@ -887,6 +869,9 @@ class ExportService {
 
     if (options.scope.includeGeneratedSchedule && dataBundle.summarySchedule) {
       exportData.summarySchedule = dataBundle.summarySchedule;
+      if (dataBundle.tripsByDay) {
+        exportData.tripsByDay = dataBundle.tripsByDay;
+      }
     }
 
     if (options.scope.includeConfiguration && dataBundle.blockConfiguration) {

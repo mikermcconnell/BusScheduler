@@ -3,7 +3,7 @@
  * Shows real-time sync status for workflow persistence
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Snackbar,
@@ -71,42 +71,52 @@ export const SyncStatusIndicator: React.FC<SyncStatusIndicatorProps> = ({
   const [errorMessage, setErrorMessage] = useState('');
   const [showSuccessSnackbar, setShowSuccessSnackbar] = useState(false);
   
+  const previousStateRef = useRef<SyncState>('idle');
+  const previousQueueSizeRef = useRef<number>(0);
+  
   useEffect(() => {
-    // Subscribe to offline queue status
     const unsubscribe = offlineQueue.subscribe((queueStatus: QueueStatus) => {
       const newStatus = mapQueueStatusToSyncStatus(queueStatus);
       setSyncStatus(newStatus);
-      
-      // Show error snackbar for new errors
-      if (newStatus.state === 'error' && !showErrorSnackbar) {
+
+      const previousState = previousStateRef.current;
+      const previousQueueSize = previousQueueSizeRef.current;
+
+      previousStateRef.current = newStatus.state;
+      previousQueueSizeRef.current = newStatus.queueSize;
+
+      if (newStatus.state === 'error' && previousState !== 'error') {
         setErrorMessage(customError || queueStatus.lastError || 'Sync failed');
         setShowErrorSnackbar(true);
       }
 
-      // Show success snackbar when sync completes
-      if (newStatus.state === 'saved' && newStatus.queueSize === 0 && !showSuccessSnackbar) {
+      const transitionedToSaved =
+        newStatus.state === 'saved' &&
+        newStatus.queueSize === 0 &&
+        (previousState !== 'saved' || previousQueueSize > 0);
+
+      if (transitionedToSaved) {
         setShowSuccessSnackbar(true);
       }
     });
-    
-    // Listen for online/offline events
+
     const handleOnline = () => {
       setSyncStatus(prev => ({ ...prev, isOnline: true }));
     };
-    
+
     const handleOffline = () => {
       setSyncStatus(prev => ({ ...prev, isOnline: false, state: 'offline' }));
     };
-    
+
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
-    
+
     return () => {
       unsubscribe();
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  }, [showErrorSnackbar, showSuccessSnackbar, customError]);
+  }, [customError]);
   
   const mapQueueStatusToSyncStatus = (queueStatus: QueueStatus): SyncStatus => {
     const { isOnline, queueSize, processing, lastSyncTime, lastError } = queueStatus;

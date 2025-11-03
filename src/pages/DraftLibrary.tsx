@@ -35,10 +35,12 @@ import {
   Refresh as RefreshIcon
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 import { draftService, UnifiedDraftCompat } from '../services/draftService';
 
 const DraftLibrary: React.FC = () => {
   const navigate = useNavigate();
+  const { user, loading: authLoading } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [drafts, setDrafts] = useState<UnifiedDraftCompat[]>([]);
@@ -50,11 +52,17 @@ const DraftLibrary: React.FC = () => {
 
   // Load drafts on component mount
   useEffect(() => {
-    loadDrafts();
-  }, []);
+    if (!authLoading && user) {
+      loadDrafts();
+    }
+  }, [authLoading, user]);
 
   const loadDrafts = async () => {
     try {
+      if (!user) {
+        setDrafts([]);
+        return;
+      }
       setLoading(true);
       const allDrafts = await draftService.getAllDraftsUnified();
       setDrafts(allDrafts);
@@ -150,8 +158,12 @@ const DraftLibrary: React.FC = () => {
     if (!selectedDraft || !newDraftName.trim()) return;
     
     try {
+      if (!user) {
+        setError('You must be signed in to rename drafts.');
+        return;
+      }
       const draft = { ...selectedDraft, draftName: newDraftName.trim() };
-      const result = await draftService.saveDraft(draft, 'current-user');
+      const result = await draftService.saveDraft(draft, user.uid);
       if (result.success) {
         // Update local state
         setDrafts(prev => prev.map(d => 
@@ -228,7 +240,7 @@ const DraftLibrary: React.FC = () => {
             <Button
               variant="contained"
               startIcon={<UploadIcon />}
-              onClick={() => navigate('/upload')}
+              onClick={() => navigate('/new-schedule')}
             >
               New Schedule
             </Button>
@@ -243,8 +255,44 @@ const DraftLibrary: React.FC = () => {
         </Alert>
       )}
 
-      {/* Loading State */}
-      {loading ? (
+      {/* Loading / Auth State */}
+      {authLoading ? (
+        <Grid container spacing={3}>
+          {[1, 2, 3].map((i) => (
+            <Grid key={i} size={{ xs: 12, sm: 6, md: 4 }}>
+              <Card>
+                <CardContent>
+                  <Skeleton variant="text" height={32} sx={{ mb: 1 }} />
+                  <Skeleton variant="text" height={20} sx={{ mb: 2 }} />
+                  <Skeleton variant="rectangular" height={60} sx={{ mb: 1 }} />
+                  <Skeleton variant="text" height={20} />
+                </CardContent>
+              </Card>
+            </Grid>
+          ))}
+        </Grid>
+      ) : !user ? (
+        <Paper
+          sx={{
+            p: 6,
+            textAlign: 'center',
+            backgroundColor: 'grey.50',
+            border: '2px dashed',
+            borderColor: 'grey.300'
+          }}
+        >
+          <FolderIcon sx={{ fontSize: 64, color: 'grey.400', mb: 2 }} />
+          <Typography variant="h5" color="text.secondary" gutterBottom>
+            Sign In Required
+          </Typography>
+          <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+            Please sign in to view and manage your schedule drafts.
+          </Typography>
+          <Button variant="contained" onClick={() => navigate('/signin')} size="large">
+            Go to Sign In
+          </Button>
+        </Paper>
+      ) : loading ? (
         <Grid container spacing={3}>
           {[1, 2, 3].map((i) => (
             <Grid key={i} size={{ xs: 12, sm: 6, md: 4 }}>
@@ -280,7 +328,7 @@ const DraftLibrary: React.FC = () => {
           <Button
             variant="contained"
             startIcon={<UploadIcon />}
-            onClick={() => navigate('/upload')}
+            onClick={() => navigate('/new-schedule')}
             size="large"
           >
             Upload First Schedule

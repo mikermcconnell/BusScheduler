@@ -58,7 +58,7 @@ const ContextualActions: React.FC<ContextualActionsProps> = ({
         {
           label: 'New Schedule',
           icon: <UploadIcon />,
-          onClick: () => navigate('/upload'),
+          onClick: () => navigate('/new-schedule'),
           primary: true,
           color: 'primary',
           tooltip: 'Start creating a new schedule'
@@ -85,7 +85,7 @@ const ContextualActions: React.FC<ContextualActionsProps> = ({
         {
           label: 'New Upload',
           icon: <UploadIcon />,
-          onClick: () => navigate('/upload'),
+          onClick: () => navigate('/new-schedule'),
           primary: true,
           color: 'primary',
           tooltip: 'Upload new schedule data'
@@ -168,7 +168,7 @@ const ContextualActions: React.FC<ContextualActionsProps> = ({
         {
           label: 'New Schedule',
           icon: <UploadIcon />,
-          onClick: () => navigate('/upload'),
+          onClick: () => navigate('/new-schedule'),
           color: 'primary',
           tooltip: 'Start a new schedule'
         }
@@ -176,7 +176,7 @@ const ContextualActions: React.FC<ContextualActionsProps> = ({
     }
 
     // Upload schedule context
-    if (path.includes('/upload')) {
+    if (path.includes('/new-schedule') || path.includes('/edit-schedule')) {
       return [
         {
           label: 'View Drafts',

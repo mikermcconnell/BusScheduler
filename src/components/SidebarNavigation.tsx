@@ -27,6 +27,7 @@ import {
   Schedule as ShiftsIcon,
   Route as RoutesIcon,
   Settings as SettingsIcon,
+  Edit as EditIcon,
   ExpandLess,
   ExpandMore,
   Search as SearchIcon,
@@ -113,11 +114,18 @@ const SidebarNavigation: React.FC<SidebarNavigationProps> = ({ open, onToggle, c
         description: 'Manage all draft working schedules'
       },
       {
-        key: 'upload',
-        label: 'New Draft Schedule',
-        path: '/upload',
+        key: 'new-schedule',
+        label: 'New Schedule',
+        path: '/new-schedule',
         icon: <UploadIcon />,
-        description: 'Create a new draft working schedule'
+        description: 'Create a brand-new schedule via the full workflow'
+      },
+      {
+        key: 'edit-schedule',
+        label: 'Edit Existing Schedule',
+        path: '/edit-schedule',
+        icon: <EditIcon />,
+        description: 'Import a published schedule for quick adjustments'
       },
       {
         key: 'schedules',
@@ -145,7 +153,7 @@ const SidebarNavigation: React.FC<SidebarNavigationProps> = ({ open, onToggle, c
       },
       {
         key: 'tod-shifts',
-        label: 'Tod Shifts',
+        label: 'TOD Shift Management',
         path: '/tod-shifts',
         icon: <ShiftsIcon />,
         description: 'Manage operator shift schedules',

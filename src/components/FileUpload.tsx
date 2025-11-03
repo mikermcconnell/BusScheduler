@@ -19,21 +19,31 @@ import { LoadingOverlay } from './loading';
 
 interface FileUploadProps {
   onFileUploaded?: (
-    data: { extractedData?: any; csvData?: any; fileType: 'excel' | 'csv' }, 
+    data: { extractedData?: any; csvData?: any; tripsByDay?: Record<'weekday' | 'saturday' | 'sunday', any[]>; fileType: 'excel' | 'csv' }, 
     fileName: string, 
     validation: any, 
-    report: string
+    report: string,
+    file: File
   ) => void;
   onError?: (error: string) => void;
+  title?: string;
+  subtitle?: string;
+  buttonText?: string;
 }
 
 export const FileUpload: React.FC<FileUploadProps> = ({
   onFileUploaded,
-  onError
+  onError,
+  title,
+  subtitle,
+  buttonText
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragActive, setDragActive] = useState(false);
   const { isLoading, error, extractedData, fileName, uploadFile, clearFile } = useFileUpload();
+  const headingTitle = title ?? 'Create Draft Working Schedule';
+  const headingSubtitle = subtitle ?? 'Upload raw schedule data to create a new draft working schedule';
+  const primaryButtonText = buttonText ?? 'Choose File';
 
   const handleFileSelect = async (file: File) => {
     const result = await uploadFile(file);
@@ -42,9 +52,10 @@ export const FileUpload: React.FC<FileUploadProps> = ({
       const data = {
         extractedData: result.extractedData,
         csvData: result.csvData,
+        tripsByDay: result.tripsByDay,
         fileType: result.fileType
       };
-      onFileUploaded?.(data, result.fileName, result.validation, result.qualityReport);
+      onFileUploaded?.(data, result.fileName, result.validation, result.qualityReport, file);
     } else if (result.error) {
       onError?.(result.error);
     }
@@ -125,10 +136,10 @@ export const FileUpload: React.FC<FileUploadProps> = ({
           <>
             <CloudUpload sx={{ fontSize: 48, color: '#ccc', mb: 2 }} />
             <Typography variant="h6" gutterBottom>
-              Create Draft Working Schedule
+              {headingTitle}
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-              Upload raw schedule data to create a new draft working schedule
+              {headingSubtitle}
             </Typography>
             <Button
               variant="contained"
@@ -136,7 +147,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
               onClick={handleBrowseClick}
               disabled={isLoading}
             >
-              Choose File
+              {primaryButtonText}
             </Button>
             <Typography variant="caption" display="block" sx={{ mt: 2, color: 'text.secondary' }}>
               Supported formats: .xlsx, .xls, .csv (max 10MB)

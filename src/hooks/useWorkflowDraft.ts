@@ -2,7 +2,7 @@
  * Custom hook for managing unified workflow draft state
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   WorkflowDraftState, 
   WorkflowDraftResult,
@@ -13,6 +13,7 @@ import {
   ScheduleGenerationMetadata
 } from '../types/workflow';
 import { SummarySchedule, ServiceBand } from '../types/schedule';
+import { ConnectionOptimizationResult, ConnectionPoint } from '../types/connectionOptimization';
 import { ParsedExcelData } from '../utils/excelParser';
 import { ParsedCsvData } from '../utils/csvParser';
 import { draftService } from '../services/draftService';
@@ -46,6 +47,11 @@ export interface UseWorkflowDraftReturn {
     schedule: SummarySchedule;
     metadata: ScheduleGenerationMetadata;
   }) => Promise<WorkflowDraftResult>;
+  updateConnectionOptimization: (optimizationData: {
+    selectedConnections: ConnectionPoint[];
+    lastResult?: ConnectionOptimizationResult | null;
+    optimizationHistory: ConnectionOptimizationResult[];
+  }) => Promise<WorkflowDraftResult>;
   publishDraft: () => Promise<WorkflowDraftResult>;
   deleteDraft: () => Promise<WorkflowDraftResult>;
   refreshDraft: () => Promise<void>;
@@ -57,6 +63,11 @@ export const useWorkflowDraft = (draftId?: string): UseWorkflowDraftReturn => {
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<string | null>(null);
+  const draftRef = useRef<WorkflowDraftState | null>(null);
+
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
   
   // Load draft from service
   const loadDraft = useCallback(async (id: string) => {
@@ -144,11 +155,26 @@ export const useWorkflowDraft = (draftId?: string): UseWorkflowDraftReturn => {
       );
       
       if (result.success) {
+        const analysisTimestamp = new Date().toISOString();
         console.log('✅ [useWorkflowDraft] Analysis saved successfully:', {
           draftId: draft.draftId,
           success: result.success
         });
-        await loadDraft(draft.draftId);
+        setDraft(prevDraft => prevDraft ? {
+          ...prevDraft,
+          currentStep: 'timepoints',
+          timepointsAnalysis: {
+            ...analysisData,
+            analysisTimestamp
+          },
+          metadata: {
+            ...prevDraft.metadata,
+            lastModifiedAt: analysisTimestamp,
+            lastModifiedStep: 'timepoints',
+            version: (prevDraft.metadata.version || 0) + 1
+          }
+        } : prevDraft);
+        setLastSaved(analysisTimestamp);
       } else {
         console.error('❌ [useWorkflowDraft] Failed to save analysis:', {
           draftId: draft.draftId,
@@ -165,7 +191,7 @@ export const useWorkflowDraft = (draftId?: string): UseWorkflowDraftReturn => {
     } finally {
       setIsSaving(false);
     }
-  }, [draft, loadDraft]);
+  }, [draft]);
   
   // Update block configuration
   const updateBlockConfiguration = useCallback(async (blockConfig: {
@@ -183,16 +209,20 @@ export const useWorkflowDraft = (draftId?: string): UseWorkflowDraftReturn => {
     setError(null);
     
     try {
+      const configurationTimestamp = new Date().toISOString();
       // Optimistic update - update UI immediately
       setDraft(prevDraft => prevDraft ? {
         ...prevDraft,
+        currentStep: 'blocks',
         blockConfiguration: {
           ...blockConfig,
-          configurationTimestamp: new Date().toISOString()
+          configurationTimestamp
         },
         metadata: {
           ...prevDraft.metadata,
-          lastModifiedAt: new Date().toISOString()
+          lastModifiedAt: configurationTimestamp,
+          lastModifiedStep: 'blocks',
+          version: (prevDraft.metadata.version || 0) + 1
         }
       } : null);
       
@@ -206,6 +236,8 @@ export const useWorkflowDraft = (draftId?: string): UseWorkflowDraftReturn => {
         // Rollback on failure
         setDraft(originalDraft);
         setError(result.error || 'Failed to update configuration');
+      } else {
+        setLastSaved(configurationTimestamp);
       }
       
       return result;
@@ -225,23 +257,49 @@ export const useWorkflowDraft = (draftId?: string): UseWorkflowDraftReturn => {
     schedule: SummarySchedule;
     metadata: ScheduleGenerationMetadata;
   }): Promise<WorkflowDraftResult> => {
-    if (!draft) return { success: false, error: 'No active draft' };
-    
+    const currentDraft = draftRef.current;
+    if (!currentDraft) {
+      return { success: false, error: 'No active draft' };
+    }
+
     setIsSaving(true);
     setError(null);
-    
+
+    const draftId = currentDraft.draftId;
+
     try {
       const result = await draftService.updateDraftWithSummarySchedule(
-        draft.draftId,
+        draftId,
         summaryData
       );
-      
+
       if (result.success) {
-        await loadDraft(draft.draftId);
+        const generationTimestamp = new Date().toISOString();
+        setDraft(prevDraft => {
+          if (!prevDraft || prevDraft.draftId !== draftId) {
+            return prevDraft;
+          }
+
+          return {
+            ...prevDraft,
+            currentStep: 'ready-to-publish',
+            summarySchedule: {
+              ...summaryData,
+              generationTimestamp
+            },
+            metadata: {
+              ...prevDraft.metadata,
+              lastModifiedAt: generationTimestamp,
+              lastModifiedStep: 'summary',
+              version: (prevDraft.metadata.version || 0) + 1
+            }
+          };
+        });
+        setLastSaved(generationTimestamp);
       } else {
         setError(result.error || 'Failed to update summary');
       }
-      
+
       return result;
     } catch (err: any) {
       const errorMessage = err.message || 'Failed to update summary';
@@ -250,9 +308,57 @@ export const useWorkflowDraft = (draftId?: string): UseWorkflowDraftReturn => {
     } finally {
       setIsSaving(false);
     }
-  }, [draft, loadDraft]);
+  }, []);
   
   // Publish draft
+  const updateConnectionOptimization = useCallback(async (optimizationData: {
+    selectedConnections: ConnectionPoint[];
+    lastResult?: ConnectionOptimizationResult | null;
+    optimizationHistory: ConnectionOptimizationResult[];
+  }): Promise<WorkflowDraftResult> => {
+    if (!draft) return { success: false, error: 'No active draft' };
+
+    setIsSaving(true);
+    setError(null);
+
+    try {
+      const result = await draftService.updateDraftWithConnectionOptimization(
+        draft.draftId,
+        optimizationData
+      );
+
+      if (result.success) {
+        const timestamp = new Date().toISOString();
+        setDraft(prevDraft => prevDraft ? {
+          ...prevDraft,
+          currentStep: 'connections',
+          connectionOptimization: {
+            selectedConnections: optimizationData.selectedConnections,
+            lastResult: optimizationData.lastResult ?? undefined,
+            optimizationHistory: optimizationData.optimizationHistory,
+            optimizationTimestamp: timestamp,
+          },
+          metadata: {
+            ...prevDraft.metadata,
+            lastModifiedAt: timestamp,
+            lastModifiedStep: 'connections',
+            version: (prevDraft.metadata.version || 0) + 1,
+          },
+        } : prevDraft);
+        setLastSaved(timestamp);
+      } else if (result.error) {
+        setError(result.error);
+      }
+
+      return result;
+    } catch (err: any) {
+      const message = err.message || 'Failed to update connection optimization';
+      setError(message);
+      return { success: false, error: message };
+    } finally {
+      setIsSaving(false);
+    }
+  }, [draft]);
   const publishDraft = useCallback(async (): Promise<WorkflowDraftResult> => {
     if (!draft) return { success: false, error: 'No active draft' };
     
@@ -342,8 +448,13 @@ export const useWorkflowDraft = (draftId?: string): UseWorkflowDraftReturn => {
     updateTimepointsAnalysis,
     updateBlockConfiguration,
     updateSummarySchedule,
+    updateConnectionOptimization,
     publishDraft,
     deleteDraft,
     refreshDraft
   };
 };
+
+
+
+

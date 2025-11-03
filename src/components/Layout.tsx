@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Routes, Route, useLocation } from 'react-router-dom';
+import { Routes, Route, useLocation, Navigate } from 'react-router-dom';
 import { 
   Box, 
   CssBaseline, 
@@ -11,6 +11,7 @@ import {
   useMediaQuery,
   Fab,
   Tooltip,
+  CircularProgress,
 } from '@mui/material';
 import {
   Menu as MenuIcon,
@@ -21,13 +22,14 @@ import SidebarNavigation from './SidebarNavigation';
 import WorkflowBreadcrumbs from './WorkflowBreadcrumbs';
 import KeyboardShortcutsHelp from './KeyboardShortcutsHelp';
 import AppHeader from './AppHeader';
-import SyncStatusIndicator from './SyncStatusIndicator';
 import useKeyboardShortcuts from '../hooks/useKeyboardShortcuts';
 import { draftService } from '../services/draftService';
+import { useAuth } from '../contexts/AuthContext';
 
 // Pages
 import Dashboard from '../pages/Dashboard';
-import UploadSchedule from '../pages/UploadSchedule';
+import NewSchedule from '../pages/NewSchedule';
+import EditSchedule from '../pages/EditSchedule';
 import GenerateSummarySchedule from '../pages/GenerateSummarySchedule';
 import SummarySchedule from '../pages/SummarySchedule';
 import EditCSVSchedule from '../pages/EditCSVSchedule';
@@ -50,6 +52,7 @@ const Layout: React.FC = () => {
   const location = useLocation();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const { user, loading: authLoading, signOut: signOutUser } = useAuth();
   
   // Initialize sidebar state with persistence and auto-open behavior
   const [sidebarOpen, setSidebarOpen] = useState(() => {
@@ -126,6 +129,8 @@ const Layout: React.FC = () => {
 
   // Determine if we should show workflow breadcrumbs
   const shouldShowWorkflow = [
+    '/new-schedule',
+    '/edit-schedule',
     '/upload',
     '/timepoints',
     '/block-configuration',
@@ -142,12 +147,35 @@ const Layout: React.FC = () => {
   // Check if sidebar is actually collapsed from SidebarNavigation internal state
   const currentSidebarWidth = isMobile ? 0 : (sidebarCollapsed ? COLLAPSED_WIDTH : DRAWER_WIDTH);
 
+  if (authLoading) {
+    return (
+      <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  if (!user) {
+    return <Navigate to="/signin" state={{ from: location.pathname }} replace />;
+  }
+
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
       <CssBaseline />
       
       {/* App Header with Logo - always visible */}
-      <AppHeader showLogo={true} onMenuClick={handleSidebarToggle} />
+      <AppHeader
+        showLogo={true}
+        onMenuClick={handleSidebarToggle}
+        userName={user?.displayName || user?.email || 'Account'}
+        onSignOut={async () => {
+          try {
+            await signOutUser();
+          } catch (error) {
+            console.error('Failed to sign out:', error);
+          }
+        }}
+      />
 
       {/* Sidebar Navigation */}
       <SidebarNavigation
@@ -194,7 +222,9 @@ const Layout: React.FC = () => {
           {/* Page Routes */}
           <Routes>
             <Route path="/" element={<Dashboard />} />
-            <Route path="/upload" element={<UploadSchedule />} />
+            <Route path="/new-schedule" element={<NewSchedule />} />
+            <Route path="/edit-schedule" element={<EditSchedule />} />
+            <Route path="/upload" element={<Navigate to="/new-schedule" replace />} />
             <Route path="/generate-summary" element={<GenerateSummarySchedule />} />
             <Route path="/generate/edit/:scheduleId" element={<EditCSVSchedule />} />
             <Route path="/summary-schedule/:scheduleId" element={<SummarySchedule />} />

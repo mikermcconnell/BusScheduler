@@ -37,15 +37,16 @@ describe('Navigation Component', () => {
     renderWithProviders();
     
     expect(screen.getByText('Dashboard')).toBeInTheDocument();
-    expect(screen.getByText('Upload Schedule')).toBeInTheDocument();
+    expect(screen.getByText('New Schedule')).toBeInTheDocument();
+    expect(screen.getByText('Edit Existing')).toBeInTheDocument();
     expect(screen.getByText('View Schedules')).toBeInTheDocument();
     expect(screen.getByText('Manage Routes')).toBeInTheDocument();
   });
 
   test('highlights active navigation item', () => {
-    renderWithProviders(['/upload']);
+    renderWithProviders(['/new-schedule']);
     
-    const uploadButton = screen.getByText('Upload Schedule').closest('button');
+    const uploadButton = screen.getByText('New Schedule').closest('button');
     expect(uploadButton).toHaveStyle({
       backgroundColor: 'rgba(255, 255, 255, 0.1)',
     });

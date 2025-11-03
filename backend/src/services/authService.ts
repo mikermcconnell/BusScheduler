@@ -1,8 +1,10 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { query, withTransaction } from '../config/database';
 import { logger } from '../utils/logger';
+import { invitationService } from './invitationService';
 
 export interface User {
   id: string;
@@ -28,15 +30,27 @@ export interface AuthTokens {
 }
 
 class AuthService {
-  private readonly JWT_SECRET = process.env.JWT_SECRET || 'default_secret';
-  private readonly JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'default_refresh_secret';
-  private readonly JWT_EXPIRE = process.env.JWT_EXPIRE || '7d';
-  private readonly JWT_REFRESH_EXPIRE = process.env.JWT_REFRESH_EXPIRE || '30d';
+  private readonly JWT_SECRET: string;
+  private readonly JWT_REFRESH_SECRET: string;
+  private readonly JWT_EXPIRE: string;
+  private readonly JWT_REFRESH_EXPIRE: string;
 
   constructor() {
-    if (!process.env.JWT_SECRET || !process.env.JWT_REFRESH_SECRET) {
-      logger.warn('JWT secrets not properly configured. Using default values (NOT SAFE FOR PRODUCTION)');
+    const accessSecret = process.env.JWT_SECRET;
+    const refreshSecret = process.env.JWT_REFRESH_SECRET;
+
+    if (!accessSecret || accessSecret === 'default_secret') {
+      throw new Error('JWT_SECRET environment variable must be configured');
     }
+
+    if (!refreshSecret || refreshSecret === 'default_refresh_secret') {
+      throw new Error('JWT_REFRESH_SECRET environment variable must be configured');
+    }
+
+    this.JWT_SECRET = accessSecret;
+    this.JWT_REFRESH_SECRET = refreshSecret;
+    this.JWT_EXPIRE = process.env.JWT_EXPIRE || '7d';
+    this.JWT_REFRESH_EXPIRE = process.env.JWT_REFRESH_EXPIRE || '30d';
   }
 
   /**
@@ -92,6 +106,10 @@ class AuthService {
   /**
    * Verify refresh token
    */
+  private hashToken(token: string): string {
+    return crypto.createHash('sha256').update(token).digest('hex');
+  }
+
   verifyRefreshToken(token: string): TokenPayload | null {
     try {
       const decoded = jwt.verify(token, this.JWT_REFRESH_SECRET) as any;
@@ -113,10 +131,15 @@ class AuthService {
     email: string,
     username: string,
     password: string,
-    fullName?: string,
-    role: User['role'] = 'viewer'
+    fullName: string | undefined,
+    invitationCode: string
   ): Promise<User> {
-    // Check if user already exists
+    const invitation = await invitationService.validateInvitation(invitationCode);
+
+    if (invitation.email && invitation.email.toLowerCase() !== email.toLowerCase()) {
+      throw new Error('Invitation email does not match registration email');
+    }
+
     const existingUser = await query(
       'SELECT id FROM users WHERE email = $1 OR username = $2',
       [email, username]
@@ -126,19 +149,18 @@ class AuthService {
       throw new Error('User with this email or username already exists');
     }
 
-    // Hash password
     const passwordHash = await this.hashPassword(password);
 
-    // Create user
     const result = await query(
       `INSERT INTO users (email, username, password_hash, full_name, role) 
        VALUES ($1, $2, $3, $4, $5) 
        RETURNING id, email, username, full_name, role, is_active, created_at, updated_at`,
-      [email, username, passwordHash, fullName, role]
+      [email, username, passwordHash, fullName, invitation.role]
     );
 
     const user = result.rows[0];
-    logger.info('New user registered:', { userId: user.id, email: user.email });
+    await invitationService.consumeInvitation(invitationCode, user.id);
+    logger.info('New user registered:', { userId: user.id, email: user.email, role: user.role });
 
     return user;
   }
@@ -204,10 +226,11 @@ class AuthService {
   async storeRefreshToken(userId: string, token: string): Promise<void> {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 30); // 30 days
+    const tokenHash = this.hashToken(token);
 
     await query(
-      'INSERT INTO refresh_tokens (user_id, token, expires_at) VALUES ($1, $2, $3)',
-      [userId, token, expiresAt]
+      'INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
+      [userId, tokenHash, expiresAt]
     );
   }
 
@@ -215,18 +238,17 @@ class AuthService {
    * Refresh access token
    */
   async refreshAccessToken(refreshToken: string): Promise<AuthTokens> {
-    // Verify refresh token
     const payload = this.verifyRefreshToken(refreshToken);
     if (!payload) {
       throw new Error('Invalid refresh token');
     }
 
-    // Check if refresh token exists in database and is not revoked
+    const hashedToken = this.hashToken(refreshToken);
     const result = await query(
       `SELECT id, user_id, expires_at, revoked_at 
        FROM refresh_tokens 
-       WHERE token = $1 AND revoked_at IS NULL`,
-      [refreshToken]
+       WHERE token_hash = $1 AND revoked_at IS NULL`,
+      [hashedToken]
     );
 
     if (result.rows.length === 0) {
@@ -234,30 +256,25 @@ class AuthService {
     }
 
     const tokenRecord = result.rows[0];
-
-    // Check if token is expired
     if (new Date(tokenRecord.expires_at) < new Date()) {
       throw new Error('Refresh token expired');
     }
 
-    // Generate new tokens
     const newAccessToken = this.generateAccessToken(payload);
     const newRefreshToken = this.generateRefreshToken(payload);
+    const newHash = this.hashToken(newRefreshToken);
 
-    // Update refresh token in database (rotate tokens)
     await withTransaction(async (client) => {
-      // Revoke old token
       await client.query(
-        'UPDATE refresh_tokens SET revoked_at = CURRENT_TIMESTAMP, replaced_by = $1 WHERE token = $2',
-        [newRefreshToken, refreshToken]
+        'UPDATE refresh_tokens SET revoked_at = CURRENT_TIMESTAMP, replaced_by = $1 WHERE token_hash = $2',
+        [newHash, hashedToken]
       );
 
-      // Store new token
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + 30);
       await client.query(
-        'INSERT INTO refresh_tokens (user_id, token, expires_at) VALUES ($1, $2, $3)',
-        [tokenRecord.user_id, newRefreshToken, expiresAt]
+        'INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
+        [tokenRecord.user_id, newHash, expiresAt]
       );
     });
 
@@ -275,13 +292,12 @@ class AuthService {
    */
   async logout(userId: string, refreshToken?: string): Promise<void> {
     if (refreshToken) {
-      // Revoke specific refresh token
+      const hashedToken = this.hashToken(refreshToken);
       await query(
-        'UPDATE refresh_tokens SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = $1 AND token = $2',
-        [userId, refreshToken]
+        'UPDATE refresh_tokens SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = $1 AND token_hash = $2',
+        [userId, hashedToken]
       );
     } else {
-      // Revoke all refresh tokens for user
       await query(
         'UPDATE refresh_tokens SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = $1 AND revoked_at IS NULL',
         [userId]
@@ -347,3 +363,4 @@ class AuthService {
 }
 
 export const authService = new AuthService();
+

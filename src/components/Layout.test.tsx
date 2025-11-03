@@ -11,9 +11,15 @@ jest.mock('../pages/Dashboard', () => {
   };
 });
 
-jest.mock('../pages/UploadSchedule', () => {
-  return function MockUploadSchedule() {
-    return <div data-testid="upload">Upload Schedule Page</div>;
+jest.mock('../pages/NewSchedule', () => {
+  return function MockNewSchedule() {
+    return <div data-testid="new-schedule">New Schedule Page</div>;
+  };
+});
+
+jest.mock('../pages/EditSchedule', () => {
+  return function MockEditSchedule() {
+    return <div data-testid="edit-schedule">Edit Schedule Page</div>;
   };
 });
 
@@ -57,14 +63,24 @@ describe('Layout Component', () => {
     expect(screen.getByTestId('dashboard')).toBeInTheDocument();
   });
 
-  test('renders upload page on /upload path', () => {
+  test('renders new schedule page on /new-schedule path', () => {
     render(
-      <MemoryRouter initialEntries={['/upload']}>
+      <MemoryRouter initialEntries={['/new-schedule']}>
         <Layout />
       </MemoryRouter>
     );
 
-    expect(screen.getByTestId('upload')).toBeInTheDocument();
+    expect(screen.getByTestId('new-schedule')).toBeInTheDocument();
+  });
+
+  test('renders edit schedule page on /edit-schedule path', () => {
+    render(
+      <MemoryRouter initialEntries={['/edit-schedule']}>
+        <Layout />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByTestId('edit-schedule')).toBeInTheDocument();
   });
 
   test('renders schedules page on /schedules path', () => {

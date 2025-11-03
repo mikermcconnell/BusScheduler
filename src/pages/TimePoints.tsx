@@ -103,6 +103,7 @@ interface TimeBand {
   color: string;
   description?: string;
   segmentTimes?: Array<{ from: string, to: string, travelMinutes: number }>;
+  totalMinutes?: number;
 }
 
 interface TimeBandEditData {
@@ -112,6 +113,24 @@ interface TimeBandEditData {
   travelTimeMultiplier: number;
   description: string;
 }
+
+const computeBandTotalMinutes = (band: TimeBand): number => {
+  if (typeof band.totalMinutes === "number" && Number.isFinite(band.totalMinutes)) {
+    return Math.max(0, Math.round(band.totalMinutes));
+  }
+
+  if (Array.isArray(band.segmentTimes) && band.segmentTimes.length > 0) {
+    return band.segmentTimes.reduce((sum, segment) => sum + Math.max(0, segment.travelMinutes), 0);
+  }
+
+  return 0;
+};
+
+const withComputedTotals = (bands: TimeBand[]): TimeBand[] =>
+  bands.map(band => ({
+    ...band,
+    totalMinutes: computeBandTotalMinutes(band)
+  }));
 
 const TimePoints: React.FC = () => {
   const location = useLocation();
@@ -287,6 +306,7 @@ const TimePoints: React.FC = () => {
 
       // Calculate segment times for this band
       const segmentTimes = calculateSegmentTimesForBand(bandPeriods.map(p => p.timePeriod));
+      const totalMinutes = segmentTimes.reduce((sum, segment) => sum + segment.travelMinutes, 0);
 
       bands.push({
         id: `band_${i + 1}`,
@@ -296,7 +316,8 @@ const TimePoints: React.FC = () => {
         travelTimeMultiplier: 1.0, // Keep for interface compatibility but not used
         color: colors[i],
         description: `${bandPeriods.length} periods • Avg: ${Math.round(avgTravelTime)} min • Range: ${Math.min(...bandPeriods.map(p => p.totalTravelTime))}-${Math.max(...bandPeriods.map(p => p.totalTravelTime))} min • ${range.min}-${range.max}th percentile`,
-        segmentTimes
+        segmentTimes,
+        totalMinutes
       });
     }
 
@@ -405,16 +426,26 @@ const TimePoints: React.FC = () => {
             }
             if (draft.timepointsAnalysis.serviceBands) {
               // Map ServiceBand to TimeBand, ensuring all required properties
-              const timeBands: TimeBand[] = draft.timepointsAnalysis.serviceBands.map((band, index) => ({
-                id: band.id || `band_${index + 1}`,
-                name: band.name,
-                startTime: band.startTime || '00:00',
-                endTime: band.endTime || '23:59',
-                travelTimeMultiplier: band.travelTimeMultiplier || 1.0,
-                color: band.color,
-                description: band.description
-              }));
-              setTimeBands(timeBands);
+              const timeBands: TimeBand[] = draft.timepointsAnalysis.serviceBands.map((band, index) => {
+                const segmentTotals = Array.isArray(band.segmentTimes)
+                  ? (band.segmentTimes as number[]).reduce((sum, value) =>
+                      sum + (Number.isFinite(value) ? value : 0), 0)
+                  : undefined;
+
+                return {
+                  id: band.id || `band_${index + 1}`,
+                  name: band.name,
+                  startTime: band.startTime || '00:00',
+                  endTime: band.endTime || '23:59',
+                  travelTimeMultiplier: band.travelTimeMultiplier || 1.0,
+                  color: band.color,
+                  description: band.description,
+                  totalMinutes: typeof band.totalMinutes === 'number'
+                    ? band.totalMinutes
+                    : segmentTotals
+                };
+              });
+              setTimeBands(withComputedTotals(timeBands));
             }
             // Load service band assignments from draft - this is the source of truth
             if (draft.timepointsAnalysis.timePeriodServiceBands) {
@@ -520,7 +551,7 @@ const TimePoints: React.FC = () => {
         
         // Create data-driven timebands based on travel time analysis (excluding deleted periods)
         const dataDrivenBands = createDataDrivenTimebands(dataWithOutliers, true);
-        setTimeBands(dataDrivenBands);
+        setTimeBands(withComputedTotals(dataDrivenBands));
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load timepoint data');
       } finally {
@@ -540,7 +571,7 @@ const TimePoints: React.FC = () => {
       // Restore service bands
       if (location.state.serviceBands && Array.isArray(location.state.serviceBands)) {
         console.log('✅ Restoring service bands:', location.state.serviceBands.length);
-        setTimeBands(location.state.serviceBands);
+        setTimeBands(withComputedTotals(location.state.serviceBands));
       }
       
       // Restore travel time data
@@ -587,7 +618,7 @@ const TimePoints: React.FC = () => {
   useEffect(() => {
     if (timePointData.length > 0) {
       const recalculatedBands = createDataDrivenTimebands(timePointData, true);
-      setTimeBands(recalculatedBands);
+      setTimeBands(withComputedTotals(recalculatedBands));
     }
   }, [deletedPeriods, timePointData]);
   
@@ -644,7 +675,8 @@ const TimePoints: React.FC = () => {
           travelTimeMultiplier: tb.travelTimeMultiplier,
           color: tb.color,
           description: tb.description,
-          segmentTimes: tb.segmentTimes as any // Include segment times for BlockConfiguration
+          segmentTimes: tb.segmentTimes as any, // Include segment times for BlockConfiguration
+          totalMinutes: computeBandTotalMinutes(tb)
         }));
         
         // Save analysis to workflow draft
@@ -737,7 +769,8 @@ const TimePoints: React.FC = () => {
           travelTimeMultiplier: tb.travelTimeMultiplier,
           color: tb.color,
           description: tb.description,
-          segmentTimes: tb.segmentTimes as any // Include segment times for BlockConfiguration
+          segmentTimes: tb.segmentTimes as any, // Include segment times for BlockConfiguration
+          totalMinutes: computeBandTotalMinutes(tb)
         }));
         
         // Save analysis to workflow draft
@@ -836,7 +869,9 @@ const TimePoints: React.FC = () => {
         endTime: tb.endTime,
         travelTimeMultiplier: tb.travelTimeMultiplier,
         color: tb.color,
-        description: tb.description
+        description: tb.description,
+        segmentTimes: tb.segmentTimes as any,
+        totalMinutes: computeBandTotalMinutes(tb)
       }));
       
       // Save analysis to workflow draft
@@ -858,7 +893,7 @@ const TimePoints: React.FC = () => {
         // Mark the TimePoints step as complete
         draftService.completeStep('timepoints', {
           timePointData,
-          serviceBands: timeBands,
+          serviceBands: withComputedTotals(timeBands),
           deletedPeriods: Array.from(deletedPeriods)
         });
         
@@ -866,7 +901,7 @@ const TimePoints: React.FC = () => {
         
         // Store state data in localStorage for persistence across navigation
         localStorage.setItem('currentTimePointData', JSON.stringify(timePointData));
-        localStorage.setItem('currentServiceBands', JSON.stringify(timeBands));
+        localStorage.setItem('currentServiceBands', JSON.stringify(withComputedTotals(timeBands)));
         
         // Mark timepoints step as completed with step data
         await draftService.updateStepStatus(workingDraftId, 'timepoints', 'completed', 100, {
@@ -884,7 +919,7 @@ const TimePoints: React.FC = () => {
           state: {
             draftId: workingDraftId,
             timePointData,
-            serviceBands: timeBands,
+            serviceBands: withComputedTotals(timeBands),
             deletedPeriods: Array.from(deletedPeriods),
             timePeriodServiceBands,
             scheduleId,
@@ -937,7 +972,7 @@ const TimePoints: React.FC = () => {
         : tb
     );
     
-    setTimeBands(updatedTimebands);
+    setTimeBands(withComputedTotals(updatedTimebands));
     setTimebandEditDialogOpen(false);
     setSelectedTimeband(null);
   };
@@ -951,7 +986,7 @@ const TimePoints: React.FC = () => {
     if (!selectedTimeband) return;
     
     const updatedTimebands = timeBands.filter(tb => tb.id !== selectedTimeband.id);
-    setTimeBands(updatedTimebands);
+    setTimeBands(withComputedTotals(updatedTimebands));
     setTimebandEditDialogOpen(false);
     setDeleteConfirmOpen(false);
     setSelectedTimeband(null);
@@ -1057,7 +1092,7 @@ const TimePoints: React.FC = () => {
   // Workflow navigation functions
   const handleGoBack = () => {
     // Navigate to the previous step in workflow (Upload Schedule)
-    navigate('/upload', {
+    navigate('/new-schedule', {
       state: {
         // Pass current state if needed
         returnFrom: 'timepoints'

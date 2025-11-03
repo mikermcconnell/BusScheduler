@@ -10,7 +10,7 @@ import {
   loginValidation,
   changePasswordValidation,
 } from '../controllers/authController';
-import { authenticate } from '../middleware/auth';
+import { authenticate, authorize } from '../middleware/auth';
 
 const router = Router();
 
@@ -24,5 +24,8 @@ router.use(authenticate); // All routes below require authentication
 router.post('/logout', logout);
 router.get('/profile', getProfile);
 router.post('/change-password', changePasswordValidation, changePassword);
+router.post('/invitations', authorize('admin'), createInvitationValidation, createInvitation);
+router.get('/invitations', authorize('admin'), listInvitations);
 
 export default router;
+

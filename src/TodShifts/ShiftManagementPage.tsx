@@ -13,14 +13,14 @@ import {
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState, AppDispatch } from '../store/store';
 import MasterScheduleImport from './MasterScheduleImport';
-import UnionRulesConfiguration from './UnionRulesConfiguration';
 import ManualShiftCreator from './ManualShiftCreator';
 import ShiftGanttChart from './ShiftGanttChart';
 import ShiftSummaryTable from './ShiftSummaryTable';
 import ShiftExport from './ShiftExport';
 import { 
   loadUnionRules, 
-  setActiveScheduleType 
+  setActiveScheduleType,
+  fetchLatestTodShiftRun
 } from './store/shiftManagementSlice';
 
 const ShiftManagementPage: React.FC = () => {
@@ -30,15 +30,16 @@ const ShiftManagementPage: React.FC = () => {
   const [successMessage, setSuccessMessage] = useState('');
   
   const { 
-    activeScheduleType, 
-    shifts, 
-    masterSchedule,
-    coverage,
+    activeScheduleType,
+    shifts,
+    coverageTimeline,
     loading,
-    error 
+    error,
+    importMetadata
   } = useSelector((state: RootState) => state.shiftManagement);
 
   useEffect(() => {
+    dispatch(fetchLatestTodShiftRun());
     // Load union rules on component mount
     dispatch(loadUnionRules());
   }, [dispatch]);
@@ -61,20 +62,17 @@ const ShiftManagementPage: React.FC = () => {
   };
 
   // Calculate compliance statistics
+  const activeShifts = shifts.filter(shift => shift.scheduleType === activeScheduleType);
   const complianceStats = {
-    total: shifts.filter((s: any) => s.scheduleType === activeScheduleType).length,
-    compliant: shifts.filter((s: any) => s.scheduleType === activeScheduleType && s.unionCompliant).length,
-    warnings: shifts.filter((s: any) => 
-      s.scheduleType === activeScheduleType && 
-      s.complianceWarnings && 
-      s.complianceWarnings.length > 0
-    ).length,
+    total: activeShifts.length,
+    compliant: activeShifts.filter(shift => shift.unionCompliant).length,
+    warnings: activeShifts.filter(shift => (shift.complianceWarnings?.length ?? 0) > 0).length
   };
 
-  // Calculate coverage statistics
-  const coverageStats = coverage.reduce((acc: { gaps: number; excess: number }, slot: any) => {
-    if (slot.difference < 0) acc.gaps++;
-    else if (slot.difference > 2) acc.excess++;
+  const activeCoverage = coverageTimeline[activeScheduleType] ?? [];
+  const coverageStats = activeCoverage.reduce((acc, slot) => {
+    if (slot.totalExcess < 0) acc.gaps++;
+    else if (slot.totalExcess > 0) acc.excess++;
     return acc;
   }, { gaps: 0, excess: 0 });
 
@@ -94,6 +92,16 @@ const ShiftManagementPage: React.FC = () => {
             <Typography variant="body2" color="text.secondary">
               Create and manage driver shifts with union compliance
             </Typography>
+            {importMetadata.importedAt && (
+              <Typography variant="caption" color="text.secondary" display="block">
+                Last import: {new Date(importMetadata.importedAt).toLocaleString()} ({importMetadata.cityFileName} + {importMetadata.contractorFileName})
+              </Typography>
+            )}
+            {importMetadata.lastExportedAt && (
+              <Typography variant="caption" color="text.secondary" display="block">
+                Last export: {new Date(importMetadata.lastExportedAt).toLocaleString()}
+              </Typography>
+            )}
           </Grid>
           
           <Grid
@@ -137,9 +145,9 @@ const ShiftManagementPage: React.FC = () => {
         </Grid>
       </Paper>
       {/* Error Alert */}
-      {(error.shifts || error.masterSchedule || error.unionRules) && (
+      {(error.shifts || error.imports || error.unionRules || error.persistence) && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => {}}>
-          {error.shifts || error.masterSchedule || error.unionRules}
+          {error.shifts || error.imports || error.unionRules || error.persistence}
         </Alert>
       )}
       {/* Main Content Area */}
@@ -157,16 +165,14 @@ const ShiftManagementPage: React.FC = () => {
               <Grid
                 size={{
                   xs: 12,
-                  md: 6
+                  md: 12
                 }}>
-                <MasterScheduleImport />
-              </Grid>
-              <Grid
-                size={{
-                  xs: 12,
-                  md: 6
-                }}>
-                <UnionRulesConfiguration />
+                <MasterScheduleImport
+                  onSuccess={({ cityFileName, contractorFileName }) => {
+                    setActiveTab(2);
+                    showSuccessNotification(`Import completed (${cityFileName} / ${contractorFileName}).`);
+                  }}
+                />
               </Grid>
             </Grid>
           )}

@@ -1435,7 +1435,7 @@ export const TimePointsPanel: React.FC<PanelProps> = ({ panelId, data, onClose, 
         onClose={() => setSaveSuccess(false)}
       >
         <Alert severity="success" sx={{ width: '100%' }}>
-          TimePoints analysis saved successfully!
+          TimePoints analysis saved to cloud!
         </Alert>
       </Snackbar>
 

@@ -17,6 +17,7 @@ import {
 } from '@mui/icons-material';
 import { draftService, UnifiedDraftCompat } from '../services/draftService';
 import { emit } from '../services/workspaceEventBus';
+import { useAuth } from '../contexts/AuthContext';
 
 interface DraftNameHeaderProps {
   onDraftUpdate?: (updatedDraft: UnifiedDraftCompat) => void;
@@ -26,6 +27,7 @@ const DraftNameHeader: React.FC<DraftNameHeaderProps> = ({
   onDraftUpdate 
 }) => {
   const theme = useTheme();
+  const { user } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState('');
   const [currentDraft, setCurrentDraft] = useState<UnifiedDraftCompat | null>(null);
@@ -98,7 +100,13 @@ const DraftNameHeader: React.FC<DraftNameHeaderProps> = ({
         draftName: editName.trim()
       };
 
-      const result = await draftService.saveDraft(updatedDraft, 'current-user');
+      if (!user) {
+        setError('You must be signed in to rename drafts.');
+        setLoading(false);
+        return;
+      }
+
+      const result = await draftService.saveDraft(updatedDraft, user.uid);
       
       if (result.success) {
         const previousName = currentDraft.draftName;

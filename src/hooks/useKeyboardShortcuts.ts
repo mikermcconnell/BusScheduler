@@ -34,8 +34,8 @@ const useKeyboardShortcuts = (options: UseKeyboardShortcutsOptions = {}) => {
     {
       key: 'u',
       alt: true,
-      action: () => navigate('/upload'),
-      description: 'Upload Schedule',
+      action: () => navigate('/new-schedule'),
+      description: 'New Schedule',
       category: 'Navigation'
     },
     {

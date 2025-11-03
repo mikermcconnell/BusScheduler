@@ -1,7 +1,7 @@
 # Documentation Index
 
 ## Primary Documentation
-- **[../CLAUDE.md](../CLAUDE.md)** - Complete application guide (MAIN REFERENCE)
+- **[../agents.md](../agents.md)** - Complete application guide (MAIN REFERENCE)
 - **[../README.md](../README.md)** - Quick project overview
 
 ## Specialized Documentation
@@ -20,7 +20,8 @@
 - **[archive/MVP_COMPLETION_SUMMARY.md](./archive/MVP_COMPLETION_SUMMARY.md)** - MVP completion tracking
 - **[archive/bus_scheduling_srs.md](./archive/bus_scheduling_srs.md)** - Software requirements specification
 - **[archive/bus_ui_design_doc.md](./archive/bus_ui_design_doc.md)** - Original UI design document
+- **[archive/new-vs-edit-schedule-plan.md](./archive/new-vs-edit-schedule-plan.md)** - Completed plan for the new vs. edit schedule split
 
 ---
 
-**💡 Start with [CLAUDE.md](../CLAUDE.md) - it contains everything you need to understand and work with this project.**
+**💡 Start with [agents.md](../agents.md) - it contains everything you need to understand and work with this project.**

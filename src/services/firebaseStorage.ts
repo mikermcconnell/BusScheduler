@@ -22,7 +22,8 @@ import {
   DocumentData,
   QuerySnapshot,
   Unsubscribe,
-  FieldValue
+  FieldValue,
+  QueryConstraint
 } from 'firebase/firestore';
 
 import { db, getFirebaseErrorMessage } from '../config/firebase';
@@ -34,7 +35,7 @@ import { ParsedCsvData } from '../utils/csvParser';
 import { ValidationResult } from '../utils/validator';
 
 // Re-use existing interfaces from localStorage service
-import {
+import scheduleStorage, {
   SavedSchedule,
   DraftSchedule,
   ScheduleListItem
@@ -67,41 +68,149 @@ const MAX_SCHEDULE_SIZE = 10 * 1024 * 1024; // 10MB for cloud storage
 class FirebaseStorageService {
   private schedulesListener: Unsubscribe | null = null;
   private draftsListener: Unsubscribe | null = null;
-  
+  private currentUserId: string | null = null;
+  private readonly firebaseEnabled = process.env.REACT_APP_ENABLE_FIREBASE === 'true';
+  private readonly useSharedDrafts = process.env.REACT_APP_FIREBASE_SHARED_DRAFTS === 'true';
+  private readonly localFallback = scheduleStorage;
+
+  private getCollectionUserId(): string | undefined {
+    if (this.useSharedDrafts) {
+      return undefined;
+    }
+    return this.currentUserId || undefined;
+  }
+
+  private getDocumentUserId(): string {
+    if (!this.currentUserId) {
+      throw new Error('Firebase Storage: User context not set');
+    }
+    return this.currentUserId;
+  }
+
   // Event callbacks for real-time updates
   private onSchedulesChange: ((schedules: SavedSchedule[]) => void) | null = null;
   private onDraftsChange: ((drafts: DraftSchedule[]) => void) | null = null;
 
   constructor() {
-    // Setup listeners immediately without auth
-    this.setupRealtimeListeners();
+    if (!this.firebaseEnabled) {
+      console.info('Firebase storage disabled; using local storage fallback');
+      return;
+    }
+
+    const initialUserId = this.getCollectionUserId();
+    if (initialUserId) {
+      this.setupRealtimeListeners(initialUserId);
+    }
+  }
+
+  /**
+   * Configure service for the authenticated Firebase user
+   */
+  setUserContext(userId: string | null): void {
+    if (!this.firebaseEnabled) {
+      return;
+    }
+
+    if (this.currentUserId === userId) {
+      return;
+    }
+
+    this.cleanupListeners();
+    this.currentUserId = userId;
+
+    const shouldListen = Boolean(userId);
+
+    if (shouldListen && userId) {
+      this.setupRealtimeListeners(userId);
+    } else {
+      console.info('Firebase Storage: user context cleared - realtime listeners paused');
+    }
+  }
+
+  clearUserContext(): void {
+    this.setUserContext(null);
+  }
+
+  private getSchedulesCollection(userId?: string) {
+    return userId
+      ? collection(db, 'users', userId, COLLECTIONS.SCHEDULES)
+      : collection(db, COLLECTIONS.SCHEDULES);
+  }
+
+  private getDraftsCollection(userId?: string) {
+    return userId
+      ? collection(db, 'users', userId, COLLECTIONS.DRAFTS)
+      : collection(db, COLLECTIONS.DRAFTS);
+  }
+
+  private getScheduleDoc(userId: string | undefined, scheduleId: string) {
+    return doc(this.getSchedulesCollection(userId), scheduleId);
+  }
+
+  private getDraftDoc(userId: string | undefined, draftId: string) {
+    return doc(this.getDraftsCollection(userId), draftId);
+  }
+
+  private isFirebaseReady(): boolean {
+    if (!this.firebaseEnabled) {
+      return false;
+    }
+
+    if (!db) {
+      console.warn('Firebase Storage: Firestore not initialized');
+      return false;
+    }
+
+    if (!this.currentUserId) {
+      // Allow anonymous storage operations when no auth context is available
+      return true;
+    }
+
+    return true;
   }
 
   /**
    * Setup real-time listeners for schedules and drafts
    */
-  private setupRealtimeListeners(): void {
-    // Listen to schedules (no user filtering)
-    const schedulesQuery = query(
-      collection(db, COLLECTIONS.SCHEDULES),
-      orderBy('updatedAt', 'desc'),
-      limit(MAX_SCHEDULES)
-    );
+  private setupRealtimeListeners(userId?: string): void {
+    const activeUserId = userId ?? this.currentUserId;
 
-    this.schedulesListener = onSnapshot(schedulesQuery, (snapshot) => {
-      const schedules = this.parseSchedulesSnapshot(snapshot);
-      if (this.onSchedulesChange) {
-        this.onSchedulesChange(schedules);
-      }
-    }, (error) => {
-      console.error('Schedules listener error:', error);
-    });
+    if (!activeUserId) {
+      console.info('Firebase Storage: realtime listeners waiting for authenticated user context');
+      return;
+    }
 
-    // Listen to drafts (no user filtering)
+    const draftCollectionUserId = this.useSharedDrafts ? undefined : activeUserId;
+
+    // Listen to schedules for the active user (only when not using shared drafts)
+    if (!this.useSharedDrafts) {
+      const schedulesQuery = query(
+        this.getSchedulesCollection(activeUserId),
+        orderBy('updatedAt', 'desc'),
+        limit(MAX_SCHEDULES)
+      );
+  
+      this.schedulesListener = onSnapshot(schedulesQuery, (snapshot) => {
+        const schedules = this.parseSchedulesSnapshot(snapshot);
+        if (this.onSchedulesChange) {
+          this.onSchedulesChange(schedules);
+        }
+      }, (error) => {
+        console.error('Schedules listener error:', error);
+      });
+    }
+
+    const draftConstraints: QueryConstraint[] = [];
+
+    if (this.useSharedDrafts) {
+      draftConstraints.push(where('userId', '==', activeUserId));
+    }
+
+    draftConstraints.push(orderBy('updatedAt', 'desc'), limit(MAX_DRAFTS));
+
     const draftsQuery = query(
-      collection(db, COLLECTIONS.DRAFTS),
-      orderBy('updatedAt', 'desc'),
-      limit(MAX_DRAFTS)
+      this.getDraftsCollection(draftCollectionUserId),
+      ...draftConstraints
     );
 
     this.draftsListener = onSnapshot(draftsQuery, (snapshot) => {
@@ -182,10 +291,21 @@ class FirebaseStorageService {
    * Check if user is authenticated
    */
   private requireFirebase(): boolean {
+    if (!this.firebaseEnabled) {
+      console.warn('🔥 Firebase Storage: Firebase features are disabled');
+      return false;
+    }
+
     if (!db) {
       console.warn('🔥 Firebase Storage: Database not initialized');
       return false;
     }
+
+    if (!this.currentUserId) {
+      console.warn('🔥 Firebase Storage: User context not set - authentication required');
+      return false;
+    }
+
     return true;
   }
 
@@ -280,26 +400,28 @@ class FirebaseStorageService {
         };
       }
 
+      const userId = this.getDocumentUserId();
+
       // Create schedule document
       const scheduleId = this.generateScheduleId();
       const now = serverTimestamp();
       
       const firebaseSchedule: Omit<FirebaseSchedule, 'id'> = {
-        userId: 'anonymous', // No auth required
+        userId,
         routeName: sanitizeText(summarySchedule.routeName),
         direction: sanitizeText(summarySchedule.direction),
-        effectiveDate: summarySchedule.effectiveDate instanceof Date 
-          ? summarySchedule.effectiveDate.toISOString() 
+        effectiveDate: summarySchedule.effectiveDate instanceof Date
+          ? summarySchedule.effectiveDate.toISOString()
           : summarySchedule.effectiveDate,
-        expirationDate: summarySchedule.expirationDate instanceof Date 
-          ? summarySchedule.expirationDate.toISOString() 
+        expirationDate: summarySchedule.expirationDate instanceof Date
+          ? summarySchedule.expirationDate.toISOString()
           : summarySchedule.expirationDate,
         status: this.getScheduleStatus(
-          summarySchedule.effectiveDate instanceof Date 
-            ? summarySchedule.effectiveDate 
+          summarySchedule.effectiveDate instanceof Date
+            ? summarySchedule.effectiveDate
             : new Date(summarySchedule.effectiveDate),
-          summarySchedule.expirationDate instanceof Date 
-            ? summarySchedule.expirationDate 
+          summarySchedule.expirationDate instanceof Date
+            ? summarySchedule.expirationDate
             : summarySchedule.expirationDate ? new Date(summarySchedule.expirationDate) : undefined
         ),
         tripCount: {
@@ -317,7 +439,7 @@ class FirebaseStorageService {
       };
 
       // Save to Firestore
-      const docRef = doc(db, COLLECTIONS.SCHEDULES, scheduleId);
+      const docRef = this.getScheduleDoc(this.getCollectionUserId(), scheduleId);
       await setDoc(docRef, firebaseSchedule);
 
       return { success: true, scheduleId };
@@ -341,8 +463,9 @@ class FirebaseStorageService {
         return [];
       }
 
+      const collectionRef = this.getSchedulesCollection(this.getCollectionUserId());
       const q = query(
-        collection(db, COLLECTIONS.SCHEDULES),
+        collectionRef,
         // No user filtering needed
         orderBy('updatedAt', 'desc')
       );
@@ -385,7 +508,7 @@ class FirebaseStorageService {
         return null;
       }
 
-      const docRef = doc(db, COLLECTIONS.SCHEDULES, id);
+      const docRef = this.getScheduleDoc(this.getCollectionUserId(), id);
       const docSnap = await getDoc(docRef);
 
       if (docSnap.exists()) {
@@ -417,7 +540,7 @@ class FirebaseStorageService {
         return { success: false, error: 'Authentication required for deleting schedules' };
       }
 
-      const docRef = doc(db, COLLECTIONS.SCHEDULES, id);
+      const docRef = this.getScheduleDoc(this.getCollectionUserId(), id);
       await deleteDoc(docRef);
 
       return { success: true };
@@ -487,7 +610,7 @@ class FirebaseStorageService {
         isDraft: false
       };
 
-      const docRef = doc(db, COLLECTIONS.SCHEDULES, id);
+      const docRef = this.getScheduleDoc(this.getCollectionUserId(), id);
       await setDoc(docRef, updatedData, { merge: true });
 
       return { success: true };
@@ -543,6 +666,8 @@ class FirebaseStorageService {
         }
       }
 
+      const userId = this.getDocumentUserId();
+
       const draftId = options.existingId || this.generateDraftId();
       const now = serverTimestamp();
       
@@ -553,7 +678,7 @@ class FirebaseStorageService {
       }
 
       const firebaseDraft: Omit<FirebaseDraftSchedule, 'id'> = {
-        userId: 'anonymous', // No auth required
+        userId, // Required for Firestore security rules
         fileName: sanitizeText(fileName),
         fileType,
         uploadedData,
@@ -565,7 +690,7 @@ class FirebaseStorageService {
         autoSaved: options.autoSaved || false
       };
 
-      const docRef = doc(db, COLLECTIONS.DRAFTS, draftId);
+      const docRef = this.getDraftDoc(this.getCollectionUserId(), draftId);
       await setDoc(docRef, firebaseDraft);
 
       return { success: true, draftId };
@@ -589,11 +714,16 @@ class FirebaseStorageService {
         return [];
       }
 
-      const q = query(
-        collection(db, COLLECTIONS.DRAFTS),
-        // No user filtering needed
-        orderBy('updatedAt', 'desc')
-      );
+      const collectionRef = this.getDraftsCollection(this.getCollectionUserId());
+      const constraints: QueryConstraint[] = [];
+
+      if (this.useSharedDrafts) {
+        constraints.push(where('userId', '==', this.getDocumentUserId()));
+      }
+
+      constraints.push(orderBy('updatedAt', 'desc'));
+
+      const q = query(collectionRef, ...constraints);
 
       const snapshot = await getDocs(q);
       return this.parseDraftsSnapshot(snapshot);
@@ -614,7 +744,7 @@ class FirebaseStorageService {
         return null;
       }
 
-      const docRef = doc(db, COLLECTIONS.DRAFTS, id);
+      const docRef = this.getDraftDoc(this.getCollectionUserId(), id);
       const docSnap = await getDoc(docRef);
 
       if (docSnap.exists()) {
@@ -646,7 +776,7 @@ class FirebaseStorageService {
         return { success: false, error: 'Authentication required for deleting drafts' };
       }
 
-      const docRef = doc(db, COLLECTIONS.DRAFTS, id);
+      const docRef = this.getDraftDoc(this.getCollectionUserId(), id);
       await deleteDoc(docRef);
 
       return { success: true };

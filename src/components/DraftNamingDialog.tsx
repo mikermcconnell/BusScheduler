@@ -44,6 +44,7 @@ export interface DraftNamingResult {
     routeName?: string;
     direction?: string;
   };
+  workflowMode: 'full' | 'quick-adjust';
 }
 
 interface DraftNamingDialogProps {
@@ -53,6 +54,8 @@ interface DraftNamingDialogProps {
   fileName: string;
   suggestedName?: string;
   uploadedData?: ParsedCsvData | ParsedExcelData;
+  fileType: 'excel' | 'csv';
+  workflowContext?: 'new' | 'edit';
 }
 
 const DraftNamingDialog: React.FC<DraftNamingDialogProps> = ({
@@ -61,13 +64,19 @@ const DraftNamingDialog: React.FC<DraftNamingDialogProps> = ({
   onConfirm,
   fileName,
   suggestedName,
-  uploadedData
+  uploadedData,
+  fileType,
+  workflowContext = 'new'
 }) => {
   const [draftName, setDraftName] = useState('');
   const [action, setAction] = useState<'create' | 'replace'>('create');
   const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null);
   const [existingDrafts, setExistingDrafts] = useState<WorkflowDraftState[]>([]);
   const [nameError, setNameError] = useState<string | null>(null);
+  const isEditContext = workflowContext === 'edit';
+  const [workflowMode, setWorkflowMode] = useState<'full' | 'quick-adjust'>(
+    isEditContext ? 'quick-adjust' : 'full'
+  );
   
   // Route detection states
   const [routeDetection, setRouteDetection] = useState<RouteDetectionResult | null>(null);
@@ -75,6 +84,7 @@ const DraftNamingDialog: React.FC<DraftNamingDialogProps> = ({
   const [routeName, setRouteName] = useState('');
   const [direction, setDirection] = useState('');
   const [routeNameSuggestions, setRouteNameSuggestions] = useState<string[]>([]);
+  const supportsQuickAdjust = fileType === 'csv';
 
   // Load existing drafts and set up initial state
   useEffect(() => {
@@ -135,7 +145,8 @@ const DraftNamingDialog: React.FC<DraftNamingDialogProps> = ({
     };
     
     loadDrafts();
-  }, [open, fileName, suggestedName, uploadedData]);
+    setWorkflowMode(isEditContext ? 'quick-adjust' : 'full');
+  }, [open, fileName, suggestedName, uploadedData, fileType, isEditContext]);
 
   const validateDraftName = (name: string): string | null => {
     if (!name.trim()) {
@@ -167,6 +178,12 @@ const DraftNamingDialog: React.FC<DraftNamingDialogProps> = ({
   };
 
   const handleActionChange = (newAction: 'create' | 'replace') => {
+    if (isEditContext) {
+      setAction('create');
+      setSelectedDraftId(null);
+      setNameError(validateDraftName(draftName));
+      return;
+    }
     setAction(newAction);
     if (newAction === 'create') {
       setSelectedDraftId(null);
@@ -204,7 +221,8 @@ const DraftNamingDialog: React.FC<DraftNamingDialogProps> = ({
         routeNumber: routeNumber.trim() || undefined,
         routeName: routeName.trim() || undefined,
         direction: direction.trim() || undefined
-      }
+      },
+      workflowMode
     };
 
     onConfirm(result);
@@ -342,40 +360,75 @@ const DraftNamingDialog: React.FC<DraftNamingDialogProps> = ({
           </Box>
         )}
 
-        {/* Action Selection */}
-        <Box sx={{ mb: 3 }}>
-          <Typography variant="subtitle2" gutterBottom>
-            What would you like to do?
-          </Typography>
-          <RadioGroup
-            value={action}
-            onChange={(e) => handleActionChange(e.target.value as 'create' | 'replace')}
-          >
-            <FormControlLabel
-              value="create"
-              control={<Radio />}
-              label={
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <AddIcon fontSize="small" />
-                  <span>Create a new draft</span>
-                </Box>
-              }
-            />
-            <FormControlLabel
-              value="replace"
-              control={<Radio />}
-              label={
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <ReplaceIcon fontSize="small" />
-                  <span>Replace an existing draft</span>
-                </Box>
-              }
-              disabled={existingDrafts.length === 0}
-            />
-          </RadioGroup>
-        </Box>
+        {!isEditContext && (
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="subtitle2" gutterBottom>
+              What would you like to do?
+            </Typography>
+            <RadioGroup
+              value={action}
+              onChange={(e) => handleActionChange(e.target.value as 'create' | 'replace')}
+            >
+              <FormControlLabel
+                value="create"
+                control={<Radio />}
+                label={
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <AddIcon fontSize="small" />
+                    <span>Create a new draft</span>
+                  </Box>
+                }
+              />
+              <FormControlLabel
+                value="replace"
+                control={<Radio />}
+                label={
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <ReplaceIcon fontSize="small" />
+                    <span>Replace an existing draft</span>
+                  </Box>
+                }
+                disabled={existingDrafts.length === 0}
+              />
+            </RadioGroup>
+          </Box>
+        )}
 
-        {action === 'create' && (
+        {supportsQuickAdjust && !isEditContext && (
+          <Box sx={{ mb: 3, p: 2, borderRadius: 2, border: '1px solid rgba(25, 118, 210, 0.15)', backgroundColor: 'rgba(25, 118, 210, 0.04)' }}>
+            <Typography variant="subtitle2" gutterBottom>
+              Workflow Mode
+            </Typography>
+            <RadioGroup
+              value={workflowMode}
+              onChange={(e) => setWorkflowMode(e.target.value as 'full' | 'quick-adjust')}
+            >
+              <FormControlLabel
+                value="full"
+                control={<Radio />}
+                label="Use the full optimization workflow (upload → timepoints → blocks → summary)"
+              />
+              <FormControlLabel
+                value="quick-adjust"
+                control={<Radio />}
+                label="Skip optimization and tweak the uploaded schedule directly in the summary view"
+              />
+            </RadioGroup>
+            {workflowMode === 'quick-adjust' && (
+              <Alert severity="info" sx={{ mt: 2 }}>
+                We will import your schedule times as-is so you can make quick minute-level adjustments and re-export immediately.
+              </Alert>
+            )}
+          </Box>
+        )}
+
+        {supportsQuickAdjust && isEditContext && (
+          <Alert severity="info" sx={{ mb: 3 }}>
+            Imported schedules are opened directly in quick adjust mode so you can edit and export without running optimization steps.
+          </Alert>
+        )}
+
+        {(action === 'create' || isEditContext) && (
           <Box>
             <TextField
               label="Draft Name"
@@ -406,7 +459,7 @@ const DraftNamingDialog: React.FC<DraftNamingDialogProps> = ({
           </Box>
         )}
 
-        {action === 'replace' && (
+        {!isEditContext && action === 'replace' && (
           <Box>
             <Typography variant="subtitle2" gutterBottom>
               Select a draft to replace:

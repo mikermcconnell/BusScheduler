@@ -22,6 +22,7 @@ import { Schedule, SummarySchedule, ServiceBand } from '../types/schedule';
 import { WorkspaceEvent, WorkspaceEventInput } from '../types/workspaceEvents';
 import { ValidationResult } from '../utils/validator';
 import { useFeatureFlags } from './FeatureFlagContext';
+import { useAuth } from './AuthContext';
 import { AUTO_SAVE_CONFIG, AUTO_SAVE_CONTEXTS } from '../config/autoSave';
 
 /**
@@ -379,6 +380,7 @@ interface WorkspaceProviderProps {
  */
 export const WorkspaceProvider: React.FC<WorkspaceProviderProps> = ({ children }) => {
   const { isCommandCenter } = useFeatureFlags();
+  const { user } = useAuth();
   const [state, dispatch] = useReducer(workspaceReducer, initialState);
 
   /**
@@ -553,7 +555,10 @@ export const WorkspaceProvider: React.FC<WorkspaceProviderProps> = ({ children }
     dispatch({ type: 'SET_LOADING', payload: true });
     
     try {
-      const draft = await draftService.getDraft(draftId, 'anonymous');
+      if (!user) {
+        throw new Error('User is not authenticated');
+      }
+      const draft = await draftService.getDraft(draftId, user.uid);
       if (draft) {
         setCurrentDraft(draft);
         
@@ -584,13 +589,16 @@ export const WorkspaceProvider: React.FC<WorkspaceProviderProps> = ({ children }
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
     }
-  }, [setCurrentDraft]);
+  }, [setCurrentDraft, user]);
 
   const saveDraft = useCallback(async () => {
     if (!state.scheduleData.currentDraft) return;
     
     try {
-      await draftService.saveDraft(state.scheduleData.currentDraft, 'anonymous');
+      if (!user) {
+        throw new Error('User is not authenticated');
+      }
+      await draftService.saveDraft(state.scheduleData.currentDraft, user.uid);
       
       dispatch({
         type: 'SET_SCHEDULE_DATA',
@@ -624,13 +632,13 @@ export const WorkspaceProvider: React.FC<WorkspaceProviderProps> = ({ children }
         }
       });
     }
-  }, [state.scheduleData.currentDraft]);
+  }, [state.scheduleData.currentDraft, user]);
 
   /**
    * Auto-save functionality with optimized timing
    */
   useEffect(() => {
-    if (state.scheduleData.isDirty && state.scheduleData.autoSaveEnabled) {
+    if (state.scheduleData.isDirty && state.scheduleData.autoSaveEnabled && user) {
       const autoSaveTimer = setTimeout(() => {
         saveDraft();
       }, AUTO_SAVE_CONFIG.NAVIGATION_AUTO_SAVE); // 3s optimal interval
@@ -638,7 +646,7 @@ export const WorkspaceProvider: React.FC<WorkspaceProviderProps> = ({ children }
       return () => clearTimeout(autoSaveTimer);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.scheduleData.isDirty, state.scheduleData.autoSaveEnabled]); // saveDraft excluded to avoid circular dependency
+  }, [state.scheduleData.isDirty, state.scheduleData.autoSaveEnabled, user]); // saveDraft excluded to avoid circular dependency
 
   /**
    * Validation actions

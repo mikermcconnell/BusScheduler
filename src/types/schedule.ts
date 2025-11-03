@@ -8,6 +8,8 @@ export interface TimePoint {
   name: string;
   /** Order sequence in the route (1-based) */
   sequence: number;
+  /** Optional reference to another time point this entry mirrors (for loop terminals, etc.) */
+  aliasFor?: string;
 }
 
 /**
@@ -92,6 +94,12 @@ export interface SummarySchedule {
       start: string;
       end: string;
     };
+  };
+  /** Optional quick-adjust trip details grouped by day */
+  tripDetails?: {
+    weekday?: Trip[];
+    saturday?: Trip[];
+    sunday?: Trip[];
   };
 }
 
@@ -360,6 +368,8 @@ export interface Trip {
   originalArrivalTimes?: { [timePointId: string]: string };
   originalDepartureTimes?: { [timePointId: string]: string };
   originalRecoveryTimes?: { [timePointId: string]: number };
+  /** Stored tail recovery values to reinstate if another trip is added */
+  hiddenTailRecoveryTimes?: { [timePointId: string]: number };
 }
 
 /**

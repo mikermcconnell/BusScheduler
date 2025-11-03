@@ -12,7 +12,7 @@ DROP TABLE IF EXISTS time_points CASCADE;
 DROP TABLE IF EXISTS schedule_versions CASCADE;
 DROP TABLE IF EXISTS schedules CASCADE;
 DROP TABLE IF EXISTS routes CASCADE;
-DROP TABLE IF EXISTS refresh_tokens CASCADE;
+DROP TABLE IF EXISTS refresh_tokens CASCADE;\nDROP TABLE IF EXISTS user_invitations CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
 DROP TYPE IF EXISTS day_type CASCADE;
 DROP TYPE IF EXISTS schedule_status CASCADE;
@@ -43,11 +43,24 @@ CREATE TABLE users (
 CREATE TABLE refresh_tokens (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    token VARCHAR(500) UNIQUE NOT NULL,
+    token_hash VARCHAR(128) UNIQUE NOT NULL,
     expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     revoked_at TIMESTAMP WITH TIME ZONE,
-    replaced_by VARCHAR(500)
+    replaced_by VARCHAR(128)
+);
+
+-- Invitation codes for controlled user onboarding
+CREATE TABLE user_invitations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    code VARCHAR(64) UNIQUE NOT NULL,
+    email VARCHAR(255),
+    role user_role NOT NULL DEFAULT 'viewer',
+    created_by UUID REFERENCES users(id),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP WITH TIME ZONE,
+    consumed_at TIMESTAMP WITH TIME ZONE,
+    consumed_by UUID REFERENCES users(id)
 );
 
 -- Routes table
@@ -267,10 +280,10 @@ CREATE TABLE audit_logs (
 CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_users_username ON users(username);
 CREATE INDEX idx_refresh_tokens_user_id ON refresh_tokens(user_id);
-CREATE INDEX idx_refresh_tokens_token ON refresh_tokens(token);
+CREATE INDEX idx_refresh_tokens_token_hash ON refresh_tokens(token_hash);
 CREATE INDEX idx_routes_route_number ON routes(route_number);
 CREATE INDEX idx_schedules_route_id ON schedules(route_id);
-CREATE INDEX idx_schedules_status ON schedules(status);
+CREATE INDEX idx_schedules_status ON schedules(status);\nCREATE INDEX idx_user_invitations_code ON user_invitations(code);\nCREATE INDEX idx_user_invitations_email ON user_invitations(email);
 CREATE INDEX idx_schedules_effective_date ON schedules(effective_date);
 CREATE INDEX idx_time_points_schedule_id ON time_points(schedule_id);
 CREATE INDEX idx_trips_schedule_id ON trips(schedule_id);
@@ -300,3 +313,5 @@ CREATE TRIGGER update_blocks_updated_at BEFORE UPDATE ON blocks FOR EACH ROW EXE
 CREATE TRIGGER update_trips_updated_at BEFORE UPDATE ON trips FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_operators_updated_at BEFORE UPDATE ON operators FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_shifts_updated_at BEFORE UPDATE ON shifts FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+

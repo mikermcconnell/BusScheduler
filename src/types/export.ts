@@ -3,7 +3,7 @@
  * Comprehensive type definitions for the unified export system
  */
 
-import { ServiceBand, TimePoint, SummarySchedule } from './schedule';
+import { ServiceBand, TimePoint, SummarySchedule, Trip } from './schedule';
 import { ParsedExcelData } from '../utils/excelParser';
 import { ParsedCsvData } from '../utils/csvParser';
 import { BlockConfiguration } from './workflow';
@@ -125,6 +125,13 @@ export interface ExportDataBundle {
     cycleTimeMinutes: number;
     automateBlockStartTimes: boolean;
     configurations: BlockConfiguration[];
+  };
+  
+  /** Detailed trips grouped by service day */
+  tripsByDay?: {
+    weekday?: Trip[];
+    saturday?: Trip[];
+    sunday?: Trip[];
   };
   
   /** Generated summary schedule */

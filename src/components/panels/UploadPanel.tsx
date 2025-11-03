@@ -4,7 +4,7 @@
  * Preserves all existing functionality while adapting for the Schedule Command Center workspace
  */
 
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   Typography,
   Card,
@@ -54,7 +54,7 @@ import { ParsedExcelData } from '../../utils/excelParser';
 import { ParsedCsvData, CsvParser } from '../../utils/csvParser';
 import { ValidationResult } from '../../utils/validator';
 import { scheduleService, ScheduleGenerationOptions } from '../../services/scheduleService';
-import { SummarySchedule } from '../../types/schedule';
+import { SummarySchedule, Trip } from '../../types/schedule';
 import { CalculationResults, TimeBand } from '../../utils/calculator';
 import { useWorkflowDraft } from '../../hooks/useWorkflowDraft';
 import { AUTO_SAVE_CONFIG } from '../../config/autoSave';
@@ -62,6 +62,9 @@ import { draftService } from '../../services/draftService';
 import DraftNamingDialog, { DraftNamingResult } from '../DraftNamingDialog';
 import { useWorkspace } from '../../contexts/WorkspaceContext';
 import { emit } from '../../services/workspaceEventBus';
+import parseQuickAdjustSchedule, { parseQuickAdjustCsv } from '../../utils/quickAdjustImporter';
+import quickAdjustStorage from '../../services/quickAdjustStorage';
+import { normalizeSummaryScheduleTrips } from '../../utils/blockAssignment';
 
 /**
  * Panel Props Interface
@@ -110,12 +113,33 @@ export const UploadPanel: React.FC<PanelProps> = ({ panelId, data, onClose, onMi
   // Draft naming dialog states - same as original
   const [showDraftNamingDialog, setShowDraftNamingDialog] = useState(false);
   const [showCancelConfirmation, setShowCancelConfirmation] = useState(false);
-  const [pendingUploadData, setPendingUploadData] = useState<{
-    data: { extractedData?: ParsedExcelData; csvData?: ParsedCsvData; fileType: 'excel' | 'csv' };
+const [pendingUploadData, setPendingUploadData] = useState<{
+    data: { extractedData?: ParsedExcelData; csvData?: ParsedCsvData; tripsByDay?: Record<'weekday' | 'saturday' | 'sunday', Trip[]>; fileType: 'excel' | 'csv' };
     fileName: string;
     validation: ValidationResult;
     report: string;
+    file: File;
   } | null>(null);
+
+  const workflowContext = (data?.workflowContext as 'new' | 'edit') ?? 'new';
+  const isEditContext = workflowContext === 'edit';
+  const panelCopy = useMemo(() => {
+    if (isEditContext) {
+      return {
+        intro: 'Import a published CSV schedule to make quick adjustments before export.',
+        uploadTitle: 'Import Schedule CSV',
+        uploadSubtitle: 'Upload a schedule export to open it in quick adjust mode.',
+        uploadButton: 'Import CSV Schedule'
+      };
+    }
+
+    return {
+      intro: 'Upload CSV or Excel files to create a new draft schedule.',
+      uploadTitle: 'Create Draft Working Schedule',
+      uploadSubtitle: 'Upload raw schedule data to create a new draft working schedule.',
+      uploadButton: 'Upload Schedule File'
+    };
+  }, [isEditContext]);
 
   // Default time bands - same as original
   const defaultTimeBands: { weekday: TimeBand[]; saturday: TimeBand[]; sunday: TimeBand[] } = {
@@ -185,10 +209,16 @@ export const UploadPanel: React.FC<PanelProps> = ({ panelId, data, onClose, onMi
     data: { extractedData?: ParsedExcelData; csvData?: ParsedCsvData; fileType: 'excel' | 'csv' }, 
     fileName: string, 
     validation: ValidationResult, 
-    report: string
+    report: string,
+    file: File
   ) => {
+    if (isEditContext && data.fileType !== 'csv') {
+      setUploadError('Editing an existing schedule requires uploading a CSV schedule export.');
+      return;
+    }
+
     // Store the upload data and show the draft naming dialog
-    setPendingUploadData({ data, fileName, validation, report });
+    setPendingUploadData({ data, fileName, validation, report, file });
     setShowDraftNamingDialog(true);
     
     // Clear any previous errors
@@ -222,8 +252,9 @@ export const UploadPanel: React.FC<PanelProps> = ({ panelId, data, onClose, onMi
   const handleDraftNamingConfirm = useCallback(async (result: DraftNamingResult) => {
     if (!pendingUploadData) return;
     
-    const { data, fileName, validation, report } = pendingUploadData;
-    
+    const { data, fileName, validation, report, file } = pendingUploadData;
+    const isQuickAdjust = result.workflowMode === 'quick-adjust';
+
     try {
       // Set up the data in state
       if (data.fileType === 'excel' && data.extractedData) {
@@ -246,63 +277,140 @@ export const UploadPanel: React.FC<PanelProps> = ({ panelId, data, onClose, onMi
 
       // Create or replace the draft with chosen name
       const uploadedData = data.extractedData || data.csvData;
-      if (uploadedData) {
-        const draftResult = await createDraftFromUpload(result.draftName, data.fileType, uploadedData);
-        if (draftResult.success && draftResult.draftId) {
-          setCurrentDraftId(draftResult.draftId);
-          setCurrentDraft(draftResult as any); // Update workspace context
-          
-          // Create or update workflow with custom name
-          const workflow = draftService.getOrCreateWorkflow(draftResult.draftId, result.draftName);
-          draftService.updateStepStatus(draftResult.draftId, 'upload', 'completed');
-          
-          console.log('✅ Created workflow draft with custom name:', result.draftName, draftResult.draftId);
-          
-          // Emit success event instead of navigation
-          emit({
-            type: 'schedule-data',
-            source: 'upload-panel',
-            priority: 1,
-            payload: {
-              dataType: 'upload',
-              action: 'create',
-              data: {
-                draftId: draftResult.draftId,
-                draftName: result.draftName,
-                fileName: result.draftName,
-                fileType: data.fileType,
-                scheduleData: uploadedData,
-                validationResults: validation,
-                fromUpload: true
-              }
-            }
-          });
-
-          // For CSV files, suggest TimePoints panel opening
-          if (data.fileType === 'csv') {
-            emit({
-              type: 'workflow-progress',
-              source: 'upload-panel',
-              priority: 1,
-              payload: {
-                currentStep: 'timepoints',
-                progress: 25,
-                canProceed: true,
-              }
-            });
-          }
-        } else {
-          console.error('❌ Failed to create workflow draft:', draftResult.error);
-          setUploadError(draftResult.error || 'Failed to create draft');
-        }
+      if (!uploadedData) {
+        setUploadError('Unable to process uploaded data. Please try again or upload a different file.');
+        return;
       }
 
-      // Mark the upload step as complete
+      const draftResult = await createDraftFromUpload(result.draftName, data.fileType, uploadedData);
+      if (!draftResult.success || !draftResult.draftId) {
+        console.error('❌ Failed to create workflow draft:', draftResult.error);
+        setUploadError(draftResult.error || 'Failed to create draft');
+        return;
+      }
+
+      const draftId = draftResult.draftId;
+      setCurrentDraftId(draftId);
+      setCurrentDraft(draftResult as any); // Update workspace context
+      
+      draftService.getOrCreateWorkflow(draftId, result.draftName);
+      draftService.updateStepStatus(draftId, 'upload', 'completed');
       draftService.completeStep('upload', {
         fileName: result.draftName,
         fileType: data.fileType,
         uploadedAt: new Date().toISOString()
       });
+
+      if (isQuickAdjust) {
+        if (data.fileType !== 'csv') {
+          setUploadError('Quick adjust is currently supported for CSV schedule exports only.');
+          return;
+        }
+
+        try {
+          const rawContent = await file.text();
+          const rows = parseQuickAdjustCsv(rawContent).filter(row => row.some(cell => cell.trim() !== ''));
+          const parseResult = parseQuickAdjustSchedule(rows, { routeId: draftId });
+          const normalizedSummaryData = normalizeSummaryScheduleTrips(parseResult.summarySchedule);
+          parseResult.summarySchedule = normalizedSummaryData.summary;
+
+          quickAdjustStorage.save(draftId, {
+            rows,
+            fileName,
+            savedAt: new Date().toISOString()
+          });
+
+          await draftService.applyQuickAdjustImport(draftId, parseResult, {
+            fileName,
+            validation,
+            warnings: parseResult.warnings
+          });
+
+          const primaryDay: 'weekday' | 'saturday' | 'sunday' =
+            parseResult.trips.weekday.length > 0
+              ? 'weekday'
+              : parseResult.trips.saturday.length > 0
+                ? 'saturday'
+                : 'sunday';
+
+          setSummarySchedule(parseResult.summarySchedule);
+          setCalculationResults(null);
+          setSelectedDayType(primaryDay);
+
+          emit({
+            type: 'schedule-data',
+            source: 'upload-panel',
+            priority: 1,
+            payload: {
+              dataType: 'summary-schedule',
+              action: 'create',
+              data: {
+                draftId,
+                draftName: result.draftName,
+                summarySchedule: parseResult.summarySchedule,
+                timePoints: parseResult.timePoints,
+                trips: parseResult.trips,
+                tripsByDay: normalizedSummaryData.tripsByDay,
+                warnings: parseResult.warnings,
+                fromQuickAdjust: true,
+                rawCsvRows: rows
+              }
+            }
+          });
+
+          emit({
+            type: 'workflow-progress',
+            source: 'upload-panel',
+            priority: 1,
+            payload: {
+              currentStep: 'summary',
+              progress: 80,
+              canProceed: true
+            }
+          });
+
+          return;
+        } catch (error) {
+          console.error('Quick adjust import failed:', error);
+          const message = error instanceof Error ? error.message : 'Failed to import schedule for quick adjustment';
+          setUploadError(message);
+          return;
+        }
+      }
+
+      console.log('✅ Created workflow draft with custom name:', result.draftName, draftId);
+
+      emit({
+        type: 'schedule-data',
+        source: 'upload-panel',
+        priority: 1,
+        payload: {
+          dataType: 'upload',
+          action: 'create',
+          data: {
+            draftId,
+            draftName: result.draftName,
+            fileName: result.draftName,
+            fileType: data.fileType,
+            scheduleData: uploadedData,
+            validationResults: validation,
+            fromUpload: true
+          }
+        }
+      });
+
+      if (data.fileType === 'csv') {
+        emit({
+          type: 'workflow-progress',
+          source: 'upload-panel',
+          priority: 1,
+          payload: {
+            currentStep: 'timepoints',
+            progress: 25,
+            canProceed: true,
+          }
+        });
+      }
       
     } catch (error) {
       console.error('Error handling draft creation:', error);
@@ -350,6 +458,7 @@ export const UploadPanel: React.FC<PanelProps> = ({ panelId, data, onClose, onMi
         travelTimes,
         generationOptions
       );
+      const normalized = normalizeSummaryScheduleTrips(summary);
 
       const calculations = scheduleService.getLastCalculationResults();
       
@@ -357,7 +466,7 @@ export const UploadPanel: React.FC<PanelProps> = ({ panelId, data, onClose, onMi
         throw new Error('Failed to retrieve calculation results');
       }
 
-      setSummarySchedule(summary);
+      setSummarySchedule(normalized.summary);
       setCalculationResults(calculations);
 
       // Emit processing complete event
@@ -369,9 +478,11 @@ export const UploadPanel: React.FC<PanelProps> = ({ panelId, data, onClose, onMi
           dataType: 'upload',
           action: 'update',
           data: {
-            summarySchedule: summary,
+            summarySchedule: normalized.summary,
             calculationResults: calculations,
-            draftId: currentDraftId
+            draftId: currentDraftId,
+            tripDetails: normalized.summary.tripDetails,
+            tripsByDay: normalized.tripsByDay
           }
         }
       });
@@ -432,7 +543,7 @@ export const UploadPanel: React.FC<PanelProps> = ({ panelId, data, onClose, onMi
           Upload Schedule Data
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Upload CSV or Excel files to create a new draft schedule
+          {panelCopy.intro}
         </Typography>
       </Box>
 
@@ -451,6 +562,9 @@ export const UploadPanel: React.FC<PanelProps> = ({ panelId, data, onClose, onMi
           <FileUpload
             onFileUploaded={handleFileUploaded}
             onError={handleUploadError}
+            title={panelCopy.uploadTitle}
+            subtitle={panelCopy.uploadSubtitle}
+            buttonText={panelCopy.uploadButton}
           />
         </CardContent>
       </Card>
@@ -725,6 +839,10 @@ export const UploadPanel: React.FC<PanelProps> = ({ panelId, data, onClose, onMi
         onClose={handleDraftNamingCancel}
         onConfirm={handleDraftNamingConfirm}
         fileName={pendingUploadData?.fileName || ''}
+        suggestedName={pendingUploadData?.fileName || ''}
+        uploadedData={pendingUploadData?.data.extractedData || pendingUploadData?.data.csvData}
+        fileType={pendingUploadData?.data.fileType || 'csv'}
+        workflowContext={workflowContext}
       />
 
       {/* Confirmation Dialog for Discarding Upload */}

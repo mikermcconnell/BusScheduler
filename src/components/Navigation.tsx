@@ -53,10 +53,11 @@ const Navigation: React.FC = () => {
   const navigationItems = [
     { path: '/', label: 'Dashboard', key: 'dashboard' },
     { path: '/drafts', label: 'Draft Schedules', key: 'drafts', badge: draftCount, priority: 'high' },
-    { path: '/upload', label: 'New Schedule', key: 'upload', priority: 'high' },
+    { path: '/new-schedule', label: 'New Schedule', key: 'new-schedule', priority: 'high' },
+    { path: '/edit-schedule', label: 'Edit Existing', key: 'edit-schedule', priority: 'high' },
     { path: '/schedules', label: 'Browse Schedules', key: 'schedules', priority: 'medium' },
     { path: '/block-configuration', label: 'Block Configuration', key: 'block-configuration', priority: 'medium' },
-    { path: '/tod-shifts', label: 'Tod Shifts', key: 'tod-shifts', priority: 'low', beta: true },
+    { path: '/tod-shifts', label: 'TOD Shift Management', key: 'tod-shifts', priority: 'low', beta: true },
     { path: '/routes', label: 'Manage Routes', key: 'routes', priority: 'low' },
     { path: '/settings', label: 'Settings', key: 'settings', priority: 'low' },
   ];

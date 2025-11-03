@@ -12,6 +12,42 @@ import {
 } from '../types/export';
 import { SummarySchedule, TimePoint, ServiceBand } from '../types/schedule';
 import { sanitizeText } from '../utils/inputSanitizer';
+import { computeBlocksFromMatrix } from './blockAssignment';
+
+type DayKey = 'weekday' | 'saturday' | 'sunday';
+
+const createBlockResolver = (
+  dataBundle: ExportDataBundle
+): ((dayType: DayKey, tripIndex: number) => number | null) => {
+  const schedule = dataBundle.summarySchedule;
+  const cache: Partial<Record<DayKey, number[]>> = {};
+
+  return (dayType: DayKey, tripIndex: number): number | null => {
+    if (!schedule || !schedule.timePoints) {
+      return null;
+    }
+
+    const tripsSource = dataBundle.tripsByDay?.[dayType]
+      || schedule.tripDetails?.[dayType];
+    const trip = tripsSource && tripsSource[tripIndex];
+
+    if (trip && typeof trip.blockNumber === 'number' && trip.blockNumber > 0) {
+      return trip.blockNumber;
+    }
+
+    if (!cache[dayType]) {
+      const matrix = (schedule as any)[dayType];
+      cache[dayType] = computeBlocksFromMatrix(matrix, schedule.timePoints) || [];
+    }
+
+    const fallback = cache[dayType];
+    if (fallback && fallback[tripIndex] !== undefined) {
+      return fallback[tripIndex];
+    }
+
+    return null;
+  };
+};
 
 /**
  * GTFS (General Transit Feed Specification) Formatter
@@ -32,25 +68,25 @@ export class GTFSFormatter {
 
     if (dataBundle.summarySchedule) {
       const schedule = dataBundle.summarySchedule;
+      const resolveBlock = createBlockResolver(dataBundle);
       let tripCounter = 1;
 
-      // Process each day type
-      ['weekday', 'saturday', 'sunday'].forEach(dayType => {
+      (['weekday', 'saturday', 'sunday'] as DayKey[]).forEach(dayType => {
         const trips = (schedule as any)[dayType] || [];
-        
+
         trips.forEach((trip: any, index: number) => {
-          const blockId = Math.ceil(tripCounter / 3); // 3 trips per block
-          
+          const blockId = resolveBlock(dayType, index);
+
           rows.push([
             `trip_${tripCounter}`,
             schedule.routeId || 'route_001',
             dayType,
             schedule.routeName || 'Main Route',
             schedule.direction === 'outbound' ? '0' : '1',
-            `block_${blockId}`,
+            blockId ? `block_${blockId}` : '',
             `shape_${schedule.routeId || '001'}`
           ]);
-          
+
           tripCounter++;
         });
       });
@@ -139,17 +175,18 @@ export class OperationalFormatter {
 
     if (dataBundle.summarySchedule) {
       const schedule = dataBundle.summarySchedule;
+      const resolveBlock = createBlockResolver(dataBundle);
       let tripCounter = 1;
 
-      ['weekday', 'saturday', 'sunday'].forEach(dayType => {
+      (['weekday', 'saturday', 'sunday'] as DayKey[]).forEach(dayType => {
         const trips = (schedule as any)[dayType] || [];
         
         trips.forEach((trip: any, index: number) => {
-          const blockId = Math.ceil(tripCounter / 3);
+          const blockId = resolveBlock(dayType, index);
           const servicePeriod = this.getServicePeriod(trip[0] || '06:00');
           
-          const row = [
-            blockId,
+          const row: any[] = [
+            blockId ?? '',
             tripCounter,
             dayType.charAt(0).toUpperCase() + dayType.slice(1),
             servicePeriod,
@@ -161,8 +198,7 @@ export class OperationalFormatter {
             row.push(trip[idx] || '');
           });
 
-          // Add operational data
-          row.push('2 min', '45 min', ''); // Recovery, Cycle, Notes
+          row.push('2 min', '45 min', '');
 
           rows.push(row);
           tripCounter++;

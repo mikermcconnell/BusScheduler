@@ -21,6 +21,7 @@ import {
   Schedule as ScheduleIcon
 } from '@mui/icons-material';
 import { scheduleStorage } from '../services/scheduleStorage';
+import { firebaseStorage } from '../services/firebaseStorage';
 import { SummarySchedule } from '../types/schedule';
 import { draftService } from '../services/draftService';
 import WorkflowBreadcrumbs from '../components/WorkflowBreadcrumbs';
@@ -569,7 +570,7 @@ export default function BlockConfiguration() {
   const [scrollStart, setScrollStart] = useState({ left: 0, top: 0 });
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [activeTab, setActiveTab] = useState(0);
-  const [saveNotification, setSaveNotification] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
+  const [saveNotification, setSaveNotification] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'warning' }>({
     open: false,
     message: '',
     severity: 'success'
@@ -1377,163 +1378,165 @@ export default function BlockConfiguration() {
     setSchedule(updatedSchedule);
     
     // Save the generated schedule
-    try {
-      const summaryScheduleData: SummarySchedule = {
-        routeId: updatedSchedule.id,
-        routeName: updatedSchedule.name,
-        direction: 'Outbound', // Default direction
-        timePoints: updatedSchedule.timePoints.map((tp, index) => ({
-          id: tp.id,
-          name: tp.name,
-          sequence: index + 1
-        })),
-        weekday: [], // Empty schedule matrix for now
-        saturday: [], // Empty schedule matrix for now 
-        sunday: [], // Empty schedule matrix for now
-        effectiveDate: new Date(),
-        metadata: {
-          weekdayTrips: updatedSchedule.trips.length,
-          saturdayTrips: 0,
-          sundayTrips: 0,
-          frequency: 30, // default frequency
-          operatingHours: {
-            start: updatedSchedule.firstTripTime,
-            end: updatedSchedule.lastTripTime
-          }
+    const summaryScheduleData: SummarySchedule = {
+      routeId: updatedSchedule.id,
+      routeName: updatedSchedule.name,
+      direction: 'Outbound', // Default direction
+      timePoints: updatedSchedule.timePoints.map((tp, index) => ({
+        id: tp.id,
+        name: tp.name,
+        sequence: index + 1
+      })),
+      weekday: [], // Empty schedule matrix for now
+      saturday: [], // Empty schedule matrix for now
+      sunday: [], // Empty schedule matrix for now
+      effectiveDate: new Date(),
+      metadata: {
+        weekdayTrips: updatedSchedule.trips.length,
+        saturdayTrips: 0,
+        sundayTrips: 0,
+        frequency: 30, // default frequency
+        operatingHours: {
+          start: updatedSchedule.firstTripTime,
+          end: updatedSchedule.lastTripTime
         }
-      };
-      
-      // Auto-save the schedule
-      const result = scheduleStorage.saveSchedule(
+      }
+    };
+
+    const completeSchedule = {
+      ...updatedSchedule,
+      timePointData: timePointData,
+      deletedPeriods: deletedPeriods,
+      timePeriodServiceBands: timePeriodServiceBands
+    };
+
+    const generatedDraftName = `${updatedSchedule.name}_generated_${new Date().toISOString().split('T')[0]}`;
+    const generatedData = {
+      sheets: [],
+      metadata: {
+        fileName: `${updatedSchedule.name}_generated`,
+        generatedFromBlocks: true,
+        blockConfigurations: updatedSchedule.blockConfigurations,
+        trips: updatedSchedule.trips
+      }
+    };
+
+    const persistScheduleLocally = () => {
+      scheduleStorage.saveSchedule(
         summaryScheduleData,
         'excel',
         updatedSchedule.name,
-        null // no raw data since this is generated
+        null
       );
-      
-      // Also save as a draft for better persistence
-      // Create minimal upload data structure for generated schedules
-      const generatedData = {
-        sheets: [],
-        metadata: {
-          fileName: `${updatedSchedule.name}_generated`,
-          generatedFromBlocks: true,
-          blockConfigurations: updatedSchedule.blockConfigurations,
-          trips: updatedSchedule.trips
-        }
-      };
-      
-      const draftResult = scheduleStorage.saveDraftSchedule(
-        `${updatedSchedule.name}_generated_${new Date().toISOString().split('T')[0]}`,
+    };
+
+    const persistDraftLocally = () => {
+      scheduleStorage.saveDraftSchedule(
+        generatedDraftName,
         'excel',
-        generatedData as any, // Minimal structure for generated schedules
+        generatedData as any,
         {
           summarySchedule: summaryScheduleData,
           processingStep: 'completed',
           autoSaved: true
         }
       );
-      
-      if (result.success && result.scheduleId) {
-        console.log('✅ Schedule auto-saved successfully with ID:', result.scheduleId);
-        console.log('✅ Also saved as draft with ID:', draftResult.draftId);
-        
-        // Show success notification
+    };
+
+    try {
+      let scheduleSaved = false;
+      let scheduleError: string | undefined;
+
+      try {
+        const scheduleResult = await firebaseStorage.saveSchedule(
+          summaryScheduleData,
+          'excel',
+          updatedSchedule.name,
+          null
+        );
+        scheduleSaved = !!(scheduleResult.success && scheduleResult.scheduleId);
+        if (!scheduleSaved) {
+          scheduleError = scheduleResult.error;
+        } else {
+          console.log('✅ Schedule saved to Firebase with ID:', scheduleResult.scheduleId);
+        }
+      } catch (firebaseError: any) {
+        scheduleError = firebaseError?.message || 'Unknown error while saving schedule';
+      }
+
+      let draftSaved = false;
+      let draftError: string | undefined;
+
+      if (scheduleSaved) {
+        try {
+          const draftResult = await firebaseStorage.saveDraftSchedule(
+            generatedDraftName,
+            'excel',
+            generatedData as any,
+            {
+              summarySchedule: summaryScheduleData,
+              processingStep: 'completed',
+              autoSaved: true
+            }
+          );
+          draftSaved = !!(draftResult.success && draftResult.draftId);
+          if (!draftSaved) {
+            draftError = draftResult.error;
+          } else {
+            console.log('✅ Draft saved to Firebase with ID:', draftResult.draftId);
+          }
+        } catch (firebaseError: any) {
+          draftError = firebaseError?.message || 'Unknown error while saving draft';
+        }
+      }
+
+      if (!scheduleSaved) {
+        console.warn('⚠️ Failed to persist schedule to Firebase:', scheduleError);
+        persistScheduleLocally();
+        persistDraftLocally();
         setSaveNotification({
           open: true,
-          message: '✅ Schedule auto-saved successfully!',
-          severity: 'success'
+          message: `⚠️ Unable to save schedule to cloud${scheduleError ? `: ${scheduleError}` : ''}`,
+          severity: 'error'
         });
-        
-        // Save block configuration to workflow draft if available
-        if (draft && updateBlockConfiguration) {
-          const blockConfigData = {
-            numberOfBuses: schedule.blockConfigurations.length,
-            cycleTimeMinutes: schedule.cycleTimeMinutes,
-            automateBlockStartTimes: schedule.automateBlockStartTimes,
-            blockConfigurations: schedule.blockConfigurations.map(bc => ({
-              blockNumber: bc.blockNumber,
-              startTime: bc.startTime,
-              endTime: bc.endTime
-            }))
-          };
-          
-          await updateBlockConfiguration(blockConfigData);
-          console.log('✅ Block configuration saved to workflow draft');
-        }
-        
-        // Save complete schedule to localStorage for persistence
-        const completeSchedule = { 
-          ...updatedSchedule, 
-          timePointData: timePointData,
-          deletedPeriods: deletedPeriods,
-          timePeriodServiceBands: timePeriodServiceBands
-        };
-        localStorage.setItem('currentSummarySchedule', JSON.stringify(completeSchedule));
-        console.log('💾 Summary schedule saved to localStorage for persistence');
-        
-        // Mark the Block Configuration step as complete with full block configuration data
-        if (draft?.draftId) {
-          await draftService.updateStepStatus(draft.draftId, 'blocks', 'completed', 100, {
-            numberOfBuses: schedule.blockConfigurations.length,
-            cycleTimeMinutes: schedule.cycleTimeMinutes,
-            automateBlockStartTimes: schedule.automateBlockStartTimes,
-            blockConfigurations: schedule.blockConfigurations,
-            schedule: completeSchedule,
-            trips: updatedSchedule.trips
-          });
-        }
-        
-        // Navigate to BlockSummarySchedule page with the generated schedule and draft ID
-        navigate('/block-summary-schedule', { 
-          state: { 
-            schedule: completeSchedule,
-            draftId: draft?.draftId
-          } 
+      } else if (!draftSaved) {
+        console.warn('⚠️ Schedule saved to Firebase but draft backup failed:', draftError);
+        persistScheduleLocally();
+        persistDraftLocally();
+        setSaveNotification({
+          open: true,
+          message: `⚠️ Schedule saved to cloud but draft backup failed${draftError ? `: ${draftError}` : ''}`,
+          severity: 'warning'
         });
       } else {
-        // If save fails, still navigate but without saved ID
-        const completeSchedule = { 
-          ...updatedSchedule, 
-          timePointData: timePointData,
-          deletedPeriods: deletedPeriods,
-          timePeriodServiceBands: timePeriodServiceBands
-        };
-        localStorage.setItem('currentSummarySchedule', JSON.stringify(completeSchedule));
-        console.log('💾 Summary schedule saved to localStorage for persistence (save failed)');
-        
-        // Mark the Block Configuration step as complete even if save failed
-        if (draft?.draftId) {
-          await draftService.updateStepStatus(draft.draftId, 'blocks', 'completed', 100, {
-            numberOfBuses: schedule.blockConfigurations.length,
-            cycleTimeMinutes: schedule.cycleTimeMinutes,
-            automateBlockStartTimes: schedule.automateBlockStartTimes,
-            blockConfigurations: schedule.blockConfigurations,
-            schedule: completeSchedule,
-            trips: updatedSchedule.trips
-          });
-        }
-        
-        navigate('/block-summary-schedule', { 
-          state: { 
-            schedule: completeSchedule,
-            draftId: draft?.draftId
-          } 
+        persistScheduleLocally();
+        persistDraftLocally();
+        setSaveNotification({
+          open: true,
+          message: '✅ Schedule saved to cloud',
+          severity: 'success'
         });
       }
-    } catch (error) {
-      console.error('Failed to save schedule:', error);
-      // Still navigate to show the generated schedule even if save fails
-      const completeSchedule = { 
-        ...updatedSchedule, 
-        timePointData: timePointData,
-        deletedPeriods: deletedPeriods,
-        timePeriodServiceBands: timePeriodServiceBands
-      };
+
+      if (scheduleSaved && draft && updateBlockConfiguration) {
+        const blockConfigData = {
+          numberOfBuses: schedule.blockConfigurations.length,
+          cycleTimeMinutes: schedule.cycleTimeMinutes,
+          automateBlockStartTimes: schedule.automateBlockStartTimes,
+          blockConfigurations: schedule.blockConfigurations.map(bc => ({
+            blockNumber: bc.blockNumber,
+            startTime: bc.startTime,
+            endTime: bc.endTime
+          }))
+        };
+
+        await updateBlockConfiguration(blockConfigData);
+        console.log('✅ Block configuration saved to workflow draft');
+      }
+
       localStorage.setItem('currentSummarySchedule', JSON.stringify(completeSchedule));
-      console.log('💾 Summary schedule saved to localStorage for persistence (catch error)');
-      
-      // Mark the Block Configuration step as complete even in error case
+      console.log('✅ Summary schedule saved to localStorage for persistence');
+
       if (draft?.draftId) {
         await draftService.updateStepStatus(draft.draftId, 'blocks', 'completed', 100, {
           numberOfBuses: schedule.blockConfigurations.length,
@@ -1541,18 +1544,55 @@ export default function BlockConfiguration() {
           automateBlockStartTimes: schedule.automateBlockStartTimes,
           blockConfigurations: schedule.blockConfigurations,
           schedule: completeSchedule,
-          trips: updatedSchedule.trips
+          trips: updatedSchedule.trips,
+          timePeriods: currentTimePeriods,
+          firstTripTime: updatedSchedule.firstTripTime,
+          lastTripTime: updatedSchedule.lastTripTime
         });
       }
-      
-      navigate('/block-summary-schedule', { 
-        state: { 
-          schedule: completeSchedule
-        } 
+
+      navigate('/block-summary-schedule', {
+        state: {
+          schedule: completeSchedule,
+          draftId: draft?.draftId
+        }
+      });
+    } catch (error) {
+      console.error('Failed to save schedule:', error);
+      persistScheduleLocally();
+      persistDraftLocally();
+      localStorage.setItem('currentSummarySchedule', JSON.stringify(completeSchedule));
+      console.log('⚠️ Summary schedule saved to localStorage for persistence (catch)');
+
+      if (draft?.draftId) {
+        await draftService.updateStepStatus(draft.draftId, 'blocks', 'completed', 100, {
+          numberOfBuses: schedule.blockConfigurations.length,
+          cycleTimeMinutes: schedule.cycleTimeMinutes,
+          automateBlockStartTimes: schedule.automateBlockStartTimes,
+          blockConfigurations: schedule.blockConfigurations,
+          schedule: completeSchedule,
+          trips: updatedSchedule.trips,
+          timePeriods: currentTimePeriods,
+          firstTripTime: updatedSchedule.firstTripTime,
+          lastTripTime: updatedSchedule.lastTripTime
+        });
+      }
+
+      setSaveNotification({
+        open: true,
+        message: '⚠️ Unable to save schedule to cloud: see console for details',
+        severity: 'error'
+      });
+
+      navigate('/block-summary-schedule', {
+        state: {
+          schedule: completeSchedule,
+          draftId: draft?.draftId
+        }
       });
     }
-  };
-
+      };
+      
   // Check if schedule has been generated
   const hasGeneratedSchedule = schedule.trips && schedule.trips.length > 0;
 
@@ -2323,3 +2363,4 @@ export default function BlockConfiguration() {
     </Box>
   );
 }
+

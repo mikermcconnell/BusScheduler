@@ -7,7 +7,7 @@ import { initializeApp } from 'firebase/app';
 import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
 import { getFunctions, connectFunctionsEmulator } from 'firebase/functions';
 import { getAnalytics } from 'firebase/analytics';
-
+import { getAuth, connectAuthEmulator } from 'firebase/auth';
 // Firebase configuration
 // Check if we have real Firebase config, otherwise use a flag to disable Firebase
 const hasRealFirebaseConfig = process.env.REACT_APP_FIREBASE_API_KEY &&
@@ -30,6 +30,7 @@ const app = initializeApp(firebaseConfig);
 // Initialize Firebase services
 export const db = getFirestore(app);
 export const functions = getFunctions(app);
+const authInstance = getAuth(app);
 
 // Initialize Analytics only in production with valid config
 // Skip analytics if using fake/local config to avoid API key errors
@@ -53,6 +54,15 @@ if (process.env.NODE_ENV === 'development' && process.env.REACT_APP_USE_FIREBASE
       }
     }
     
+    // Auth emulator
+    try {
+      connectAuthEmulator(authInstance, 'http://localhost:9099');
+    } catch (error: any) {
+      if (!error.message?.includes('auth/emulator-configured')) {
+        throw error;
+      }
+    }
+
     // Functions emulator
     try {
       connectFunctionsEmulator(functions, 'localhost', 5001);
@@ -69,6 +79,8 @@ if (process.env.NODE_ENV === 'development' && process.env.REACT_APP_USE_FIREBASE
     console.warn('Firebase emulator connection failed:', error);
   }
 }
+
+export const auth = authInstance;
 
 // Export the initialized app
 export default app;

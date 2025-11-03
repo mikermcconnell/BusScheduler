@@ -1,0 +1,4 @@
+from pathlib import Path
+path = Path(r"C:\Users\Mike McConnell\Documents\mike_apps\Scheduler2\src\pages\BlockSummarySchedule.tsx")
+text = path.read_text(encoding='utf-8')
+old_block = "  Reaction.useEffect(() => {"  # placeholder

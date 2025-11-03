@@ -129,6 +129,7 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
   });
   
   const [exportData, setExportData] = useState<ExportDataBundle>({
+    tripsByDay: {},
     context: {
       exportedAt: new Date(),
       exportVersion: '1.0.0',
@@ -235,6 +236,11 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
 
     setExportData(prevData => {
       const newData = { ...prevData };
+      const ensureTripsByDay = () => {
+        if (!newData.tripsByDay) {
+          newData.tripsByDay = {};
+        }
+      };
 
       switch (dataType) {
         case 'uploaded-schedule':
@@ -252,7 +258,33 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
           newData.blockConfiguration = data;
           break;
         case 'summary-schedule':
-          newData.summarySchedule = data;
+          const incomingSchedule = data?.summarySchedule || data;
+          newData.summarySchedule = incomingSchedule;
+
+          const incomingTrips =
+            data?.trips ||
+            incomingSchedule?.tripDetails ||
+            newData.summarySchedule?.tripDetails;
+
+          if (incomingTrips) {
+            ensureTripsByDay();
+            newData.tripsByDay = {
+              ...newData.tripsByDay,
+              weekday: incomingTrips.weekday || newData.tripsByDay?.weekday,
+              saturday: incomingTrips.saturday || newData.tripsByDay?.saturday,
+              sunday: incomingTrips.sunday || newData.tripsByDay?.sunday
+            };
+          }
+
+          if (data?.tripsByDay) {
+            ensureTripsByDay();
+            newData.tripsByDay = {
+              ...newData.tripsByDay,
+              weekday: data.tripsByDay.weekday || newData.tripsByDay?.weekday,
+              saturday: data.tripsByDay.saturday || newData.tripsByDay?.saturday,
+              sunday: data.tripsByDay.sunday || newData.tripsByDay?.sunday
+            };
+          }
           break;
         case 'metadata':
           newData.metadata = data;

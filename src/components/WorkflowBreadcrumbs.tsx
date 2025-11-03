@@ -73,7 +73,7 @@ interface BreadcrumbItem {
 interface WorkflowBreadcrumbsProps {
   showWorkflow?: boolean;
   customBreadcrumbs?: BreadcrumbItem[];
-  workflowContext?: string; // 'schedule-creation' | 'route-management' | 'shift-planning'
+  workflowContext?: string; // 'schedule-creation' | 'quick-adjust' | 'route-management' | 'shift-planning'
 }
 
 const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
@@ -97,7 +97,7 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
       {
         key: 'upload',
         label: 'Load Data',
-        path: '/upload',
+        path: '/new-schedule',
         icon: <UploadIcon />,
         description: 'Import Excel/CSV schedule data',
         status: 'completed' as const
@@ -134,6 +134,24 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
         description: 'Advanced optimization for GO train and school connections',
         status: 'pending' as const,
         optional: true
+      }
+    ],
+    'quick-adjust': [
+      {
+        key: 'draft',
+        label: 'Draft Schedule',
+        path: '/edit-schedule',
+        icon: <EditIcon />,
+        description: 'Import a published schedule for quick tweaks',
+        status: 'completed' as const
+      },
+      {
+        key: 'summary',
+        label: 'Base Schedule',
+        path: '/block-summary-schedule',
+        icon: <SummaryIcon />,
+        description: 'Adjust trip timings and recovery before export',
+        status: 'active' as const
       }
     ],
     'route-management': [
@@ -177,10 +195,26 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
   // Auto-detect workflow context based on current path
   const detectWorkflowContext = (): string | null => {
     const path = location.pathname;
-    
-    if (['/upload', '/timepoints', '/block-configuration', '/block-summary-schedule', '/connection-optimization'].includes(path)) {
+    const locationState = location.state as { fromQuickAdjust?: boolean } | undefined;
+    const isQuickAdjustRoute = path === '/edit-schedule'
+      || (path === '/block-summary-schedule'
+        && (locationState?.fromQuickAdjust
+          || draftWorkflow?.workflowMode === 'quick-adjust'
+          || draftWorkflow?.metadata?.isQuickAdjust
+          || persistentWorkflow?.workflowMode === 'quick-adjust'));
+
+    if (isQuickAdjustRoute) {
+      return 'quick-adjust';
+    }
+
+    if (['/new-schedule', '/timepoints', '/block-configuration', '/block-summary-schedule', '/connection-optimization'].includes(path)) {
       return 'schedule-creation';
     }
+
+    if (path === '/upload') {
+      return 'schedule-creation';
+    }
+
     if (['/routes'].includes(path)) {
       return 'route-management';
     }
@@ -200,7 +234,17 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
   const effectiveWorkflow = (currentWorkflow && currentWorkflow.length > 0) || shouldForceWorkflowSteps 
     ? currentWorkflow 
     : (shouldForceWorkflowSteps ? workflows['schedule-creation'] : []);
-  
+
+  const mapPersistentStatusToUi = (status: string | undefined): WorkflowStep['status'] => {
+    if (status === 'completed' || status === 'skipped') {
+      return 'completed';
+    }
+    if (status === 'in-progress' || status === 'active') {
+      return 'active';
+    }
+    return 'pending';
+  };
+
 
   // Initialize or update persistent workflow state
   useEffect(() => {
@@ -209,7 +253,7 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
     if (currentWorkflowContext && !currentPersistentWorkflow) {
       // Start a new workflow if none exists
       const newWorkflow = draftService.startWorkflow(
-        currentWorkflowContext as 'schedule-creation' | 'route-management' | 'shift-planning'
+        currentWorkflowContext as 'schedule-creation' | 'quick-adjust' | 'route-management' | 'shift-planning'
       );
       setPersistentWorkflow(newWorkflow);
     } else if (currentPersistentWorkflow) {
@@ -358,7 +402,7 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
         // Mark current step as active while preserving completion status
         if (isCurrentPage) {
           // If the step was already completed, keep it completed but also mark as current
-          if (persistentStep && persistentStep.status === 'completed') {
+          if (persistentStep && (persistentStep.status === 'completed' || persistentStep.status === 'skipped')) {
             return { ...step, status: 'completed', isCurrentPage: true };
           }
           // Update persistent workflow to mark current step as active
@@ -369,7 +413,7 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
         if (persistentStep) {
           return {
             ...step,
-            status: persistentStep.status,
+            status: mapPersistentStatusToUi(persistentStep.status),
             isCurrentPage: false
           };
         }
@@ -390,19 +434,24 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
                           (currentPath.includes('block-configuration') && step.key === 'block-config') ||
                           (currentPath.includes('block-summary-schedule') && step.key === 'summary') ||
                           (currentPath.includes('connection-optimization') && step.key === 'connections') ||
-                          (currentPath.includes('upload') && step.key === 'upload');
+                          (currentPath.includes('upload') && step.key === 'upload') ||
+                          (currentPath.includes('edit-schedule') && step.key === 'draft');
       
       // Mark completed steps based on data availability and path progression
       let isCompleted = false;
       
       // Use draftService workflow step status if available
       if (hasWorkflowData) {
-        const draftStep = workflowSteps.find((s: any) => s.key === step.key);
+        const draftStep = workflowSteps.find((s: any) =>
+          s.key === step.key ||
+          (step.key === 'draft' && s.key === 'upload')
+        );
         if (draftStep) {
           isCompleted = draftStep.status === 'completed';
         } else {
           // Fallback to progress-based completion
           switch (step.key) {
+            case 'draft':
             case 'upload':
               isCompleted = workflowProgress > 0;
               break;
@@ -456,13 +505,15 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
 
     const pathMappings: { [key: string]: { label: string; icon?: React.ReactNode } } = {
       'upload': { label: 'Load Data', icon: <UploadIcon /> },
+      'new-schedule': { label: 'New Schedule', icon: <UploadIcon /> },
+      'edit-schedule': { label: 'Edit Existing Schedule', icon: <EditIcon /> },
       'timepoints': { label: 'Optimize Timing', icon: <TimelineIcon /> },
       'block-configuration': { label: 'Plan Blocks', icon: <ConfigIcon /> },
       'block-summary-schedule': { label: 'Build Schedule', icon: <SummaryIcon /> },
       'connection-optimization': { label: 'Optimize Connections', icon: <SwapVertIcon /> },
       'schedules': { label: 'View Schedules', icon: <SummaryIcon /> },
       'routes': { label: 'Manage Routes', icon: <ConfigIcon /> },
-      'tod-shifts': { label: 'Tod Shifts', icon: <ConfigIcon /> },
+      'tod-shifts': { label: 'TOD Shift Management', icon: <ConfigIcon /> },
       'settings': { label: 'Settings', icon: <ConfigIcon /> }
     };
 

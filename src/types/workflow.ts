@@ -2,10 +2,10 @@
  * Unified workflow state management types
  */
 
-import { SummarySchedule, TimePoint, ServiceBand, ScheduleValidationResult, ConnectionPoint } from './schedule';
+import { SummarySchedule, TimePoint, ServiceBand, ScheduleValidationResult } from './schedule';
+import { ConnectionPoint, ConnectionOptimizationResult, DayType } from './connectionOptimization';
 import { ParsedExcelData } from '../utils/excelParser';
 import { ParsedCsvData } from '../utils/csvParser';
-import { ConnectionOptimizationResult } from './connectionOptimization';
 
 export interface BlockConfiguration {
   blockNumber: number;
@@ -45,7 +45,7 @@ export interface TimepointsModification {
 }
 
 export interface ScheduleGenerationMetadata {
-  generationMethod: 'block-based' | 'frequency-based';
+  generationMethod: 'block-based' | 'frequency-based' | 'quick-adjust';
   parameters: Record<string, any>;
   validationResults: ScheduleValidationResult[];
   performanceMetrics: {
@@ -64,6 +64,9 @@ export interface WorkflowDraftState {
   
   /** Current step in the workflow */
   currentStep: 'upload' | 'timepoints' | 'blocks' | 'block-config' | 'summary' | 'connections' | 'ready-to-publish';
+
+  /** Indicates whether this draft is using the quick adjust workflow */
+  workflowMode?: 'full' | 'quick-adjust';
   
   /** Original uploaded data */
   originalData: {
@@ -116,6 +119,8 @@ export interface WorkflowDraftState {
     version: number;
     isPublished: boolean;
     publishedAt?: string;
+    isQuickAdjust?: boolean;
+    quickAdjustPrimaryDay?: DayType;
   };
 }
 

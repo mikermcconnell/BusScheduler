@@ -256,7 +256,7 @@ const ViewSchedules: React.FC = () => {
             variant="contained"
             startIcon={<AddIcon />}
             size="large"
-            href="/upload"
+            href="/new-schedule"
           >
             New Schedule
           </Button>
@@ -288,7 +288,7 @@ const ViewSchedules: React.FC = () => {
           <Button
             variant="contained"
             startIcon={<AddIcon />}
-            href="/upload"
+            href="/new-schedule"
           >
             Upload Schedule
           </Button>
