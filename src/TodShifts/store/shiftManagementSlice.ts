@@ -39,6 +39,7 @@ interface ShiftManagementState {
     imports: boolean;
     fetchRun: boolean;
     persistence: boolean;
+    unionRulesPersistence: boolean;
   };
   error: {
     shifts: string | null;
@@ -69,6 +70,109 @@ function createEmptyCoverageTimeline(): Record<DayType, ShiftCoverageInterval[]>
   }, {} as Record<DayType, ShiftCoverageInterval[]>);
 }
 
+const UNION_RULES_STORAGE_KEY = 'tod_shift_union_rules';
+
+const DEFAULT_UNION_RULES: UnionRule[] = [
+  {
+    id: 1,
+    ruleName: 'Maximum Shift Length',
+    ruleType: 'required',
+    category: 'shift_length',
+    maxValue: 10,
+    unit: 'hours',
+    isActive: true,
+    description: 'Operators cannot be scheduled for more than 10 hours in a single shift.'
+  },
+  {
+    id: 2,
+    ruleName: 'Minimum Shift Length',
+    ruleType: 'required',
+    category: 'shift_length',
+    minValue: 6,
+    unit: 'hours',
+    isActive: true,
+    description: 'Shifts shorter than 6 hours are not allowed unless explicitly negotiated.'
+  },
+  {
+    id: 3,
+    ruleName: 'Minimum Break Duration',
+    ruleType: 'required',
+    category: 'breaks',
+    minValue: 30,
+    unit: 'minutes',
+    isActive: true,
+    description: 'At least a 30 minute uninterrupted break is required.'
+  },
+  {
+    id: 4,
+    ruleName: 'Maximum Consecutive Driving',
+    ruleType: 'preferred',
+    category: 'breaks',
+    maxValue: 5,
+    unit: 'hours',
+    isActive: true,
+    description: 'Drivers should pause after 5 consecutive hours prior to breaks.'
+  },
+  {
+    id: 5,
+    ruleName: 'Minimum Rest Between Shifts',
+    ruleType: 'required',
+    category: 'rest_periods',
+    minValue: 10,
+    unit: 'hours',
+    isActive: true,
+    description: 'There must be at least 10 hours between consecutive shifts for a driver.'
+  },
+  {
+    id: 6,
+    ruleName: 'Maximum Split Shift Gap',
+    ruleType: 'preferred',
+    category: 'rest_periods',
+    maxValue: 3,
+    unit: 'hours',
+    isActive: true,
+    description: 'Split shifts should not have a mid-day gap longer than 3 hours.'
+  }
+];
+
+function getStorage(): Storage | null {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    return window.localStorage;
+  }
+  if (typeof globalThis !== 'undefined' && (globalThis as { localStorage?: Storage }).localStorage) {
+    return (globalThis as { localStorage?: Storage }).localStorage ?? null;
+  }
+  return null;
+}
+
+function loadUnionRulesFromStorage(): UnionRule[] | null {
+  const storage = getStorage();
+  if (!storage) {
+    return null;
+  }
+
+  try {
+    const raw = storage.getItem(UNION_RULES_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) as UnionRule[];
+    return Array.isArray(parsed) ? parsed : null;
+  } catch (error) {
+    console.warn('Unable to parse union rules from storage.', error);
+    return null;
+  }
+}
+
+function persistUnionRulesToStorage(rules: UnionRule[]): void {
+  const storage = getStorage();
+  if (!storage) {
+    return;
+  }
+
+  storage.setItem(UNION_RULES_STORAGE_KEY, JSON.stringify(rules));
+}
+
 const initialState: ShiftManagementState = {
   shifts: [],
   unionRules: [],
@@ -85,7 +189,8 @@ const initialState: ShiftManagementState = {
     unionRules: false,
     imports: false,
     fetchRun: false,
-    persistence: false
+    persistence: false,
+    unionRulesPersistence: false
   },
   error: {
     shifts: null,
@@ -216,29 +321,26 @@ export const recordShiftExport = createAsyncThunk<
 export const loadUnionRules = createAsyncThunk(
   'shiftManagement/loadUnionRules',
   async () => {
-    const rules: UnionRule[] = [
-      {
-        id: 1,
-        ruleName: 'Maximum Shift Length',
-        ruleType: 'required',
-        category: 'shift_length',
-        maxValue: 10,
-        unit: 'hours',
-        isActive: true,
-        description: 'Shifts cannot exceed 10 hours'
-      },
-      {
-        id: 2,
-        ruleName: 'Minimum Break Duration',
-        ruleType: 'required',
-        category: 'breaks',
-        minValue: 30,
-        unit: 'minutes',
-        isActive: true,
-        description: 'Minimum 30 minute break required'
-      }
-    ];
-    return rules;
+    const stored = loadUnionRulesFromStorage();
+    if (stored && stored.length > 0) {
+      return stored;
+    }
+
+    persistUnionRulesToStorage(DEFAULT_UNION_RULES);
+    return DEFAULT_UNION_RULES;
+  }
+);
+
+export const persistUnionRules = createAsyncThunk<UnionRule[], UnionRule[], { rejectValue: string }>(
+  'shiftManagement/persistUnionRules',
+  async (rules, { rejectWithValue }) => {
+    try {
+      persistUnionRulesToStorage(rules);
+      return rules;
+    } catch (error) {
+      console.error('Failed to save union rules', error);
+      return rejectWithValue('Failed to save union rules.');
+    }
   }
 );
 
@@ -311,6 +413,18 @@ const shiftManagementSlice = createSlice({
       .addCase(loadUnionRules.rejected, (state, action) => {
         state.loading.unionRules = false;
         state.error.unionRules = action.error.message || 'Failed to load union rules.';
+      })
+      .addCase(persistUnionRules.pending, (state) => {
+        state.loading.unionRulesPersistence = true;
+        state.error.unionRules = null;
+      })
+      .addCase(persistUnionRules.fulfilled, (state, action) => {
+        state.loading.unionRulesPersistence = false;
+        state.unionRules = action.payload;
+      })
+      .addCase(persistUnionRules.rejected, (state, action) => {
+        state.loading.unionRulesPersistence = false;
+        state.error.unionRules = (action.payload as string) || action.error.message || 'Failed to save union rules.';
       })
       .addCase(saveShift.pending, (state) => {
         state.loading.shifts = true;

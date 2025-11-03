@@ -17,6 +17,7 @@ import ManualShiftCreator from './ManualShiftCreator';
 import ShiftGanttChart from './ShiftGanttChart';
 import ShiftSummaryTable from './ShiftSummaryTable';
 import ShiftExport from './ShiftExport';
+import ShiftOptimizationView from './ShiftOptimizationView';
 import { 
   loadUnionRules, 
   setActiveScheduleType,
@@ -156,6 +157,7 @@ const ShiftManagementPage: React.FC = () => {
           <Tab label="Import & Setup" />
           <Tab label="Create Shifts" />
           <Tab label="Schedule View" />
+          <Tab label="Shift Optimization" />
           <Tab label="Summary & Export" />
         </Tabs>
 
@@ -186,6 +188,10 @@ const ShiftManagementPage: React.FC = () => {
           )}
           
           {activeTab === 3 && (
+            <ShiftOptimizationView />
+          )}
+
+          {activeTab === 4 && (
             <Grid container spacing={3}>
               <Grid size={12}>
                 <ShiftSummaryTable />

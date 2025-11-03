@@ -1,0 +1,456 @@
+import {
+  DayType,
+  Shift,
+  ShiftCoverageInterval,
+  ShiftZone,
+  UnionRule
+} from '../types/shift.types';
+import { INTERVAL_MINUTES, minutesToTimeString, parseTimeToMinutes } from './timeUtils';
+
+type RecommendationType = 'extend_shift' | 'new_shift' | 'break_adjustment';
+
+interface ZoneDescriptor {
+  zone: ShiftZone;
+  excessField: 'northExcess' | 'southExcess';
+}
+
+const ZONES: ZoneDescriptor[] = [
+  { zone: 'North', excessField: 'northExcess' },
+  { zone: 'South', excessField: 'southExcess' }
+];
+
+const SHIFT_EXTENSION_BUFFER_MINUTES = 60;
+
+export interface DeficitBlock {
+  id: string;
+  zone: ShiftZone;
+  startTime: string;
+  endTime: string;
+  startMinutes: number;
+  endMinutes: number;
+  durationMinutes: number;
+  vehicleHours: number;
+  peakShortfall: number;
+  intervals: ShiftCoverageInterval[];
+}
+
+export interface OptimizationRecommendation {
+  id: string;
+  type: RecommendationType;
+  zone: ShiftZone;
+  title: string;
+  summary: string;
+  detailItems: string[];
+  affectedShiftCodes: Array<string | number>;
+  priority: 'high' | 'medium' | 'low';
+  deficit: {
+    startTime: string;
+    endTime: string;
+    durationMinutes: number;
+    peakShortfall: number;
+  };
+}
+
+export interface OptimizationInsights {
+  blocks: DeficitBlock[];
+  recommendations: OptimizationRecommendation[];
+  totals: {
+    blockCount: number;
+    totalVehicleHours: number;
+    maxShortfall: number;
+  };
+}
+
+interface OptimizationInput {
+  dayType: DayType;
+  coverageTimeline: Record<DayType, ShiftCoverageInterval[]>;
+  shifts: Shift[];
+  unionRules: UnionRule[];
+}
+
+interface ShiftWindow {
+  startMinutes: number;
+  endMinutes: number;
+  durationMinutes: number;
+  durationHours: number;
+}
+
+interface ShiftExtensionOption {
+  shift: Shift;
+  direction: 'extend_start' | 'extend_end';
+  addedMinutes: number;
+  resultingHours: number;
+  gapMinutes: number;
+}
+
+interface BreakAdjustmentOption {
+  shift: Shift;
+  currentStartMinutes: number;
+  currentEndMinutes: number;
+  suggestedStartMinutes: number;
+  suggestedEndMinutes: number;
+}
+
+export function computeOptimizationInsights({
+  dayType,
+  coverageTimeline,
+  shifts,
+  unionRules
+}: OptimizationInput): OptimizationInsights {
+  const intervals = coverageTimeline[dayType] ?? [];
+  const blocks = buildDeficitBlocks(intervals);
+  const relevantShifts = shifts.filter((shift) => shift.scheduleType === dayType);
+
+  const recommendations = buildRecommendations(blocks, relevantShifts, unionRules);
+
+  return {
+    blocks,
+    recommendations,
+    totals: {
+      blockCount: blocks.length,
+      totalVehicleHours: Number(
+        blocks.reduce((sum, block) => sum + block.vehicleHours, 0).toFixed(2)
+      ),
+      maxShortfall: blocks.reduce((max, block) => Math.max(max, block.peakShortfall), 0)
+    }
+  };
+}
+
+function buildDeficitBlocks(intervals: ShiftCoverageInterval[]): DeficitBlock[] {
+  const blocks: DeficitBlock[] = [];
+
+  ZONES.forEach((descriptor) => {
+    let currentBlock: DeficitBlock | null = null;
+
+    intervals.forEach((interval, index) => {
+      const deficit = Math.max(0, -interval[descriptor.excessField]);
+      const intervalMinutes = computeIntervalMinutes(interval);
+
+      if (deficit > 0) {
+        if (!currentBlock) {
+          const startMinutes = parseTimeToMinutes(interval.startTime);
+          let endMinutes = parseTimeToMinutes(interval.endTime);
+          if (endMinutes <= startMinutes) {
+            endMinutes += 24 * 60;
+          }
+
+          currentBlock = {
+            id: `${descriptor.zone}-${interval.startTime}-${index}`,
+            zone: descriptor.zone,
+            startTime: interval.startTime,
+            endTime: interval.endTime,
+            startMinutes,
+            endMinutes,
+            durationMinutes: intervalMinutes,
+            vehicleHours: (deficit * intervalMinutes) / 60,
+            peakShortfall: deficit,
+            intervals: [interval]
+          };
+        } else {
+          currentBlock.endTime = interval.endTime;
+          currentBlock.endMinutes += intervalMinutes;
+          currentBlock.durationMinutes += intervalMinutes;
+          currentBlock.vehicleHours += (deficit * intervalMinutes) / 60;
+          currentBlock.peakShortfall = Math.max(currentBlock.peakShortfall, deficit);
+          currentBlock.intervals.push(interval);
+        }
+      } else if (currentBlock) {
+        blocks.push(currentBlock);
+        currentBlock = null;
+      }
+    });
+
+    if (currentBlock) {
+      blocks.push(currentBlock);
+    }
+  });
+
+  return blocks.sort((a, b) => a.startMinutes - b.startMinutes);
+}
+
+function buildRecommendations(
+  blocks: DeficitBlock[],
+  shifts: Shift[],
+  unionRules: UnionRule[]
+): OptimizationRecommendation[] {
+  if (!blocks.length) {
+    return [];
+  }
+
+  const maxShiftHours = getRuleHours(unionRules, 'Maximum Shift Length', 10);
+  const minShiftHours = getRuleHours(unionRules, 'Minimum Shift Length', 6);
+  const minBreakMinutes = getRuleMinutes(unionRules, 'Minimum Break Duration', 30);
+
+  const results: OptimizationRecommendation[] = [];
+
+  blocks.forEach((block, index) => {
+    const zoneShifts = shifts.filter((shift) => shift.zone === block.zone);
+    const extensionOptions = findShiftExtensionOptions(block, zoneShifts, maxShiftHours);
+    const shortfallVehicles = Math.max(1, Math.ceil(block.peakShortfall));
+
+    let coveredByExtension = 0;
+    if (extensionOptions.length > 0) {
+      coveredByExtension = Math.min(shortfallVehicles, extensionOptions.length);
+      const targetedOptions = extensionOptions.slice(0, coveredByExtension);
+      results.push(buildExtensionRecommendation(block, targetedOptions));
+    }
+
+    const remainingShortfall = Math.max(0, shortfallVehicles - coveredByExtension);
+    if (remainingShortfall > 0) {
+      results.push(
+        buildNewShiftRecommendation(block, remainingShortfall, maxShiftHours, minShiftHours)
+      );
+    }
+
+    const breakOptions = findBreakAdjustments(block, zoneShifts, minBreakMinutes);
+    breakOptions.slice(0, 2).forEach((option, optionIndex) => {
+      results.push(buildBreakRecommendation(block, option, optionIndex));
+    });
+  });
+
+  return results;
+}
+
+function findShiftExtensionOptions(
+  block: DeficitBlock,
+  shifts: Shift[],
+  maxShiftHours: number
+): ShiftExtensionOption[] {
+  return shifts
+    .map((shift) => {
+      const window = computeShiftWindow(shift);
+      const extendEndGap = block.startMinutes - window.endMinutes;
+      if (
+        extendEndGap >= 0 &&
+        extendEndGap <= SHIFT_EXTENSION_BUFFER_MINUTES
+      ) {
+        const addedMinutes = block.endMinutes - window.endMinutes;
+        const resultingHours = window.durationHours + addedMinutes / 60;
+        if (resultingHours <= maxShiftHours) {
+          return {
+            shift,
+            direction: 'extend_end' as const,
+            addedMinutes,
+            resultingHours,
+            gapMinutes: extendEndGap
+          };
+        }
+      }
+
+      const extendStartGap = window.startMinutes - block.startMinutes;
+      if (
+        extendStartGap >= 0 &&
+        extendStartGap <= SHIFT_EXTENSION_BUFFER_MINUTES
+      ) {
+        const addedMinutes = window.startMinutes - block.startMinutes;
+        const resultingHours = window.durationHours + addedMinutes / 60;
+        if (resultingHours <= maxShiftHours) {
+          return {
+            shift,
+            direction: 'extend_start' as const,
+            addedMinutes,
+            resultingHours,
+            gapMinutes: extendStartGap
+          };
+        }
+      }
+
+      return null;
+    })
+    .filter((option): option is ShiftExtensionOption => Boolean(option))
+    .sort((a, b) => a.gapMinutes - b.gapMinutes);
+}
+
+function findBreakAdjustments(
+  block: DeficitBlock,
+  shifts: Shift[],
+  minBreakMinutes: number
+): BreakAdjustmentOption[] {
+  if (minBreakMinutes <= 0) {
+    return [];
+  }
+
+  return shifts
+    .filter((shift) => shift.breakStart && shift.breakEnd)
+    .map((shift) => {
+      const breakStartMinutes = parseTimeToMinutes(shift.breakStart!);
+      let breakEndMinutes = parseTimeToMinutes(shift.breakEnd!);
+      if (breakEndMinutes <= breakStartMinutes) {
+        breakEndMinutes += 24 * 60;
+      }
+
+      if (
+        breakStartMinutes >= block.endMinutes ||
+        breakEndMinutes <= block.startMinutes
+      ) {
+        return null;
+      }
+
+      const window = computeShiftWindow(shift);
+      const breakDuration = breakEndMinutes - breakStartMinutes;
+      const canMoveEarlier = block.startMinutes - window.startMinutes >= breakDuration;
+      const canMoveLater = window.endMinutes - block.endMinutes >= breakDuration;
+
+      if (!canMoveEarlier && !canMoveLater) {
+        return null;
+      }
+
+      const suggestedEndMinutes = canMoveEarlier
+        ? block.startMinutes
+        : block.endMinutes + breakDuration;
+
+      const suggestedStartMinutes = canMoveEarlier
+        ? block.startMinutes - breakDuration
+        : block.endMinutes;
+
+      return {
+        shift,
+        currentStartMinutes: breakStartMinutes,
+        currentEndMinutes: breakEndMinutes,
+        suggestedStartMinutes,
+        suggestedEndMinutes
+      };
+    })
+    .filter((option): option is BreakAdjustmentOption => Boolean(option));
+}
+
+function buildExtensionRecommendation(
+  block: DeficitBlock,
+  options: ShiftExtensionOption[]
+): OptimizationRecommendation {
+  const affectedCodes = options.map((option) => option.shift.shiftCode || option.shift.id || 'Shift');
+  const directionSummary = options[0]?.direction === 'extend_end' ? 'extend the tail' : 'start earlier';
+
+  const detailItems = options.map((option) => {
+    const verb = option.direction === 'extend_end' ? 'Extend' : 'Advance start for';
+    return `${verb} ${option.shift.shiftCode || option.shift.id} by ${Math.round(option.addedMinutes)} minutes (total ${option.resultingHours.toFixed(1)} hrs).`;
+  });
+
+  return {
+    id: `${block.id}-extend`,
+    type: 'extend_shift',
+    zone: block.zone,
+    title: `${block.zone} | Extend ${options.length} shift${options.length > 1 ? 's' : ''}`,
+    summary: `Coverage gap ${block.startTime}–${block.endTime} can be reduced if we ${directionSummary} on existing work.`,
+    detailItems,
+    affectedShiftCodes: affectedCodes,
+    priority: block.peakShortfall >= 2 ? 'high' : 'medium',
+    deficit: {
+      startTime: block.startTime,
+      endTime: block.endTime,
+      durationMinutes: block.durationMinutes,
+      peakShortfall: block.peakShortfall
+    }
+  };
+}
+
+function buildNewShiftRecommendation(
+  block: DeficitBlock,
+  requiredShifts: number,
+  maxShiftHours: number,
+  minShiftHours: number
+): OptimizationRecommendation {
+  const durationMinutes = block.durationMinutes;
+  const minShiftMinutes = Math.round(minShiftHours * 60);
+  const maxShiftMinutes = Math.round(maxShiftHours * 60);
+
+  const recommendedMinutes = Math.min(
+    Math.max(durationMinutes, minShiftMinutes),
+    maxShiftMinutes
+  );
+  const recommendedEndMinutes = block.startMinutes + recommendedMinutes;
+
+  return {
+    id: `${block.id}-new-shift`,
+    type: 'new_shift',
+    zone: block.zone,
+    title: `${block.zone} | Add ${requiredShifts} new shift${requiredShifts > 1 ? 's' : ''}`,
+    summary: `Shortfall of ${requiredShifts} operator${requiredShifts > 1 ? 's' : ''} over ${block.startTime}–${block.endTime}. Recommend scheduling ${minutesToTimeString(block.startMinutes)}–${minutesToTimeString(recommendedEndMinutes)} (${(recommendedMinutes / 60).toFixed(1)} hrs).`,
+    detailItems: [
+      'Align start with the first deficit interval to immediately close the gap.',
+      `Respect union limits: min ${minShiftHours.toFixed(1)} hrs, max ${maxShiftHours.toFixed(1)} hrs.`
+    ],
+    affectedShiftCodes: [],
+    priority: 'high',
+    deficit: {
+      startTime: block.startTime,
+      endTime: block.endTime,
+      durationMinutes: block.durationMinutes,
+      peakShortfall: block.peakShortfall
+    }
+  };
+}
+
+function buildBreakRecommendation(
+  block: DeficitBlock,
+  option: BreakAdjustmentOption,
+  index: number
+): OptimizationRecommendation {
+  return {
+    id: `${block.id}-break-${index}`,
+    type: 'break_adjustment',
+    zone: block.zone,
+    title: `${block.zone} | Shift break for ${option.shift.shiftCode || option.shift.id}`,
+    summary: `Break currently overlaps ${block.startTime}–${block.endTime}. Move it to ${minutesToTimeString(option.suggestedStartMinutes)}–${minutesToTimeString(option.suggestedEndMinutes)} to keep coverage.`,
+    detailItems: [
+      `Current break: ${minutesToTimeString(option.currentStartMinutes)}–${minutesToTimeString(option.currentEndMinutes % (24 * 60))}.`,
+      'Break duration stays the same to maintain union compliance.'
+    ],
+    affectedShiftCodes: [option.shift.shiftCode || option.shift.id || 'Shift'],
+    priority: 'medium',
+    deficit: {
+      startTime: block.startTime,
+      endTime: block.endTime,
+      durationMinutes: block.durationMinutes,
+      peakShortfall: block.peakShortfall
+    }
+  };
+}
+
+function computeShiftWindow(shift: Shift): ShiftWindow {
+  const startMinutes = parseTimeToMinutes(shift.startTime);
+  let endMinutes = parseTimeToMinutes(shift.endTime);
+
+  if (endMinutes <= startMinutes) {
+    endMinutes += 24 * 60;
+  }
+
+  const durationMinutes = endMinutes - startMinutes;
+  const durationHours = shift.totalHours ?? durationMinutes / 60;
+
+  return {
+    startMinutes,
+    endMinutes,
+    durationMinutes,
+    durationHours
+  };
+}
+
+function computeIntervalMinutes(interval: ShiftCoverageInterval): number {
+  const startMinutes = parseTimeToMinutes(interval.startTime);
+  let endMinutes = parseTimeToMinutes(interval.endTime);
+  if (endMinutes <= startMinutes) {
+    endMinutes += 24 * 60;
+  }
+  return Math.max(INTERVAL_MINUTES, endMinutes - startMinutes);
+}
+
+function getRuleHours(rules: UnionRule[], ruleName: string, fallback: number): number {
+  const rule = rules.find((r) => r.ruleName.toLowerCase() === ruleName.toLowerCase());
+  if (!rule) {
+    return fallback;
+  }
+  const value = rule.maxValue ?? rule.minValue;
+  if (typeof value !== 'number') {
+    return fallback;
+  }
+  if (rule.unit === 'minutes') {
+    return value / 60;
+  }
+  return value;
+}
+
+function getRuleMinutes(rules: UnionRule[], ruleName: string, fallback: number): number {
+  const hours = getRuleHours(rules, ruleName, fallback / 60);
+  return Math.round(hours * 60);
+}
