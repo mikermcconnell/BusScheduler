@@ -20,6 +20,17 @@ const ZONES: ZoneDescriptor[] = [
 ];
 
 const SHIFT_EXTENSION_BUFFER_MINUTES = 60;
+const DEFAULT_IDEAL_SHIFT_HOURS = 7.2;
+
+export interface OptimizationImpactAdjustment {
+  intervalKey: string;
+  zone: ShiftZone;
+  coverageGain: number;
+}
+
+export interface OptimizationImpact {
+  adjustments: OptimizationImpactAdjustment[];
+}
 
 export interface DeficitBlock {
   id: string;
@@ -49,6 +60,7 @@ export interface OptimizationRecommendation {
     durationMinutes: number;
     peakShortfall: number;
   };
+  impact: OptimizationImpact;
 }
 
 export interface OptimizationInsights {
@@ -177,9 +189,10 @@ function buildRecommendations(
     return [];
   }
 
-  const maxShiftHours = getRuleHours(unionRules, 'Maximum Shift Length', 10);
-  const minShiftHours = getRuleHours(unionRules, 'Minimum Shift Length', 6);
-  const minBreakMinutes = getRuleMinutes(unionRules, 'Minimum Break Duration', 30);
+  const maxShiftHours = extractShiftLengthHours(unionRules, 'max') ?? 9.75;
+  const minShiftHours = extractShiftLengthHours(unionRules, 'min') ?? 7;
+  const minBreakMinutes = extractBreakDurationMinutes(unionRules) ?? 40;
+  const idealShiftHours = extractIdealShiftHours(unionRules) ?? DEFAULT_IDEAL_SHIFT_HOURS;
 
   const results: OptimizationRecommendation[] = [];
 
@@ -198,7 +211,13 @@ function buildRecommendations(
     const remainingShortfall = Math.max(0, shortfallVehicles - coveredByExtension);
     if (remainingShortfall > 0) {
       results.push(
-        buildNewShiftRecommendation(block, remainingShortfall, maxShiftHours, minShiftHours)
+        buildNewShiftRecommendation(
+          block,
+          remainingShortfall,
+          maxShiftHours,
+          minShiftHours,
+          idealShiftHours
+        )
       );
     }
 
@@ -340,6 +359,13 @@ function buildExtensionRecommendation(
       endTime: block.endTime,
       durationMinutes: block.durationMinutes,
       peakShortfall: block.peakShortfall
+    },
+    impact: {
+      adjustments: block.intervals.map((interval) => ({
+        intervalKey: createIntervalKey(interval, block.zone),
+        zone: block.zone,
+        coverageGain: options.length
+      }))
     }
   };
 }
@@ -348,16 +374,17 @@ function buildNewShiftRecommendation(
   block: DeficitBlock,
   requiredShifts: number,
   maxShiftHours: number,
-  minShiftHours: number
+  minShiftHours: number,
+  idealShiftHours: number
 ): OptimizationRecommendation {
   const durationMinutes = block.durationMinutes;
   const minShiftMinutes = Math.round(minShiftHours * 60);
   const maxShiftMinutes = Math.round(maxShiftHours * 60);
+  const idealShiftMinutes = Math.round(idealShiftHours * 60);
 
-  const recommendedMinutes = Math.min(
-    Math.max(durationMinutes, minShiftMinutes),
-    maxShiftMinutes
-  );
+  const lowerBound = Math.max(Math.min(durationMinutes, maxShiftMinutes), minShiftMinutes);
+  const clampedIdeal = Math.min(Math.max(idealShiftMinutes, lowerBound), maxShiftMinutes);
+  const recommendedMinutes = clampedIdeal;
   const recommendedEndMinutes = block.startMinutes + recommendedMinutes;
 
   return {
@@ -368,7 +395,8 @@ function buildNewShiftRecommendation(
     summary: `Shortfall of ${requiredShifts} operator${requiredShifts > 1 ? 's' : ''} over ${block.startTime}–${block.endTime}. Recommend scheduling ${minutesToTimeString(block.startMinutes)}–${minutesToTimeString(recommendedEndMinutes)} (${(recommendedMinutes / 60).toFixed(1)} hrs).`,
     detailItems: [
       'Align start with the first deficit interval to immediately close the gap.',
-      `Respect union limits: min ${minShiftHours.toFixed(1)} hrs, max ${maxShiftHours.toFixed(1)} hrs.`
+      `Respect union limits: min ${minShiftHours.toFixed(1)} hrs, max ${maxShiftHours.toFixed(1)} hrs.`,
+      `Aim for the ideal shift target of ${idealShiftHours.toFixed(1)} hrs when feasible.`
     ],
     affectedShiftCodes: [],
     priority: 'high',
@@ -377,6 +405,13 @@ function buildNewShiftRecommendation(
       endTime: block.endTime,
       durationMinutes: block.durationMinutes,
       peakShortfall: block.peakShortfall
+    },
+    impact: {
+      adjustments: block.intervals.map((interval) => ({
+        intervalKey: createIntervalKey(interval, block.zone),
+        zone: block.zone,
+        coverageGain: requiredShifts
+      }))
     }
   };
 }
@@ -403,6 +438,13 @@ function buildBreakRecommendation(
       endTime: block.endTime,
       durationMinutes: block.durationMinutes,
       peakShortfall: block.peakShortfall
+    },
+    impact: {
+      adjustments: block.intervals.map((interval) => ({
+        intervalKey: createIntervalKey(interval, block.zone),
+        zone: block.zone,
+        coverageGain: 1
+      }))
     }
   };
 }
@@ -435,22 +477,65 @@ function computeIntervalMinutes(interval: ShiftCoverageInterval): number {
   return Math.max(INTERVAL_MINUTES, endMinutes - startMinutes);
 }
 
-function getRuleHours(rules: UnionRule[], ruleName: string, fallback: number): number {
-  const rule = rules.find((r) => r.ruleName.toLowerCase() === ruleName.toLowerCase());
-  if (!rule) {
-    return fallback;
+function extractShiftLengthHours(rules: UnionRule[], mode: 'max' | 'min'): number | null {
+  const candidate = rules.find(
+    (rule) =>
+      rule.isActive &&
+      rule.category === 'shift_length' &&
+      rule.ruleType === 'required' &&
+      typeof (mode === 'max' ? rule.maxValue : rule.minValue) === 'number'
+  );
+
+  if (!candidate) {
+    return null;
   }
-  const value = rule.maxValue ?? rule.minValue;
+
+  const value =
+    mode === 'max'
+      ? candidate.maxValue
+      : candidate.minValue;
+
   if (typeof value !== 'number') {
-    return fallback;
+    return null;
   }
-  if (rule.unit === 'minutes') {
-    return value / 60;
-  }
-  return value;
+
+  return candidate.unit === 'minutes' ? value / 60 : value;
 }
 
-function getRuleMinutes(rules: UnionRule[], ruleName: string, fallback: number): number {
-  const hours = getRuleHours(rules, ruleName, fallback / 60);
-  return Math.round(hours * 60);
+function extractBreakDurationMinutes(rules: UnionRule[]): number | null {
+  const candidate = rules.find(
+    (rule) =>
+      rule.isActive &&
+      rule.category === 'breaks' &&
+      rule.ruleType === 'required' &&
+      typeof rule.minValue === 'number' &&
+      (rule.unit === 'minutes' || rule.ruleName.toLowerCase().includes('duration'))
+  );
+
+  if (!candidate || typeof candidate.minValue !== 'number') {
+    return null;
+  }
+
+  return candidate.unit === 'hours' ? Math.round(candidate.minValue * 60) : candidate.minValue;
+}
+
+export function extractIdealShiftHours(rules: UnionRule[]): number | null {
+  const candidate = rules.find(
+    (rule) =>
+      rule.isActive &&
+      rule.category === 'shift_length' &&
+      rule.ruleType === 'preferred' &&
+      typeof rule.minValue === 'number'
+  );
+
+  if (!candidate || typeof candidate.minValue !== 'number') {
+    return null;
+  }
+
+  return candidate.unit === 'minutes' ? candidate.minValue / 60 : candidate.minValue;
+}
+
+export function createIntervalKey(interval: ShiftCoverageInterval, zone?: ShiftZone): string {
+  const baseKey = `${interval.startTime}-${interval.endTime}`;
+  return zone ? `${baseKey}::${zone}` : baseKey;
 }

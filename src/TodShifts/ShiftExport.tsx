@@ -12,7 +12,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import * as XLSX from 'xlsx';
 import { AppDispatch, RootState } from '../store/store';
 import { DayType, Shift, TodShiftColorScale } from './types/shift.types';
-import { DAY_TYPES } from './utils/timeUtils';
+import { DAY_TYPES, INTERVAL_MINUTES } from './utils/timeUtils';
 import { recordShiftExport } from './store/shiftManagementSlice';
 import { excelColorForValue } from './utils/colorScale';
 
@@ -22,9 +22,12 @@ const HEADER_ROW = [
   'North Operational',
   'South Required',
   'South Operational',
-  'Floaters',
+  'Floater Required',
+  'Floater Operational',
+  'Floater Available',
   'North Excess/Deficit',
   'South Excess/Deficit',
+  'Floater Excess/Deficit',
   'Total Excess/Deficit'
 ];
 
@@ -106,9 +109,16 @@ const ShiftExport: React.FC = () => {
         let deficitCount = 0;
         let excessCount = 0;
 
+        const intervalHours = INTERVAL_MINUTES / 60;
         intervals.forEach((interval) => {
-          const intervalRequired = (interval.northRequired + interval.southRequired) * 0.25;
-          const intervalSupplied = (interval.northOperational + interval.southOperational + interval.floaterOperational) * 0.25;
+          const intervalRequired =
+            (interval.northRequired + interval.southRequired + interval.floaterRequired) * intervalHours;
+          const intervalSupplied =
+            (interval.northOperational + interval.southOperational + interval.floaterOperational) * intervalHours;
+          const floaterAvailable = Math.max(
+            0,
+            interval.floaterOperational - interval.floaterAllocatedNorth - interval.floaterAllocatedSouth
+          );
 
           totalRequiredHours += intervalRequired;
           totalSuppliedHours += intervalSupplied;
@@ -122,9 +132,12 @@ const ShiftExport: React.FC = () => {
             interval.northOperational + interval.floaterAllocatedNorth,
             interval.southRequired,
             interval.southOperational + interval.floaterAllocatedSouth,
+            interval.floaterRequired,
             interval.floaterOperational,
+            floaterAvailable,
             interval.northExcess,
             interval.southExcess,
+            interval.floaterExcess,
             interval.totalExcess
           ]);
         });
@@ -238,9 +251,12 @@ function applySheetStyling(
     { wch: 18 },
     { wch: 16 },
     { wch: 18 },
-    { wch: 12 },
-    { wch: 20 },
-    { wch: 20 },
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 18 },
     { wch: 20 }
   ];
 
@@ -257,12 +273,14 @@ function applySheetStyling(
   });
 
   for (let row = 1; row <= dataRowCount; row++) {
-    const northCell = worksheet[XLSX.utils.encode_cell({ r: row, c: 6 })];
-    const southCell = worksheet[XLSX.utils.encode_cell({ r: row, c: 7 })];
-    const totalCell = worksheet[XLSX.utils.encode_cell({ r: row, c: 8 })];
+    const northCell = worksheet[XLSX.utils.encode_cell({ r: row, c: 8 })];
+    const southCell = worksheet[XLSX.utils.encode_cell({ r: row, c: 9 })];
+    const floaterCell = worksheet[XLSX.utils.encode_cell({ r: row, c: 10 })];
+    const totalCell = worksheet[XLSX.utils.encode_cell({ r: row, c: 11 })];
 
     if (northCell) northCell.s = buildCellStyle(northCell.v as number, colorScale);
     if (southCell) southCell.s = buildCellStyle(southCell.v as number, colorScale);
+    if (floaterCell) floaterCell.s = buildCellStyle(floaterCell.v as number, colorScale);
     if (totalCell) totalCell.s = buildCellStyle(totalCell.v as number, colorScale);
   }
 

@@ -202,12 +202,14 @@ const UnionRulesConfiguration: React.FC = () => {
                     ))}
                   </TextField>
                 </TableCell>
-                <TableCell>
+                <TableCell sx={{ minWidth: 130, width: 150 }}>
                   <TextField
                     size="small"
                     type="number"
                     inputProps={{ min: 0, step: 0.25 }}
                     value={rule.minValue ?? ''}
+                    fullWidth
+                    InputProps={{ sx: { fontVariantNumeric: 'tabular-nums' } }}
                     onChange={(event) =>
                       handleRuleChange(
                         rule.id,
@@ -217,12 +219,14 @@ const UnionRulesConfiguration: React.FC = () => {
                     }
                   />
                 </TableCell>
-                <TableCell>
+                <TableCell sx={{ minWidth: 130, width: 150 }}>
                   <TextField
                     size="small"
                     type="number"
                     inputProps={{ min: 0, step: 0.25 }}
                     value={rule.maxValue ?? ''}
+                    fullWidth
+                    InputProps={{ sx: { fontVariantNumeric: 'tabular-nums' } }}
                     onChange={(event) =>
                       handleRuleChange(
                         rule.id,

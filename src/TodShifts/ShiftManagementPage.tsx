@@ -18,10 +18,12 @@ import ShiftGanttChart from './ShiftGanttChart';
 import ShiftSummaryTable from './ShiftSummaryTable';
 import ShiftExport from './ShiftExport';
 import ShiftOptimizationView from './ShiftOptimizationView';
+import OptimizeShiftsPanel from './OptimizeShiftsPanel';
 import { 
   loadUnionRules, 
   setActiveScheduleType,
-  fetchLatestTodShiftRun
+  fetchLatestTodShiftRun,
+  optimizeShifts
 } from './store/shiftManagementSlice';
 
 const ShiftManagementPage: React.FC = () => {
@@ -36,7 +38,8 @@ const ShiftManagementPage: React.FC = () => {
     coverageTimeline,
     loading,
     error,
-    importMetadata
+    importMetadata,
+    lastOptimizationReport
   } = useSelector((state: RootState) => state.shiftManagement);
 
   useEffect(() => {
@@ -76,6 +79,17 @@ const ShiftManagementPage: React.FC = () => {
     else if (slot.totalExcess > 0) acc.excess++;
     return acc;
   }, { gaps: 0, excess: 0 });
+
+  const canOptimize = Boolean(importMetadata.importedAt && importMetadata.cityFileName);
+  const isOptimizing = loading.optimization;
+  const optimizationError = error.optimization;
+  const optimizationDisabledReason = canOptimize
+    ? undefined
+    : 'Import the master schedule before optimizing shifts.';
+
+  const handleOptimizeShifts = () => {
+    dispatch(optimizeShifts());
+  };
 
   return (
     <Box sx={{ p: 3, height: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -180,7 +194,29 @@ const ShiftManagementPage: React.FC = () => {
           )}
           
           {activeTab === 1 && (
-            <ManualShiftCreator onShiftCreated={() => showSuccessNotification('Shift created successfully')} />
+            <Grid container spacing={3}>
+              <Grid
+                size={{
+                  xs: 12,
+                  md: 8
+                }}>
+                <ManualShiftCreator onShiftCreated={() => showSuccessNotification('Shift created successfully')} />
+              </Grid>
+              <Grid
+                size={{
+                  xs: 12,
+                  md: 4
+                }}>
+                <OptimizeShiftsPanel
+                  canOptimize={canOptimize}
+                  isOptimizing={isOptimizing}
+                  optimizeError={optimizationError}
+                  onOptimize={handleOptimizeShifts}
+                  disabledReason={optimizationDisabledReason}
+                  lastReport={lastOptimizationReport}
+                />
+              </Grid>
+            </Grid>
           )}
           
           {activeTab === 2 && (

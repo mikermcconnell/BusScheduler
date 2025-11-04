@@ -44,9 +44,12 @@ interface ChartRow {
   totalExcess: number;
   northRequired: number;
   southRequired: number;
+  floaterRequired: number;
   floaterOperational: number;
+  floaterAvailable: number;
   floaterAllocatedNorth: number;
   floaterAllocatedSouth: number;
+  floaterExcess: number;
 }
 
 interface ZoneTimelinePoint {
@@ -58,6 +61,9 @@ interface ZoneTimelinePoint {
   coverage: number;
   breakCount?: number;
   difference: number;
+  floaterRequirement?: number;
+  floaterCoverage?: number;
+  floaterDifference?: number;
 }
 
 interface DayCoverageSummary {
@@ -116,22 +122,34 @@ const ShiftGanttChart: React.FC = () => {
 
     return DAY_TYPES.map((dayType) => {
       const intervals = coverageTimeline[dayType] ?? [];
-      const rows: ChartRow[] = intervals.map((interval, index) => ({
-        key: `${dayType}-${interval.startTime}`,
-        startTime: interval.startTime,
-        label: `${interval.startTime} – ${interval.endTime}`,
-        index,
-        color: colorForValue(interval.totalExcess, colorScale),
-        barValue: 1,
-        northExcess: interval.northExcess,
-        southExcess: interval.southExcess,
-        totalExcess: interval.totalExcess,
-        northRequired: interval.northRequired,
-        southRequired: interval.southRequired,
-        floaterOperational: interval.floaterOperational,
-        floaterAllocatedNorth: interval.floaterAllocatedNorth,
-        floaterAllocatedSouth: interval.floaterAllocatedSouth
-      }));
+      const rows: ChartRow[] = intervals.map((interval, index) => {
+        const floaterAvailable = Math.max(
+          0,
+          (interval.floaterOperational ?? 0) -
+            (interval.floaterAllocatedNorth ?? 0) -
+            (interval.floaterAllocatedSouth ?? 0)
+        );
+
+        return {
+          key: `${dayType}-${interval.startTime}`,
+          startTime: interval.startTime,
+          label: `${interval.startTime} – ${interval.endTime}`,
+          index,
+          color: colorForValue(interval.totalExcess, colorScale),
+          barValue: 1,
+          northExcess: interval.northExcess,
+          southExcess: interval.southExcess,
+          totalExcess: interval.totalExcess,
+          northRequired: interval.northRequired,
+          southRequired: interval.southRequired,
+          floaterRequired: interval.floaterRequired,
+          floaterOperational: interval.floaterOperational,
+          floaterAvailable,
+          floaterAllocatedNorth: interval.floaterAllocatedNorth,
+          floaterAllocatedSouth: interval.floaterAllocatedSouth,
+          floaterExcess: interval.floaterExcess
+        };
+      });
 
       const ticks = rows.filter(row => row.index % 4 === 0).map(row => row.startTime);
 
@@ -140,8 +158,20 @@ const ShiftGanttChart: React.FC = () => {
       const totalSeries: ZoneTimelinePoint[] = intervals.map((interval, index) => {
         const coverageNorth = (interval.northOperational ?? 0) + (interval.floaterAllocatedNorth ?? 0);
         const coverageSouth = (interval.southOperational ?? 0) + (interval.floaterAllocatedSouth ?? 0);
-        const requirement = (interval.northRequired ?? 0) + (interval.southRequired ?? 0);
-        const coverage = coverageNorth + coverageSouth;
+        const floaterCoverage = Math.max(
+          0,
+          (interval.floaterOperational ?? 0) -
+            (interval.floaterAllocatedNorth ?? 0) -
+            (interval.floaterAllocatedSouth ?? 0)
+        );
+        const requirement =
+          (interval.northRequired ?? 0) +
+          (interval.southRequired ?? 0) +
+          (interval.floaterRequired ?? 0);
+        const coverage =
+          (interval.northOperational ?? 0) +
+          (interval.southOperational ?? 0) +
+          (interval.floaterOperational ?? 0);
         return {
           key: `${dayType}-total-${interval.startTime}-${index}`,
           startTime: interval.startTime,
@@ -149,6 +179,9 @@ const ShiftGanttChart: React.FC = () => {
           label: `${interval.startTime} – ${interval.endTime}`,
           requirement,
           coverage,
+          floaterRequirement: interval.floaterRequired ?? 0,
+          floaterCoverage,
+          floaterDifference: floaterCoverage - (interval.floaterRequired ?? 0),
           breakCount: breakMap.get(interval.startTime) ?? 0,
           difference: coverage - requirement
         };
@@ -415,9 +448,12 @@ const GanttTooltip: React.FC<any> = ({ active, payload }) => {
       </Typography>
       <Typography variant="body2">North required: {data.northRequired}</Typography>
       <Typography variant="body2">South required: {data.southRequired}</Typography>
-      <Typography variant="body2">Floater coverage: {data.floaterOperational}</Typography>
+      <Typography variant="body2">Floater required: {data.floaterRequired}</Typography>
+      <Typography variant="body2">Floaters scheduled: {data.floaterOperational}</Typography>
+      <Typography variant="body2">Floaters available: {data.floaterAvailable}</Typography>
       <Typography variant="body2" sx={{ mt: 1 }}>North excess: {data.northExcess}</Typography>
       <Typography variant="body2">South excess: {data.southExcess}</Typography>
+      <Typography variant="body2">Floater excess: {data.floaterExcess}</Typography>
       <Typography variant="body2">Total excess: {data.totalExcess}</Typography>
     </Paper>
   );
@@ -648,8 +684,23 @@ const FleetTooltip: React.FC<FleetTooltipProps> = ({
         {title}
       </Typography>
       <Typography variant="body2">{point.label}</Typography>
-  <Typography variant="body2">Requirement: {point.requirement}</Typography>
-  <Typography variant="body2">Coverage (with floaters): {point.coverage}</Typography>
+      <Typography variant="body2">Requirement: {point.requirement}</Typography>
+      <Typography variant="body2">Coverage (with floaters): {point.coverage}</Typography>
+      {typeof point.floaterRequirement === 'number' && (
+        <Typography variant="body2">
+          Floater requirement: {point.floaterRequirement}
+        </Typography>
+      )}
+      {typeof point.floaterCoverage === 'number' && (
+        <Typography variant="body2">
+          Floater coverage: {point.floaterCoverage}
+        </Typography>
+      )}
+      {typeof point.floaterDifference === 'number' && (
+        <Typography variant="body2">
+          Floater difference: {point.floaterDifference >= 0 ? '+' : ''}{point.floaterDifference}
+        </Typography>
+      )}
       {showDifference && (
         <Typography variant="body2">
           Net difference: {point.difference >= 0 ? '+' : ''}{point.difference}

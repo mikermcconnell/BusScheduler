@@ -1,21 +1,21 @@
-# TOD Shift Optimization Plan
+# TOD Shift Autogeneration Plan
 
 **Overall Progress:** `100%`
 
 ## Tasks:
 
-- [x] 🟩 **Step 1: Introduce optimization tab**
-  - [x] 🟩 Add "Shift Optimization" tab to `ShiftManagementPage`
-  - [x] 🟩 Scaffold routed component and ensure tab order/navigation stay intact
+- [ ] 🟩 **Step 1: Gate optimize action**
+  - [ ] 🟩 Disable `Optimize Shifts` until a master schedule import exists
+  - [ ] 🟩 Add confirmation modal warning that optimization replaces all current shifts
 
-- [x] 🟩 **Step 2: Surface union rules with persistence**
-  - [x] 🟩 Extend slice/actions to load/save rules from `localStorage`
-  - [x] 🟩 Update configuration UI for inline editing tied to Redux state
+- [ ] 🟩 **Step 2: Generate shifts for all day types**
+  - [ ] 🟩 Build service to convert coverage deficits into weekday/Saturday/Sunday shift drafts using union rules
+  - [ ] 🟩 Attach placeholder warnings whenever compliance cannot be fully satisfied
 
-- [x] 🟩 **Step 3: Build optimization insights**
-  - [x] 🟩 Implement hook/util to analyze coverage gaps vs. shifts and union rules
-  - [x] 🟩 Generate recommendations for shift tweaks, new shifts, or break adjustments
+- [ ] 🟩 **Step 3: Persist and version runs**
+  - [ ] 🟩 Snapshot the existing TOD run before overwrite (Firestore/local fallback)
+  - [ ] 🟩 Save generated shifts, operational timeline, and coverage back through `todShiftRepository`
 
-- [x] 🟩 **Step 4: Present optimization view**
-  - [x] 🟩 Compose layout combining recommendations and editable rules
-  - [x] 🟩 Add basic validation/messaging and unit tests for new logic
+- [ ] 🟩 **Step 4: Surface post-run status**
+  - [ ] 🟩 Present summary of remaining gaps/compliance warnings after optimization
+  - [ ] 🟩 Keep contractor import path available for comparisons after auto-generation

@@ -78,11 +78,15 @@ export function computeCoverageTimeline({
 
       const northExcess = operations.northOperational + floaterAllocatedToNorth - requirements.northRequired;
       const southExcess = operations.southOperational + floaterAllocatedToSouth - requirements.southRequired;
-      const totalExcess = (operations.northOperational + operations.southOperational + operations.floaterOperational) -
-        (requirements.northRequired + requirements.southRequired);
+      const floaterUnallocated = Math.max(
+        0,
+        operations.floaterOperational - floaterAllocatedToNorth - floaterAllocatedToSouth
+      );
+      const floaterExcess = floaterUnallocated - (requirements.floaterRequired ?? 0);
+      const totalExcess = northExcess + southExcess + floaterExcess;
 
-      minTotalExcess = Math.min(minTotalExcess, totalExcess, northExcess, southExcess);
-      maxTotalExcess = Math.max(maxTotalExcess, totalExcess, northExcess, southExcess);
+      minTotalExcess = Math.min(minTotalExcess, totalExcess, northExcess, southExcess, floaterExcess);
+      maxTotalExcess = Math.max(maxTotalExcess, totalExcess, northExcess, southExcess, floaterExcess);
 
       intervals.push({
         dayType,
@@ -98,6 +102,7 @@ export function computeCoverageTimeline({
         floaterAllocatedSouth: floaterAllocatedToSouth,
         northExcess,
         southExcess,
+        floaterExcess,
         totalExcess,
         status: totalExcess < 0 ? 'deficit' : totalExcess > 0 ? 'excess' : 'balanced'
       });

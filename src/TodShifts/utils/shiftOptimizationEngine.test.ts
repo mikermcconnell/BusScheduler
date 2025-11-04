@@ -67,7 +67,8 @@ describe('shiftOptimizationEngine', () => {
         floaterAllocatedSouth: 0,
         northExcess: -2,
         southExcess: 0,
-        totalExcess: -1,
+        floaterExcess: 0,
+        totalExcess: -2,
         status: 'deficit'
       },
       {
@@ -84,7 +85,8 @@ describe('shiftOptimizationEngine', () => {
         floaterAllocatedSouth: 0,
         northExcess: -2,
         southExcess: 0,
-        totalExcess: -1,
+        floaterExcess: 0,
+        totalExcess: -2,
         status: 'deficit'
       }
     ]);
@@ -135,6 +137,7 @@ describe('shiftOptimizationEngine', () => {
         floaterAllocatedSouth: 0,
         northExcess: -1,
         southExcess: 0,
+        floaterExcess: 0,
         totalExcess: -1,
         status: 'deficit'
       }

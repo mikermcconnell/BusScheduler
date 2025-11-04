@@ -120,6 +120,7 @@ export interface ShiftCoverageInterval {
   floaterAllocatedSouth: number;
   northExcess: number;
   southExcess: number;
+  floaterExcess: number;
   totalExcess: number;
   status: 'deficit' | 'balanced' | 'excess';
 }
