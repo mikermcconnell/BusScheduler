@@ -81,6 +81,11 @@ const OptimizeShiftsPanel: React.FC<OptimizeShiftsPanelProps> = ({
                 {lastReport.compliantShifts}/{lastReport.totalShifts} shifts union compliant;
                 {` ${lastReport.warningShifts}`} shift{lastReport.warningShifts === 1 ? '' : 's'} with warnings.
               </Typography>
+              {lastReport.strategy && (
+                <Typography variant="body2">
+                  Strategy: {lastReport.strategy === 'solver' ? 'Solver-assisted plan' : 'Heuristic auto-generation'}.
+                </Typography>
+              )}
               <Typography variant="body2">
                 Remaining deficit intervals: {lastReport.deficitIntervals}
                 {lastReport.deficitIntervals > 0 &&

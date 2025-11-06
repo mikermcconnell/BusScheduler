@@ -1,12 +1,14 @@
 export type DayType = 'weekday' | 'saturday' | 'sunday';
 
 export type ShiftZone = 'North' | 'South' | 'Floater';
+export type ShiftOrigin = 'imported' | 'manual' | 'optimized';
 
 export interface Shift {
     id?: number | string;
     shiftCode: string;
     driverId?: string;
     vehicleId?: string;
+    origin?: ShiftOrigin;
     scheduleType: DayType;
     zone: ShiftZone;
     startTime: string; // HH:MM in 24h

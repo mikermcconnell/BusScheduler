@@ -8,4 +8,6 @@ export interface OptimizationReport {
   deficitIntervals: number;
   deficitByDayType: Record<DayType, number>;
   warnings: string[];
+  strategy?: 'heuristic' | 'solver';
+  solverWarnings?: string[];
 }

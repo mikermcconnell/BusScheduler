@@ -18,16 +18,22 @@ import { useSelector } from 'react-redux';
 import { RootState } from '../store/store';
 import { Shift } from './types/shift.types';
 
-const ShiftSummaryTable: React.FC = () => {
+interface ShiftSummaryTableProps {
+  title?: string;
+  showActions?: boolean;
+}
+
+const ShiftSummaryTable: React.FC<ShiftSummaryTableProps> = ({ title, showActions = true }) => {
   const { shifts, activeScheduleType } = useSelector((state: RootState) => state.shiftManagement);
   
   const filteredShifts = shifts.filter((shift: Shift) => shift.scheduleType === activeScheduleType);
+  const tableTitle = title ?? `Shift Summary (${activeScheduleType})`;
 
   if (filteredShifts.length === 0) {
     return (
       <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
         <Typography variant="h6" gutterBottom>
-          Shift Summary
+          {tableTitle}
         </Typography>
         <Alert severity="info">
           No shifts created for {activeScheduleType} schedule yet.
@@ -39,7 +45,7 @@ const ShiftSummaryTable: React.FC = () => {
   return (
     <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
       <Typography variant="h6" gutterBottom>
-        Shift Summary ({activeScheduleType})
+        {tableTitle}
       </Typography>
       
       <TableContainer>
@@ -51,18 +57,30 @@ const ShiftSummaryTable: React.FC = () => {
               <TableCell>Start Time</TableCell>
               <TableCell>End Time</TableCell>
               <TableCell>Total Hours</TableCell>
+              <TableCell>Break Start</TableCell>
+              <TableCell>Break End</TableCell>
+              <TableCell>Break Duration</TableCell>
               <TableCell>Compliance</TableCell>
-              <TableCell>Actions</TableCell>
+              {showActions && <TableCell>Actions</TableCell>}
             </TableRow>
           </TableHead>
           <TableBody>
             {filteredShifts.map((shift: Shift) => (
-              <TableRow key={shift.id}>
+              <TableRow key={shift.id ?? shift.shiftCode}>
                 <TableCell>{shift.shiftCode}</TableCell>
                 <TableCell>{shift.zone}</TableCell>
                 <TableCell>{shift.startTime}</TableCell>
                 <TableCell>{shift.endTime}</TableCell>
-                <TableCell>{shift.totalHours.toFixed(1)}h</TableCell>
+                <TableCell>
+                  {typeof shift.totalHours === 'number' ? `${shift.totalHours.toFixed(1)}h` : '—'}
+                </TableCell>
+                <TableCell>{shift.breakStart ?? '—'}</TableCell>
+                <TableCell>{shift.breakEnd ?? '—'}</TableCell>
+                <TableCell>
+                  {typeof shift.breakDuration === 'number' && shift.breakDuration > 0
+                    ? `${Math.round(shift.breakDuration)} min`
+                    : '—'}
+                </TableCell>
                 <TableCell>
                   <Box display="flex" alignItems="center" gap={1}>
                     <Chip 
@@ -75,14 +93,16 @@ const ShiftSummaryTable: React.FC = () => {
                     )}
                   </Box>
                 </TableCell>
-                <TableCell>
-                  <IconButton size="small" color="primary">
-                    <Edit fontSize="small" />
-                  </IconButton>
-                  <IconButton size="small" color="error">
-                    <Delete fontSize="small" />
-                  </IconButton>
-                </TableCell>
+                {showActions && (
+                  <TableCell>
+                    <IconButton size="small" color="primary">
+                      <Edit fontSize="small" />
+                    </IconButton>
+                    <IconButton size="small" color="error">
+                      <Delete fontSize="small" />
+                    </IconButton>
+                  </TableCell>
+                )}
               </TableRow>
             ))}
           </TableBody>

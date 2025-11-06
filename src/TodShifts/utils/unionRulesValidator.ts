@@ -6,7 +6,7 @@ const FALLBACK_RULES: UnionRule[] = [
     ruleName: 'Minimum Shift Length',
     ruleType: 'required',
     category: 'shift_length',
-    minValue: 7,
+    minValue: 5,
     unit: 'hours',
     isActive: true
   },

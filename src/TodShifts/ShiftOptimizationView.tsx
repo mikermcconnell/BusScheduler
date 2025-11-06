@@ -12,7 +12,6 @@ import {
   Button
 } from '@mui/material';
 import { useSelector } from 'react-redux';
-import UnionRulesConfiguration from './UnionRulesConfiguration';
 import { RootState } from '../store/store';
 import {
   computeOptimizationInsights,
@@ -99,8 +98,7 @@ const ShiftOptimizationView: React.FC = () => {
       <Grid container spacing={3}>
         <Grid
           size={{
-            xs: 12,
-            md: 8
+            xs: 12
           }}
         >
           <Paper sx={{ p: 3, height: '100%', display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -155,15 +153,6 @@ const ShiftOptimizationView: React.FC = () => {
               </Stack>
             )}
           </Paper>
-        </Grid>
-
-        <Grid
-          size={{
-            xs: 12,
-            md: 4
-          }}
-        >
-          <UnionRulesConfiguration />
         </Grid>
       </Grid>
     </Stack>

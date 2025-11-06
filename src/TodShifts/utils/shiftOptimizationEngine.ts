@@ -20,7 +20,11 @@ const ZONES: ZoneDescriptor[] = [
 ];
 
 const SHIFT_EXTENSION_BUFFER_MINUTES = 60;
+const MAX_EXTENSION_BUFFER_MINUTES = 120;
 const DEFAULT_IDEAL_SHIFT_HOURS = 7.2;
+const DEFAULT_MIN_SHIFT_HOURS = 5;
+const DEFAULT_BREAK_THRESHOLD_HOURS = 7.5;
+const DEFAULT_BREAK_LATEST_START_HOURS = 4.75;
 
 export interface OptimizationImpactAdjustment {
   intervalKey: string;
@@ -190,15 +194,18 @@ function buildRecommendations(
   }
 
   const maxShiftHours = extractShiftLengthHours(unionRules, 'max') ?? 9.75;
-  const minShiftHours = extractShiftLengthHours(unionRules, 'min') ?? 7;
+  const minShiftHours = extractShiftLengthHours(unionRules, 'min') ?? DEFAULT_MIN_SHIFT_HOURS;
   const minBreakMinutes = extractBreakDurationMinutes(unionRules) ?? 40;
+  const breakThresholdHours = extractBreakThresholdHours(unionRules) ?? DEFAULT_BREAK_THRESHOLD_HOURS;
+  const breakLatestStartHours = extractBreakLatestStartHours(unionRules) ?? DEFAULT_BREAK_LATEST_START_HOURS;
   const idealShiftHours = extractIdealShiftHours(unionRules) ?? DEFAULT_IDEAL_SHIFT_HOURS;
 
   const results: OptimizationRecommendation[] = [];
 
   blocks.forEach((block, index) => {
     const zoneShifts = shifts.filter((shift) => shift.zone === block.zone);
-    const extensionOptions = findShiftExtensionOptions(block, zoneShifts, maxShiftHours);
+    const extensionBuffer = determineExtensionBuffer(block);
+    const extensionOptions = findShiftExtensionOptions(block, zoneShifts, maxShiftHours, extensionBuffer);
     const shortfallVehicles = Math.max(1, Math.ceil(block.peakShortfall));
 
     let coveredByExtension = 0;
@@ -210,18 +217,33 @@ function buildRecommendations(
 
     const remainingShortfall = Math.max(0, shortfallVehicles - coveredByExtension);
     if (remainingShortfall > 0) {
+      const nextAdjacentBlock = blocks.slice(index + 1).find(
+        (candidate) =>
+          candidate.zone === block.zone &&
+          candidate.startMinutes - block.endMinutes <= INTERVAL_MINUTES
+      );
+
       results.push(
         buildNewShiftRecommendation(
           block,
           remainingShortfall,
           maxShiftHours,
           minShiftHours,
-          idealShiftHours
+          idealShiftHours,
+          nextAdjacentBlock
         )
       );
     }
 
-    const breakOptions = findBreakAdjustments(block, zoneShifts, minBreakMinutes);
+    const breakThresholdMinutes = Math.round(breakThresholdHours * 60);
+    const breakLatestStartMinutes = Math.round(breakLatestStartHours * 60);
+    const breakOptions = findBreakAdjustments(
+      block,
+      zoneShifts,
+      minBreakMinutes,
+      breakThresholdMinutes,
+      breakLatestStartMinutes
+    );
     breakOptions.slice(0, 2).forEach((option, optionIndex) => {
       results.push(buildBreakRecommendation(block, option, optionIndex));
     });
@@ -230,10 +252,19 @@ function buildRecommendations(
   return results;
 }
 
+function determineExtensionBuffer(block: DeficitBlock): number {
+  const scaled = Math.max(
+    SHIFT_EXTENSION_BUFFER_MINUTES,
+    Math.min(block.durationMinutes + INTERVAL_MINUTES, MAX_EXTENSION_BUFFER_MINUTES)
+  );
+  return Math.max(scaled, SHIFT_EXTENSION_BUFFER_MINUTES);
+}
+
 function findShiftExtensionOptions(
   block: DeficitBlock,
   shifts: Shift[],
-  maxShiftHours: number
+  maxShiftHours: number,
+  bufferMinutes: number
 ): ShiftExtensionOption[] {
   return shifts
     .map((shift) => {
@@ -241,7 +272,7 @@ function findShiftExtensionOptions(
       const extendEndGap = block.startMinutes - window.endMinutes;
       if (
         extendEndGap >= 0 &&
-        extendEndGap <= SHIFT_EXTENSION_BUFFER_MINUTES
+        extendEndGap <= bufferMinutes
       ) {
         const addedMinutes = block.endMinutes - window.endMinutes;
         const resultingHours = window.durationHours + addedMinutes / 60;
@@ -259,7 +290,7 @@ function findShiftExtensionOptions(
       const extendStartGap = window.startMinutes - block.startMinutes;
       if (
         extendStartGap >= 0 &&
-        extendStartGap <= SHIFT_EXTENSION_BUFFER_MINUTES
+        extendStartGap <= bufferMinutes
       ) {
         const addedMinutes = window.startMinutes - block.startMinutes;
         const resultingHours = window.durationHours + addedMinutes / 60;
@@ -283,7 +314,9 @@ function findShiftExtensionOptions(
 function findBreakAdjustments(
   block: DeficitBlock,
   shifts: Shift[],
-  minBreakMinutes: number
+  minBreakMinutes: number,
+  breakThresholdMinutes: number,
+  breakLatestStartMinutes: number
 ): BreakAdjustmentOption[] {
   if (minBreakMinutes <= 0) {
     return [];
@@ -314,20 +347,60 @@ function findBreakAdjustments(
         return null;
       }
 
-      const suggestedEndMinutes = canMoveEarlier
-        ? block.startMinutes
-        : block.endMinutes + breakDuration;
+      const shiftRequiresMealBreak = window.durationMinutes >= breakThresholdMinutes;
+      const headroomBefore = block.startMinutes - window.startMinutes;
+      const headroomAfter = window.endMinutes - block.endMinutes;
+      const moveEarlier = canMoveEarlier && (!canMoveLater || headroomBefore <= headroomAfter);
 
-      const suggestedStartMinutes = canMoveEarlier
-        ? block.startMinutes - breakDuration
-        : block.endMinutes;
+      const proposed = moveEarlier
+        ? {
+            start: block.startMinutes - breakDuration,
+            end: block.startMinutes
+          }
+        : {
+            start: block.endMinutes,
+            end: block.endMinutes + breakDuration
+          };
+
+      let suggestedStartMinutes = Math.max(proposed.start, window.startMinutes);
+      let suggestedEndMinutes = suggestedStartMinutes + breakDuration;
+
+      if (suggestedEndMinutes > window.endMinutes) {
+        return null;
+      }
+
+      const alignToInterval = (value: number, earlier: boolean) =>
+        earlier
+          ? Math.floor(value / INTERVAL_MINUTES) * INTERVAL_MINUTES
+          : Math.ceil(value / INTERVAL_MINUTES) * INTERVAL_MINUTES;
+
+      const alignedStart = Math.min(
+        window.endMinutes - breakDuration,
+        Math.max(window.startMinutes, alignToInterval(suggestedStartMinutes, moveEarlier))
+      );
+      const alignedEnd = alignedStart + breakDuration;
+
+      if (!(alignedEnd <= block.startMinutes || alignedStart >= block.endMinutes)) {
+        return null;
+      }
+
+      if (shiftRequiresMealBreak) {
+        const offsetMinutes = alignedStart - window.startMinutes;
+        if (offsetMinutes > breakLatestStartMinutes) {
+          return null;
+        }
+      }
+
+      if (alignedStart === breakStartMinutes && alignedEnd === breakEndMinutes) {
+        return null;
+      }
 
       return {
         shift,
         currentStartMinutes: breakStartMinutes,
         currentEndMinutes: breakEndMinutes,
-        suggestedStartMinutes,
-        suggestedEndMinutes
+        suggestedStartMinutes: alignedStart,
+        suggestedEndMinutes: alignedEnd
       };
     })
     .filter((option): option is BreakAdjustmentOption => Boolean(option));
@@ -375,24 +448,62 @@ function buildNewShiftRecommendation(
   requiredShifts: number,
   maxShiftHours: number,
   minShiftHours: number,
-  idealShiftHours: number
+  idealShiftHours: number,
+  nextAdjacentBlock?: DeficitBlock
 ): OptimizationRecommendation {
-  const durationMinutes = block.durationMinutes;
   const minShiftMinutes = Math.round(minShiftHours * 60);
   const maxShiftMinutes = Math.round(maxShiftHours * 60);
   const idealShiftMinutes = Math.round(idealShiftHours * 60);
+  const coverageEndCandidate = (() => {
+    if (
+      nextAdjacentBlock &&
+      nextAdjacentBlock.zone === block.zone &&
+      nextAdjacentBlock.startMinutes - block.endMinutes <= INTERVAL_MINUTES
+    ) {
+      const span = nextAdjacentBlock.endMinutes - block.startMinutes;
+      if (span <= maxShiftMinutes) {
+        return nextAdjacentBlock.endMinutes;
+      }
+    }
+    return block.endMinutes;
+  })();
 
-  const lowerBound = Math.max(Math.min(durationMinutes, maxShiftMinutes), minShiftMinutes);
-  const clampedIdeal = Math.min(Math.max(idealShiftMinutes, lowerBound), maxShiftMinutes);
-  const recommendedMinutes = clampedIdeal;
-  const recommendedEndMinutes = block.startMinutes + recommendedMinutes;
+  const coverageMinutes = coverageEndCandidate - block.startMinutes;
+  const minimumCoverageMinutes = Math.max(
+    minShiftMinutes,
+    Math.ceil(coverageMinutes / INTERVAL_MINUTES) * INTERVAL_MINUTES
+  );
+
+  let recommendedMinutes = idealShiftMinutes;
+  recommendedMinutes = Math.max(recommendedMinutes, minimumCoverageMinutes);
+  recommendedMinutes = Math.min(recommendedMinutes, maxShiftMinutes);
+
+  // Align to planning interval to keep times clean for schedulers.
+  recommendedMinutes = Math.max(
+    minShiftMinutes,
+    Math.min(
+      maxShiftMinutes,
+      Math.round(recommendedMinutes / INTERVAL_MINUTES) * INTERVAL_MINUTES
+    )
+  );
+
+  if (recommendedMinutes < minimumCoverageMinutes) {
+    recommendedMinutes = minimumCoverageMinutes;
+  }
+
+  const recommendedEndMinutes = Math.min(
+    block.startMinutes + maxShiftMinutes,
+    block.startMinutes + recommendedMinutes
+  );
+
+  const finalMinutes = recommendedEndMinutes - block.startMinutes;
 
   return {
     id: `${block.id}-new-shift`,
     type: 'new_shift',
     zone: block.zone,
     title: `${block.zone} | Add ${requiredShifts} new shift${requiredShifts > 1 ? 's' : ''}`,
-    summary: `Shortfall of ${requiredShifts} operator${requiredShifts > 1 ? 's' : ''} over ${block.startTime}–${block.endTime}. Recommend scheduling ${minutesToTimeString(block.startMinutes)}–${minutesToTimeString(recommendedEndMinutes)} (${(recommendedMinutes / 60).toFixed(1)} hrs).`,
+    summary: `Shortfall of ${requiredShifts} operator${requiredShifts > 1 ? 's' : ''} over ${block.startTime}–${block.endTime}. Recommend scheduling ${minutesToTimeString(block.startMinutes)}–${minutesToTimeString(recommendedEndMinutes)} (${(finalMinutes / 60).toFixed(1)} hrs).`,
     detailItems: [
       'Align start with the first deficit interval to immediately close the gap.',
       `Respect union limits: min ${minShiftHours.toFixed(1)} hrs, max ${maxShiftHours.toFixed(1)} hrs.`,
@@ -517,6 +628,40 @@ function extractBreakDurationMinutes(rules: UnionRule[]): number | null {
   }
 
   return candidate.unit === 'hours' ? Math.round(candidate.minValue * 60) : candidate.minValue;
+}
+
+function extractBreakThresholdHours(rules: UnionRule[]): number | null {
+  const candidate = rules.find(
+    (rule) =>
+      rule.isActive &&
+      rule.category === 'breaks' &&
+      rule.ruleType === 'required' &&
+      typeof rule.minValue === 'number' &&
+      rule.ruleName.toLowerCase().includes('threshold')
+  );
+
+  if (!candidate || typeof candidate.minValue !== 'number') {
+    return null;
+  }
+
+  return candidate.unit === 'minutes' ? candidate.minValue / 60 : candidate.minValue;
+}
+
+function extractBreakLatestStartHours(rules: UnionRule[]): number | null {
+  const candidate = rules.find(
+    (rule) =>
+      rule.isActive &&
+      rule.category === 'breaks' &&
+      rule.ruleType === 'required' &&
+      typeof rule.maxValue === 'number' &&
+      rule.ruleName.toLowerCase().includes('latest start')
+  );
+
+  if (!candidate || typeof candidate.maxValue !== 'number') {
+    return null;
+  }
+
+  return candidate.unit === 'minutes' ? candidate.maxValue / 60 : candidate.maxValue;
 }
 
 export function extractIdealShiftHours(rules: UnionRule[]): number | null {

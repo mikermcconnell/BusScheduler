@@ -17,6 +17,7 @@ import { formatIsoTimestamp, DAY_TYPES } from '../utils/timeUtils';
 import { computeCoverageTimeline } from '../utils/coverageCalculator';
 import type { RootState } from '../../store/store';
 import type { OptimizationReport } from '../types/optimization.types';
+import type { SolverCandidateShift } from '../utils/solverOptimizationEngine';
 
 interface ImportMetadata {
   runId: string | null;
@@ -83,10 +84,10 @@ const DEFAULT_UNION_RULES: UnionRule[] = [
     ruleName: 'Minimum Shift Length',
     ruleType: 'required',
     category: 'shift_length',
-    minValue: 7,
+    minValue: 5,
     unit: 'hours',
     isActive: true,
-    description: 'Shifts must be scheduled for at least 7.0 hours.'
+    description: 'Shifts must be scheduled for at least 5.0 hours.'
   },
   {
     id: 2,
@@ -406,16 +407,74 @@ export const optimizeShifts = createAsyncThunk<
           ? state.shiftManagement.unionRules
           : DEFAULT_UNION_RULES;
 
-      const { generateAutoShifts } = await import('../utils/autoShiftGenerator');
+      const { generateAutoShifts, buildOperationalTimelineFromShifts } = await import('../utils/autoShiftGenerator');
 
       const generation = await generateAutoShifts({
         cityTimeline,
         unionRules: activeRules
       });
 
+      const solverFeatureEnabled = process.env.REACT_APP_TOD_SOLVER === 'true';
+
+      let finalShifts = generation.shifts;
+      let finalOperationalTimeline = generation.operationalTimeline;
+      let solverWarnings: string[] = [];
+
+      if (solverFeatureEnabled) {
+        const { runShiftSolver } = await import('../utils/solverOptimizationEngine');
+        const existingCandidates = state.shiftManagement.shifts.map((shift, index) =>
+          createSolverCandidate(shift, `existing-${index}`, true)
+        );
+        const generatedCandidates = generation.shifts.map((shift, index) =>
+          createSolverCandidate(shift, `generated-${index}`, false)
+        );
+        const candidatePool = [...existingCandidates, ...generatedCandidates];
+
+        const solverSelected: Shift[] = [];
+        const solverIssues: string[] = [];
+
+        for (const dayType of DAY_TYPES) {
+          const coverageIntervals = buildCoverageIntervalsFromCityTimeline(dayType, cityTimeline[dayType] ?? []);
+          const dayCandidates = candidatePool.filter((candidate) => candidate.scheduleType === dayType);
+          if (dayCandidates.length === 0 || coverageIntervals.length === 0) {
+            continue;
+          }
+
+          const result = runShiftSolver({
+            dayType,
+            coverageTimeline: coverageIntervals,
+            unionRules: activeRules,
+            candidateShifts: dayCandidates
+          });
+
+          solverSelected.push(
+            ...result.selectedShifts.map((shift) => ({
+              ...shift,
+              scheduleType: dayType
+            }))
+          );
+
+          if (result.unmetConstraints.length > 0) {
+            solverIssues.push(
+              `Unable to satisfy coverage for ${dayType} intervals: ${result.unmetConstraints.join(', ')}`
+            );
+          }
+        }
+
+        if (solverSelected.length > 0 && solverIssues.length === 0) {
+          const evaluatedShifts = await annotateSolverCompliance(solverSelected, activeRules);
+          finalShifts = evaluatedShifts;
+          finalOperationalTimeline = buildOperationalTimelineFromShifts(finalShifts);
+        } else if (solverIssues.length > 0) {
+          solverWarnings = solverIssues;
+        } else {
+          solverWarnings = ['Solver returned no schedule; using heuristic plan.'];
+        }
+      }
+
       const coverage = computeCoverageTimeline({
         cityTimeline,
-        operationalTimeline: generation.operationalTimeline
+        operationalTimeline: finalOperationalTimeline
       });
 
       const existingRunId = state.shiftManagement.importMetadata.runId;
@@ -446,8 +505,8 @@ export const optimizeShifts = createAsyncThunk<
         contractorFileName: 'Auto-generated Shifts',
         importedAt: optimizedAt,
         cityTimeline,
-        operationalTimeline: generation.operationalTimeline,
-        shifts: generation.shifts
+        operationalTimeline: finalOperationalTimeline,
+        shifts: finalShifts
       };
 
       const createdRun = await todShiftRepository.createRun(optimizedPayload);
@@ -467,9 +526,18 @@ export const optimizeShifts = createAsyncThunk<
         console.warn('Unable to persist coverage timeline for optimized run.', updateError);
       }
 
-      const flattenedWarnings = generation.warnings.flatMap((warning) =>
-        warning.messages.map((message) => `${warning.shiftCode}: ${message}`)
-      );
+      const flattenedWarnings =
+        finalShifts === generation.shifts
+          ? generation.warnings.flatMap((warning) =>
+              warning.messages.map((message) => `${warning.shiftCode}: ${message}`)
+            )
+          : finalShifts.flatMap((shiftItem) =>
+              (shiftItem.complianceWarnings ?? []).map((message) => `${shiftItem.shiftCode}: ${message}`)
+            );
+
+      if (solverWarnings.length > 0) {
+        flattenedWarnings.push(...solverWarnings);
+      }
 
       const deficitByDayType = DAY_TYPES.reduce((acc, dayType) => {
         const intervals = coverage.timeline[dayType] ?? [];
@@ -478,17 +546,19 @@ export const optimizeShifts = createAsyncThunk<
       }, {} as Record<DayType, number>);
 
       const totalDeficitIntervals = Object.values(deficitByDayType).reduce((sum, value) => sum + value, 0);
-      const compliantShifts = generation.shifts.filter((shift) => shift.unionCompliant).length;
-      const warningShifts = generation.shifts.filter((shift) => (shift.complianceWarnings?.length ?? 0) > 0).length;
+      const compliantShifts = finalShifts.filter((shift) => shift.unionCompliant).length;
+      const warningShifts = finalShifts.filter((shift) => (shift.complianceWarnings?.length ?? 0) > 0).length;
 
       const report: OptimizationReport = {
         generatedAt: optimizedAt,
-        totalShifts: generation.shifts.length,
+        totalShifts: finalShifts.length,
         compliantShifts,
         warningShifts,
         deficitIntervals: totalDeficitIntervals,
         deficitByDayType,
-        warnings: flattenedWarnings
+        warnings: flattenedWarnings,
+        strategy: finalShifts === generation.shifts ? 'heuristic' : 'solver',
+        solverWarnings
       };
 
       return {
@@ -631,6 +701,53 @@ const shiftManagementSlice = createSlice({
       });
   }
 });
+
+function createSolverCandidate(shift: Shift, prefix: string, existing: boolean): SolverCandidateShift {
+  const identifier = `${shift.shiftCode ?? shift.id ?? 'shift'}`;
+  return {
+    ...shift,
+    solverId: `${prefix}-${identifier}`,
+    existing
+  };
+}
+
+function buildCoverageIntervalsFromCityTimeline(
+  dayType: DayType,
+  intervals: CityRequirementInterval[]
+): ShiftCoverageInterval[] {
+  return intervals.map((interval) => ({
+    dayType,
+    startTime: interval.startTime,
+    endTime: interval.endTime,
+    northRequired: interval.northRequired,
+    southRequired: interval.southRequired,
+    floaterRequired: interval.floaterRequired ?? 0,
+    northOperational: 0,
+    southOperational: 0,
+    floaterOperational: 0,
+    floaterAllocatedNorth: 0,
+    floaterAllocatedSouth: 0,
+    northExcess: -interval.northRequired,
+    southExcess: -interval.southRequired,
+    floaterExcess: -(interval.floaterRequired ?? 0),
+    totalExcess:
+      -(interval.northRequired + interval.southRequired + (interval.floaterRequired ?? 0)),
+    status: 'deficit'
+  }));
+}
+
+async function annotateSolverCompliance(shifts: Shift[], unionRules: UnionRule[]): Promise<Shift[]> {
+  return Promise.all(
+    shifts.map(async (shift) => {
+      const violations = await validateShiftAgainstRules(shift, unionRules);
+      return {
+        ...shift,
+        unionCompliant: !violations.some((violation) => violation.violationType === 'error'),
+        complianceWarnings: violations.map((violation) => violation.violationMessage)
+      };
+    })
+  );
+}
 
 function applyRunToState(state: ShiftManagementState, run: TodShiftRun): void {
   state.shifts = run.shifts;

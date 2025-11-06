@@ -529,6 +529,7 @@ function parseStandardContractorRows(rows: string[][], fileName: string): Parsed
       shiftCode: contractorRow.driverId,
       driverId: driverIdx >= 0 ? driverId || undefined : undefined,
       vehicleId,
+      origin: 'imported',
       scheduleType: dayType,
       zone,
       startTime: contractorRow.rawStart,

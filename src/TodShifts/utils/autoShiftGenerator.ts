@@ -51,6 +51,79 @@ const ZONES: ShiftZone[] = ['North', 'South', 'Floater'];
 const DEFAULT_MEAL_DURATION_MINUTES = 40;
 const DEFAULT_BREAK_THRESHOLD_MINUTES = 7.5 * 60;
 const DEFAULT_BREAK_LATEST_START_MINUTES = 4.75 * 60;
+const DEFAULT_MIN_SHIFT_MINUTES = 5 * 60;
+const DEFAULT_MAX_SHIFT_MINUTES = 9.75 * 60;
+
+function extractShiftLimitMinutes(
+  rules: UnionRule[],
+  mode: 'min' | 'max',
+  fallback: number
+): number {
+  const match = rules.find(
+    (rule) =>
+      rule.isActive &&
+      rule.category === 'shift_length' &&
+      rule.ruleType === 'required' &&
+      typeof (mode === 'max' ? rule.maxValue : rule.minValue) === 'number'
+  );
+
+  if (!match) {
+    return fallback;
+  }
+
+  const rawValue = mode === 'max' ? match.maxValue : match.minValue;
+  if (typeof rawValue !== 'number' || rawValue <= 0) {
+    return fallback;
+  }
+
+  const minutes = match.unit === 'minutes' ? rawValue : rawValue * 60;
+  return minutes > 0 ? minutes : fallback;
+}
+
+interface ShiftCounter {
+  value: number;
+}
+
+interface FinalizationContext {
+  unionRules: UnionRule[];
+  breakThresholdMinutes: number;
+  breakLatestStartMinutes: number;
+  mealDurationMinutes: number;
+  minShiftMinutes: number;
+  maxShiftMinutes: number;
+  shiftCounter: ShiftCounter;
+  generatedShifts: Shift[];
+  warnings: ShiftGenerationWarning[];
+}
+
+async function finalizeActiveShift(
+  active: ActiveShift,
+  context: FinalizationContext
+): Promise<void> {
+  const minEnd = active.startMinutes + context.minShiftMinutes;
+  const maxEnd = active.startMinutes + context.maxShiftMinutes;
+  let enforcedEnd = Math.max(active.lastIntervalEnd, minEnd);
+  if (maxEnd < minEnd) {
+    enforcedEnd = Math.min(active.lastIntervalEnd, maxEnd);
+  } else {
+    enforcedEnd = Math.min(enforcedEnd, maxEnd);
+  }
+  enforcedEnd = Math.min(enforcedEnd, TIME_WINDOW_END);
+  active.lastIntervalEnd = Math.max(enforcedEnd, active.startMinutes + INTERVAL_MINUTES);
+
+  const { shift, warnings: shiftWarning } = await finalizeShift(
+    active,
+    context.shiftCounter.value++,
+    context.unionRules,
+    context.breakThresholdMinutes,
+    context.breakLatestStartMinutes,
+    context.mealDurationMinutes
+  );
+  context.generatedShifts.push(shift);
+  if (shiftWarning) {
+    context.warnings.push(shiftWarning);
+  }
+}
 
 function extractRuleMinutes(
   rules: UnionRule[],
@@ -182,7 +255,7 @@ function ensureIntervalRecord(
   return map.get(cursor)!;
 }
 
-function buildOperationalTimelineFromShifts(shifts: Shift[]): Record<DayType, OperationalInterval[]> {
+export function buildOperationalTimelineFromShifts(shifts: Shift[]): Record<DayType, OperationalInterval[]> {
   const timeline = generateTimelineMinutes();
   const maps = new Map<DayType, Map<number, OperationalInterval>>();
 
@@ -266,6 +339,14 @@ export async function generateAutoShifts({
     (rule) => rule.ruleName.toLowerCase().includes('latest start'),
     DEFAULT_BREAK_LATEST_START_MINUTES
   );
+  const minShiftMinutes = Math.max(
+    INTERVAL_MINUTES,
+    extractShiftLimitMinutes(unionRules, 'min', DEFAULT_MIN_SHIFT_MINUTES)
+  );
+  const maxShiftMinutes = Math.max(
+    INTERVAL_MINUTES,
+    extractShiftLimitMinutes(unionRules, 'max', DEFAULT_MAX_SHIFT_MINUTES)
+  );
 
   const generatedShifts: Shift[] = [];
   const warnings: ShiftGenerationWarning[] = [];
@@ -281,8 +362,17 @@ export async function generateAutoShifts({
 
     for (const zone of ZONES) {
       const activeShifts = new Map<number, ActiveShift>();
-      let shiftCounter = 0;
-
+      const finalizationContext: FinalizationContext = {
+        unionRules,
+        breakThresholdMinutes,
+        breakLatestStartMinutes,
+        mealDurationMinutes,
+        minShiftMinutes,
+        maxShiftMinutes,
+        shiftCounter: { value: 0 },
+        generatedShifts,
+        warnings
+      };
       for (let intervalIndex = 0; intervalIndex < intervals.length; intervalIndex++) {
         const interval = intervals[intervalIndex];
         const requirement = getRequirementForZone(interval, zone);
@@ -293,26 +383,21 @@ export async function generateAutoShifts({
         }
         intervalEndMinutes = clampToWindow(intervalEndMinutes);
 
-        const ranksToClose = Array.from(activeShifts.keys()).filter((rank) => rank >= requirement).sort((a, b) => b - a);
+        const ranksToClose = Array.from(activeShifts.keys())
+          .filter((rank) => rank >= requirement)
+          .sort((a, b) => b - a);
         for (const rank of ranksToClose) {
           const active = activeShifts.get(rank);
           if (!active) {
             continue;
           }
+          const durationSoFar = intervalStartMinutes - active.startMinutes;
+          if (durationSoFar < minShiftMinutes) {
+            continue;
+          }
           activeShifts.delete(rank);
           active.lastIntervalEnd = intervalStartMinutes;
-          const { shift, warnings: shiftWarning } = await finalizeShift(
-            active,
-            shiftCounter++,
-            unionRules,
-            breakThresholdMinutes,
-            breakLatestStartMinutes,
-            mealDurationMinutes
-          );
-          generatedShifts.push(shift);
-          if (shiftWarning) {
-            warnings.push(shiftWarning);
-          }
+          await finalizeActiveShift(active, finalizationContext);
         }
 
         for (let rank = 0; rank < requirement; rank++) {
@@ -328,27 +413,50 @@ export async function generateAutoShifts({
           }
         }
 
-        activeShifts.forEach((active) => {
-          active.lastIntervalEnd = intervalEndMinutes;
-          active.intervals += 1;
-        });
+        const entries = Array.from(activeShifts.entries());
+        for (const [rank, active] of entries) {
+          let currentActive = active;
+          if (currentActive.lastIntervalEnd < intervalStartMinutes) {
+            currentActive.lastIntervalEnd = intervalStartMinutes;
+          }
+
+          while (currentActive.lastIntervalEnd < intervalEndMinutes) {
+            const maxAllowedEnd = currentActive.startMinutes + maxShiftMinutes;
+            const nextEnd = Math.min(intervalEndMinutes, maxAllowedEnd);
+            currentActive.lastIntervalEnd = nextEnd;
+            currentActive.intervals += 1;
+
+            const reachedLimit = nextEnd >= maxAllowedEnd;
+            const intervalCovered = nextEnd >= intervalEndMinutes;
+
+            if (reachedLimit) {
+              await finalizeActiveShift(currentActive, finalizationContext);
+              const replacement: ActiveShift = {
+                rank: currentActive.rank,
+                zone: currentActive.zone,
+                dayType: currentActive.dayType,
+                startMinutes: nextEnd,
+                lastIntervalEnd: nextEnd,
+                intervals: 0
+              };
+              activeShifts.set(rank, replacement);
+              currentActive = replacement;
+
+              if (intervalCovered) {
+                break;
+              }
+            } else {
+              activeShifts.set(rank, currentActive);
+              break;
+            }
+          }
+        }
 
         if (intervalIndex === intervals.length - 1) {
           const leftover = Array.from(activeShifts.values());
           activeShifts.clear();
           for (const active of leftover) {
-            const { shift, warnings: shiftWarning } = await finalizeShift(
-              active,
-              shiftCounter++,
-              unionRules,
-              breakThresholdMinutes,
-              breakLatestStartMinutes,
-              mealDurationMinutes
-            );
-            generatedShifts.push(shift);
-            if (shiftWarning) {
-              warnings.push(shiftWarning);
-            }
+            await finalizeActiveShift(active, finalizationContext);
           }
         }
       }
@@ -356,7 +464,6 @@ export async function generateAutoShifts({
   }
 
   const operationalTimeline = buildOperationalTimelineFromShifts(generatedShifts);
-
   return {
     shifts: generatedShifts.sort((a, b) => {
       if (a.scheduleType === b.scheduleType) {
