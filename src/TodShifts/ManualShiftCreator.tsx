@@ -31,11 +31,11 @@ interface Props {
 
 const ManualShiftCreator: React.FC<Props> = ({ onShiftCreated }) => {
   const dispatch = useDispatch<AppDispatch>();
-  const { unionRules, activeScheduleType } = useSelector((state: RootState) => state.shiftManagement);
+  const { unionRules } = useSelector((state: RootState) => state.shiftManagement);
   
   const [shift, setShift] = useState<Partial<Shift>>({
     shiftCode: '',
-    scheduleType: activeScheduleType,
+    scheduleType: 'weekday',
     zone: 'South',
     startTime: '06:00',
     endTime: '14:00',
@@ -45,10 +45,6 @@ const ManualShiftCreator: React.FC<Props> = ({ onShiftCreated }) => {
   
   const [violations, setViolations] = useState<UnionViolation[]>([]);
   const [validating, setValidating] = useState(false);
-
-  useEffect(() => {
-    setShift((prev: Partial<Shift>) => ({ ...prev, scheduleType: activeScheduleType }));
-  }, [activeScheduleType]);
 
   useEffect(() => {
     // Validate on any change
@@ -116,7 +112,7 @@ const ManualShiftCreator: React.FC<Props> = ({ onShiftCreated }) => {
     // Reset form
     setShift({
       shiftCode: '',
-      scheduleType: activeScheduleType,
+      scheduleType: 'weekday',
       zone: 'South',
       startTime: '06:00',
       endTime: '14:00',
@@ -137,6 +133,27 @@ const ManualShiftCreator: React.FC<Props> = ({ onShiftCreated }) => {
         
         <Grid container spacing={3}>
           {/* Basic Information */}
+          <Grid
+            size={{
+              xs: 12,
+              md: 3
+            }}>
+            <FormControl fullWidth>
+              <InputLabel>Shift Type</InputLabel>
+              <Select
+                value={shift.scheduleType ?? 'weekday'}
+                label="Shift Type"
+                onChange={(e) =>
+                  setShift((prev: Partial<Shift>) => ({ ...prev, scheduleType: e.target.value as Shift['scheduleType'] }))
+                }
+              >
+                <MenuItem value="weekday">Weekday</MenuItem>
+                <MenuItem value="saturday">Saturday</MenuItem>
+                <MenuItem value="sunday">Sunday</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
+          
           <Grid
             size={{
               xs: 12,
@@ -357,7 +374,7 @@ const ManualShiftCreator: React.FC<Props> = ({ onShiftCreated }) => {
                 </Typography>
                 <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
                   <Chip 
-                    label={activeScheduleType.toUpperCase()} 
+                    label={(shift.scheduleType ?? 'weekday').toUpperCase()} 
                     color="primary" 
                     size="small" 
                   />

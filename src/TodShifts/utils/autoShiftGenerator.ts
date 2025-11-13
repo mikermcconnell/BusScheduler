@@ -3,6 +3,7 @@ import {
   DayType,
   OperationalInterval,
   Shift,
+  ShiftOrigin,
   ShiftZone,
   UnionRule,
   UnionViolation
@@ -44,6 +45,13 @@ export interface AutoShiftGenerationResult {
 interface GenerateShiftsParams {
   cityTimeline: Record<DayType, CityRequirementInterval[]>;
   unionRules: UnionRule[];
+}
+
+interface GenerateShiftsOptions {
+  shiftCodePrefix?: string;
+  origin?: ShiftOrigin;
+  capAtBreakThreshold?: boolean;
+  skipBreakRelief?: boolean;
 }
 
 const ZONES: ShiftZone[] = ['North', 'South', 'Floater'];
@@ -91,6 +99,8 @@ interface FinalizationContext {
   mealDurationMinutes: number;
   minShiftMinutes: number;
   maxShiftMinutes: number;
+  shiftCodePrefix: string;
+  origin: ShiftOrigin;
   shiftCounter: ShiftCounter;
   generatedShifts: Shift[];
   warnings: ShiftGenerationWarning[];
@@ -117,7 +127,11 @@ async function finalizeActiveShift(
     context.unionRules,
     context.breakThresholdMinutes,
     context.breakLatestStartMinutes,
-    context.mealDurationMinutes
+    context.mealDurationMinutes,
+    {
+      shiftCodePrefix: context.shiftCodePrefix,
+      origin: context.origin
+    }
   );
   context.generatedShifts.push(shift);
   if (shiftWarning) {
@@ -145,10 +159,10 @@ function extractRuleMinutes(
   return match.unit === 'minutes' ? source : source * 60;
 }
 
-function buildShiftCode(dayType: DayType, zone: ShiftZone, index: number): string {
+function buildShiftCode(dayType: DayType, zone: ShiftZone, index: number, prefix = 'AUTO'): string {
   const dayToken = dayType.slice(0, 3).toUpperCase();
   const zoneToken = zone === 'Floater' ? 'F' : zone.charAt(0);
-  return `AUTO-${dayToken}-${zoneToken}${String(index + 1).padStart(2, '0')}`;
+  return `${prefix}-${dayToken}-${zoneToken}${String(index + 1).padStart(2, '0')}`;
 }
 
 function normalizeRequirement(value: number | undefined): number {
@@ -177,7 +191,11 @@ async function finalizeShift(
   unionRules: UnionRule[],
   breakThresholdMinutes: number,
   breakLatestStartMinutes: number,
-  mealDurationMinutes: number
+  mealDurationMinutes: number,
+  options: {
+    shiftCodePrefix: string;
+    origin: ShiftOrigin;
+  }
 ): Promise<{ shift: Shift; warnings: ShiftGenerationWarning | null }> {
   const endMinutes = active.lastIntervalEnd;
   const totalMinutes = Math.max(0, endMinutes - active.startMinutes);
@@ -185,7 +203,7 @@ async function finalizeShift(
   let breakStartMinutes: number | undefined;
   let breakEndMinutes: number | undefined;
 
-  if (totalMinutes >= breakThresholdMinutes + mealDurationMinutes) {
+  if (totalMinutes > breakThresholdMinutes) {
     const midpoint = active.startMinutes + Math.floor(totalMinutes / 2);
     const latestStart = active.startMinutes + breakLatestStartMinutes;
     const rawStart = Math.min(midpoint - Math.floor(mealDurationMinutes / 2), latestStart);
@@ -195,7 +213,7 @@ async function finalizeShift(
     breakEndMinutes = clampedStart + mealDurationMinutes;
   }
 
-  const shiftCode = buildShiftCode(active.dayType, active.zone, index);
+  const shiftCode = buildShiftCode(active.dayType, active.zone, index, options.shiftCodePrefix);
 
   const shiftBase: Shift = {
     id: `${shiftCode}-${active.dayType}`,
@@ -205,6 +223,7 @@ async function finalizeShift(
     startTime: minutesToTimeString(active.startMinutes),
     endTime: minutesToTimeString(endMinutes),
     totalHours: Number((totalMinutes / 60).toFixed(2)),
+    origin: options.origin ?? 'optimized',
     breakStart: breakStartMinutes !== undefined ? minutesToTimeString(breakStartMinutes) : undefined,
     breakEnd: breakEndMinutes !== undefined ? minutesToTimeString(breakEndMinutes) : undefined,
     breakDuration:
@@ -255,6 +274,42 @@ function ensureIntervalRecord(
   return map.get(cursor)!;
 }
 
+function calculateRemainingDemandMinutes(
+  intervals: CityRequirementInterval[],
+  zone: ShiftZone,
+  rank: number,
+  startIndex: number,
+  startMinutes: number
+): number {
+  let remaining = 0;
+  let cursor = startMinutes;
+
+  for (let index = startIndex; index < intervals.length; index++) {
+    if (cursor >= TIME_WINDOW_END) {
+      break;
+    }
+
+    const interval = intervals[index];
+    const [windowStart, windowEnd] = ensureValidTimeRange(
+      parseTimeToMinutes(interval.startTime),
+      parseTimeToMinutes(interval.endTime)
+    );
+    if (windowEnd <= cursor) {
+      continue;
+    }
+
+    const requirement = getRequirementForZone(interval, zone);
+    const overlapStart = Math.max(windowStart, cursor);
+    const overlapEnd = Math.min(windowEnd, TIME_WINDOW_END);
+    if (overlapEnd > overlapStart && requirement > rank) {
+      remaining += overlapEnd - overlapStart;
+    }
+    cursor = Math.max(cursor, overlapEnd);
+  }
+
+  return remaining;
+}
+
 export function buildOperationalTimelineFromShifts(shifts: Shift[]): Record<DayType, OperationalInterval[]> {
   const timeline = generateTimelineMinutes();
   const maps = new Map<DayType, Map<number, OperationalInterval>>();
@@ -266,10 +321,16 @@ export function buildOperationalTimelineFromShifts(shifts: Shift[]): Record<DayT
   shifts.forEach((shift) => {
     const dayMap = maps.get(shift.scheduleType)!;
     const [start, end] = ensureValidTimeRange(parseTimeToMinutes(shift.startTime), parseTimeToMinutes(shift.endTime));
+    const breakWindows = collectAlignedBreakWindows(shift);
 
     for (let cursor = floorToInterval(start); cursor < end; cursor += INTERVAL_MINUTES) {
       if (cursor >= TIME_WINDOW_END) {
         break;
+      }
+      const intervalStart = cursor;
+      const intervalEnd = Math.min(cursor + INTERVAL_MINUTES, TIME_WINDOW_END);
+      if (intervalOverlapsBreak(intervalStart, intervalEnd, breakWindows)) {
+        continue;
       }
       const interval = ensureIntervalRecord(dayMap, cursor, shift.scheduleType);
       switch (shift.zone) {
@@ -285,17 +346,15 @@ export function buildOperationalTimelineFromShifts(shifts: Shift[]): Record<DayT
       }
     }
 
-    if (shift.breakStart && shift.breakEnd) {
-      const breakStart = floorToInterval(parseTimeToMinutes(shift.breakStart));
-      const breakEnd = ceilToInterval(parseTimeToMinutes(shift.breakEnd));
-      for (let cursor = breakStart; cursor < breakEnd; cursor += INTERVAL_MINUTES) {
+    breakWindows.forEach(([windowStart, windowEnd]) => {
+      for (let cursor = windowStart; cursor < windowEnd; cursor += INTERVAL_MINUTES) {
         if (cursor >= TIME_WINDOW_END) {
           break;
         }
         const interval = ensureIntervalRecord(dayMap, cursor, shift.scheduleType);
         interval.breakCount = (interval.breakCount ?? 0) + 1;
       }
-    }
+    });
   });
 
   const result: Record<DayType, OperationalInterval[]> = DAY_TYPES.reduce((acc, dayType) => {
@@ -320,10 +379,185 @@ export function buildOperationalTimelineFromShifts(shifts: Shift[]): Record<DayT
   return result;
 }
 
-export async function generateAutoShifts({
-  cityTimeline,
-  unionRules
-}: GenerateShiftsParams): Promise<AutoShiftGenerationResult> {
+type ZoneBreakDemand = {
+  northRequired: number;
+  southRequired: number;
+  floaterRequired: number;
+};
+
+function collectAlignedBreakWindows(shift: Shift): Array<[number, number]> {
+  const windows: Array<[number, number]> = [];
+  const addWindow = (start?: string, end?: string) => {
+    const normalized = normalizeBreakWindow(start, end);
+    if (!normalized) {
+      return;
+    }
+    const [windowStart, windowEnd] = normalized;
+    const alignedStart = floorToInterval(windowStart);
+    const alignedEnd = ceilToInterval(windowEnd);
+    if (alignedEnd > alignedStart) {
+      windows.push([alignedStart, alignedEnd]);
+    }
+  };
+
+  addWindow(shift.breakStart, shift.breakEnd);
+  addWindow(shift.mealBreakStart, shift.mealBreakEnd);
+
+  return windows;
+}
+
+function normalizeBreakWindow(start?: string, end?: string): [number, number] | null {
+  if (!start || !end) {
+    return null;
+  }
+  const [normalizedStart, normalizedEnd] = ensureValidTimeRange(
+    parseTimeToMinutes(start),
+    parseTimeToMinutes(end)
+  );
+  if (normalizedEnd <= normalizedStart) {
+    return null;
+  }
+  return [normalizedStart, normalizedEnd];
+}
+
+function intervalOverlapsBreak(
+  intervalStart: number,
+  intervalEnd: number,
+  breakWindows: Array<[number, number]>
+): boolean {
+  if (breakWindows.length === 0) {
+    return false;
+  }
+  return breakWindows.some(([breakStart, breakEnd]) => intervalStart < breakEnd && intervalEnd > breakStart);
+}
+
+function ensureBreakDemandRecord(map: Map<number, ZoneBreakDemand>, cursor: number): ZoneBreakDemand {
+  if (!map.has(cursor)) {
+    map.set(cursor, { northRequired: 0, southRequired: 0, floaterRequired: 0 });
+  }
+  return map.get(cursor)!;
+}
+
+function demandsEqual(a: ZoneBreakDemand, b: ZoneBreakDemand): boolean {
+  return (
+    a.northRequired === b.northRequired &&
+    a.southRequired === b.southRequired &&
+    a.floaterRequired === b.floaterRequired
+  );
+}
+
+function convertBreakInterval(
+  dayType: DayType,
+  interval: {
+    startMinutes: number;
+    endMinutes: number;
+    demand: ZoneBreakDemand;
+  }
+): CityRequirementInterval {
+  return {
+    dayType,
+    startTime: minutesToTimeString(interval.startMinutes),
+    endTime: minutesToTimeString(interval.endMinutes),
+    northRequired: interval.demand.northRequired,
+    southRequired: interval.demand.southRequired,
+    floaterRequired: interval.demand.floaterRequired
+  };
+}
+
+export function buildBreakCoverageTimelineFromShifts(
+  shifts: Shift[]
+): Record<DayType, CityRequirementInterval[]> {
+  const demandMaps = DAY_TYPES.reduce((acc, dayType) => {
+    acc[dayType] = new Map<number, ZoneBreakDemand>();
+    return acc;
+  }, {} as Record<DayType, Map<number, ZoneBreakDemand>>);
+
+  shifts.forEach((shift) => {
+    const windows = collectAlignedBreakWindows(shift);
+    if (windows.length === 0) {
+      return;
+    }
+    const dayMap = demandMaps[shift.scheduleType];
+    windows.forEach(([windowStart, windowEnd]) => {
+      for (let cursor = windowStart; cursor < windowEnd; cursor += INTERVAL_MINUTES) {
+        if (cursor >= TIME_WINDOW_END) {
+          break;
+        }
+        const record = ensureBreakDemandRecord(dayMap, cursor);
+        switch (shift.zone) {
+          case 'North':
+            record.northRequired += 1;
+            break;
+          case 'South':
+            record.southRequired += 1;
+            break;
+          case 'Floater':
+            record.floaterRequired += 1;
+            break;
+        }
+      }
+    });
+  });
+
+  return DAY_TYPES.reduce((acc, dayType) => {
+    const map = demandMaps[dayType];
+    const intervals: CityRequirementInterval[] = [];
+    const sortedKeys = Array.from(map.keys()).sort((a, b) => a - b);
+    let current:
+      | {
+          startMinutes: number;
+          endMinutes: number;
+          demand: ZoneBreakDemand;
+        }
+      | null = null;
+
+    sortedKeys.forEach((cursor) => {
+      const demand = map.get(cursor)!;
+      const totalDemand = demand.northRequired + demand.southRequired + demand.floaterRequired;
+      if (totalDemand === 0) {
+        if (current) {
+          intervals.push(convertBreakInterval(dayType, current));
+          current = null;
+        }
+        return;
+      }
+
+      const intervalEnd = Math.min(cursor + INTERVAL_MINUTES, TIME_WINDOW_END);
+      if (current && current.endMinutes === cursor && demandsEqual(current.demand, demand)) {
+        current.endMinutes = intervalEnd;
+      } else {
+        if (current) {
+          intervals.push(convertBreakInterval(dayType, current));
+        }
+        current = {
+          startMinutes: cursor,
+          endMinutes: intervalEnd,
+          demand: { ...demand }
+        };
+      }
+    });
+
+    if (current) {
+      intervals.push(convertBreakInterval(dayType, current));
+    }
+
+    acc[dayType] = intervals;
+    return acc;
+  }, {} as Record<DayType, CityRequirementInterval[]>);
+}
+
+export async function generateAutoShifts(
+  {
+    cityTimeline,
+    unionRules
+  }: GenerateShiftsParams,
+  options: GenerateShiftsOptions = {}
+): Promise<AutoShiftGenerationResult> {
+  const shiftCodePrefix = options.shiftCodePrefix ?? 'AUTO';
+  const shiftOrigin: ShiftOrigin = options.origin ?? 'optimized';
+  const capAtBreakThreshold = options.capAtBreakThreshold ?? false;
+  const skipBreakRelief = options.skipBreakRelief ?? false;
+
   const mealDurationMinutes = extractRuleMinutes(
     unionRules,
     (rule) => rule.ruleName.toLowerCase().includes('meal break duration'),
@@ -343,10 +577,15 @@ export async function generateAutoShifts({
     INTERVAL_MINUTES,
     extractShiftLimitMinutes(unionRules, 'min', DEFAULT_MIN_SHIFT_MINUTES)
   );
-  const maxShiftMinutes = Math.max(
+  let maxShiftMinutes = Math.max(
     INTERVAL_MINUTES,
     extractShiftLimitMinutes(unionRules, 'max', DEFAULT_MAX_SHIFT_MINUTES)
   );
+
+  if (capAtBreakThreshold && Number.isFinite(breakThresholdMinutes)) {
+    const cap = Math.max(minShiftMinutes, breakThresholdMinutes - INTERVAL_MINUTES);
+    maxShiftMinutes = Math.min(maxShiftMinutes, cap);
+  }
 
   const generatedShifts: Shift[] = [];
   const warnings: ShiftGenerationWarning[] = [];
@@ -369,6 +608,8 @@ export async function generateAutoShifts({
         mealDurationMinutes,
         minShiftMinutes,
         maxShiftMinutes,
+        shiftCodePrefix,
+        origin: shiftOrigin,
         shiftCounter: { value: 0 },
         generatedShifts,
         warnings
@@ -422,21 +663,60 @@ export async function generateAutoShifts({
 
           while (currentActive.lastIntervalEnd < intervalEndMinutes) {
             const maxAllowedEnd = currentActive.startMinutes + maxShiftMinutes;
-            const nextEnd = Math.min(intervalEndMinutes, maxAllowedEnd);
+            let nextEnd = Math.min(intervalEndMinutes, maxAllowedEnd);
+            let reachedLimit = nextEnd >= maxAllowedEnd;
+            let forceSplit = false;
+
+            if (reachedLimit) {
+              const remainingDemandMinutes = calculateRemainingDemandMinutes(
+                intervals,
+                currentActive.zone,
+                rank,
+                intervalIndex,
+                nextEnd
+              );
+              if (remainingDemandMinutes > 0 && remainingDemandMinutes < minShiftMinutes) {
+                const minEndForCurrent = currentActive.startMinutes + minShiftMinutes;
+                const availableReduction = Math.max(0, nextEnd - minEndForCurrent);
+                const neededReduction = minShiftMinutes - remainingDemandMinutes;
+                if (availableReduction > 0) {
+                  const appliedReduction = Math.min(availableReduction, neededReduction);
+                  if (appliedReduction > 0) {
+                    nextEnd -= appliedReduction;
+                    forceSplit = true;
+                    reachedLimit = nextEnd >= maxAllowedEnd;
+                  }
+                }
+              }
+            }
+
             currentActive.lastIntervalEnd = nextEnd;
             currentActive.intervals += 1;
 
-            const reachedLimit = nextEnd >= maxAllowedEnd;
             const intervalCovered = nextEnd >= intervalEndMinutes;
-
-            if (reachedLimit) {
+            if (reachedLimit || forceSplit) {
               await finalizeActiveShift(currentActive, finalizationContext);
+
+              const replacementStart = currentActive.lastIntervalEnd;
+              const remainingDemandAfterSplit = calculateRemainingDemandMinutes(
+                intervals,
+                currentActive.zone,
+                rank,
+                intervalIndex,
+                replacementStart
+              );
+
+              if (remainingDemandAfterSplit <= 0) {
+                activeShifts.delete(rank);
+                break;
+              }
+
               const replacement: ActiveShift = {
                 rank: currentActive.rank,
                 zone: currentActive.zone,
                 dayType: currentActive.dayType,
-                startMinutes: nextEnd,
-                lastIntervalEnd: nextEnd,
+                startMinutes: replacementStart,
+                lastIntervalEnd: replacementStart,
                 intervals: 0
               };
               activeShifts.set(rank, replacement);
@@ -460,6 +740,29 @@ export async function generateAutoShifts({
           }
         }
       }
+    }
+  }
+
+  if (!skipBreakRelief) {
+    const breakCoverageTimeline = buildBreakCoverageTimelineFromShifts(generatedShifts);
+    const hasBreakDemand = DAY_TYPES.some(
+      (dayType) => (breakCoverageTimeline[dayType] ?? []).length > 0
+    );
+    if (hasBreakDemand) {
+      const reliefResult = await generateAutoShifts(
+        {
+          cityTimeline: breakCoverageTimeline,
+          unionRules
+        },
+        {
+          shiftCodePrefix: `${shiftCodePrefix}-REL`,
+          origin: shiftOrigin,
+          capAtBreakThreshold: true,
+          skipBreakRelief: true
+        }
+      );
+      generatedShifts.push(...reliefResult.shifts);
+      warnings.push(...reliefResult.warnings);
     }
   }
 

@@ -24,19 +24,29 @@ interface ShiftSummaryTableProps {
 }
 
 const ShiftSummaryTable: React.FC<ShiftSummaryTableProps> = ({ title, showActions = true }) => {
-  const { shifts, activeScheduleType } = useSelector((state: RootState) => state.shiftManagement);
-  
-  const filteredShifts = shifts.filter((shift: Shift) => shift.scheduleType === activeScheduleType);
-  const tableTitle = title ?? `Shift Summary (${activeScheduleType})`;
+  const { shifts } = useSelector((state: RootState) => state.shiftManagement);
+  const order: Record<Shift['scheduleType'], number> = {
+    weekday: 0,
+    saturday: 1,
+    sunday: 2
+  };
+  const sortedShifts = [...shifts].sort((a, b) => {
+    const dayDelta = order[a.scheduleType] - order[b.scheduleType];
+    if (dayDelta !== 0) {
+      return dayDelta;
+    }
+    return a.startTime.localeCompare(b.startTime);
+  });
+  const tableTitle = title ?? 'Shift Summary';
 
-  if (filteredShifts.length === 0) {
+  if (sortedShifts.length === 0) {
     return (
       <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
         <Typography variant="h6" gutterBottom>
           {tableTitle}
         </Typography>
         <Alert severity="info">
-          No shifts created for {activeScheduleType} schedule yet.
+          No shifts created yet.
         </Alert>
       </Paper>
     );
@@ -53,6 +63,7 @@ const ShiftSummaryTable: React.FC<ShiftSummaryTableProps> = ({ title, showAction
           <TableHead>
             <TableRow>
               <TableCell>Shift Code</TableCell>
+              <TableCell>Shift Type</TableCell>
               <TableCell>Zone</TableCell>
               <TableCell>Start Time</TableCell>
               <TableCell>End Time</TableCell>
@@ -65,9 +76,10 @@ const ShiftSummaryTable: React.FC<ShiftSummaryTableProps> = ({ title, showAction
             </TableRow>
           </TableHead>
           <TableBody>
-            {filteredShifts.map((shift: Shift) => (
+            {sortedShifts.map((shift: Shift) => (
               <TableRow key={shift.id ?? shift.shiftCode}>
                 <TableCell>{shift.shiftCode}</TableCell>
+                <TableCell sx={{ textTransform: 'capitalize' }}>{shift.scheduleType}</TableCell>
                 <TableCell>{shift.zone}</TableCell>
                 <TableCell>{shift.startTime}</TableCell>
                 <TableCell>{shift.endTime}</TableCell>

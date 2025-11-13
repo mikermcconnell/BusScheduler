@@ -72,9 +72,10 @@ describe('generateAutoShifts union compliance', () => {
     };
 
     const result = await generateAutoShifts({ cityTimeline, unionRules: BASE_UNION_RULES });
+    const primaryShifts = result.shifts.filter((shift) => !shift.shiftCode.startsWith('AUTO-REL'));
 
-    expect(result.shifts.length).toBeGreaterThan(1);
-    const hours = result.shifts.map((shift) => shift.totalHours);
+    expect(primaryShifts.length).toBeGreaterThan(1);
+    const hours = primaryShifts.map((shift) => shift.totalHours);
     const longestShift = Math.max(...hours);
     const shortestShift = Math.min(...hours);
     expect(longestShift).toBeLessThanOrEqual(9.75);
@@ -97,11 +98,49 @@ describe('generateAutoShifts union compliance', () => {
     };
 
     const result = await generateAutoShifts({ cityTimeline, unionRules: BASE_UNION_RULES });
+    const primaryShifts = result.shifts.filter((shift) => !shift.shiftCode.startsWith('AUTO-REL'));
 
-    expect(result.shifts).toHaveLength(1);
-    expect(result.shifts[0].totalHours).toBeGreaterThanOrEqual(5);
-    expect(result.shifts[0].startTime).toBe('10:00');
-    expect(result.shifts[0].endTime).toBe('15:00');
+    expect(primaryShifts).toHaveLength(1);
+    expect(primaryShifts[0].totalHours).toBeGreaterThanOrEqual(5);
+    expect(primaryShifts[0].startTime).toBe('10:00');
+    expect(primaryShifts[0].endTime).toBe('15:00');
   });
 
+  it('creates relief coverage to offset scheduled breaks', async () => {
+    const coverageWindow: CityRequirementInterval = {
+      dayType: 'weekday',
+      startTime: '05:00',
+      endTime: '15:00',
+      northRequired: 1,
+      southRequired: 0,
+      floaterRequired: 0
+    };
+
+    const cityTimeline = {
+      ...emptyTimeline,
+      weekday: [coverageWindow]
+    };
+
+    const reliefUnionRules = BASE_UNION_RULES.map((rule) => {
+      if (rule.id === 1) {
+        return {
+          ...rule,
+          minValue: 8
+        };
+      }
+      if (rule.id === 3) {
+        return {
+          ...rule,
+          minValue: 4
+        };
+      }
+      return rule;
+    });
+
+    const result = await generateAutoShifts({ cityTimeline, unionRules: reliefUnionRules });
+    const reliefShifts = result.shifts.filter((shift) => shift.shiftCode.startsWith('AUTO-REL'));
+
+    expect(reliefShifts.length).toBeGreaterThan(0);
+    expect(reliefShifts.every((shift) => shift.unionCompliant)).toBe(true);
+  });
 });

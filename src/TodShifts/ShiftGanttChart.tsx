@@ -27,10 +27,11 @@ import {
   ReferenceLine
 } from 'recharts';
 import { RootState } from '../store/store';
-import { DAY_TYPES, INTERVAL_MINUTES } from './utils/timeUtils';
+import { DAY_TYPES, INTERVAL_MINUTES, parseTimeToMinutes } from './utils/timeUtils';
 import { colorForValue, COLOR_BALANCED, COLOR_EXCESS_HEAVY, COLOR_DEFICIT_HEAVY } from './utils/colorScale';
 import FullscreenIcon from '@mui/icons-material/Fullscreen';
 import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
+import type { Shift } from './types/shift.types';
 
 interface ChartRow {
   key: string;
@@ -70,6 +71,9 @@ interface DayCoverageSummary {
   deficitHours: number;
   surplusHours: number;
   netHours: number;
+  revenueHours: number;
+  breakHours: number;
+  dutyHours: number;
 }
 
 interface ChartSection {
@@ -216,6 +220,12 @@ const ShiftGanttChart: React.FC = () => {
         .reduce((sum, point) => sum + point.difference * hoursFactor, 0);
       const netHours = totalSeries
         .reduce((sum, point) => sum + point.difference * hoursFactor, 0);
+      const revenueHours = totalSeries
+        .reduce((sum, point) => sum + point.requirement * hoursFactor, 0);
+      const dutyHours = totalSeries
+        .reduce((sum, point) => sum + point.coverage * hoursFactor, 0);
+      const breakHours = (operationalTimeline[dayType] ?? [])
+        .reduce((sum, interval) => sum + (interval.breakCount ?? 0) * hoursFactor, 0);
 
       return {
         dayType,
@@ -227,7 +237,10 @@ const ShiftGanttChart: React.FC = () => {
         summary: {
           deficitHours,
           surplusHours,
-          netHours
+          netHours,
+          revenueHours,
+          breakHours,
+          dutyHours
         }
       };
     });

@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { 
-  Box, 
-  Paper, 
-  Tabs, 
-  Tab, 
-  Typography, 
+import {
+  Box,
+  Paper,
+  Tabs,
+  Tab,
+  Typography,
   Grid,
   Button,
   Alert,
@@ -12,7 +12,9 @@ import {
   Dialog,
   AppBar,
   Toolbar,
-  IconButton
+  IconButton,
+  Chip,
+  Stack
 } from '@mui/material';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState, AppDispatch } from '../store/store';
@@ -25,12 +27,8 @@ import ShiftOptimizationView from './ShiftOptimizationView';
 import OptimizeShiftsPanel from './OptimizeShiftsPanel';
 import UnionRulesConfiguration from './UnionRulesConfiguration';
 import CloseIcon from '@mui/icons-material/Close';
-import { 
-  loadUnionRules, 
-  setActiveScheduleType,
-  fetchLatestTodShiftRun,
-  optimizeShifts
-} from './store/shiftManagementSlice';
+import { loadUnionRules, fetchLatestTodShiftRun, optimizeShifts } from './store/shiftManagementSlice';
+import { DAY_TYPES } from './utils/timeUtils';
 
 const ShiftManagementPage: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
@@ -40,7 +38,6 @@ const ShiftManagementPage: React.FC = () => {
   const [unionRulesOpen, setUnionRulesOpen] = useState(false);
   
   const { 
-    activeScheduleType,
     shifts,
     coverageTimeline,
     loading,
@@ -55,14 +52,6 @@ const ShiftManagementPage: React.FC = () => {
     dispatch(loadUnionRules());
   }, [dispatch]);
 
-  const handleScheduleTypeChange = (
-    event: React.SyntheticEvent, 
-    newValue: number
-  ) => {
-    const types: Array<'weekday' | 'saturday' | 'sunday'> = ['weekday', 'saturday', 'sunday'];
-    dispatch(setActiveScheduleType(types[newValue]));
-  };
-
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setActiveTab(newValue);
   };
@@ -73,19 +62,28 @@ const ShiftManagementPage: React.FC = () => {
   };
 
   // Calculate compliance statistics
-  const activeShifts = shifts.filter(shift => shift.scheduleType === activeScheduleType);
   const complianceStats = {
-    total: activeShifts.length,
-    compliant: activeShifts.filter(shift => shift.unionCompliant).length,
-    warnings: activeShifts.filter(shift => (shift.complianceWarnings?.length ?? 0) > 0).length
+    total: shifts.length,
+    compliant: shifts.filter((shift) => shift.unionCompliant).length,
+    warnings: shifts.filter((shift) => (shift.complianceWarnings?.length ?? 0) > 0).length
   };
 
-  const activeCoverage = coverageTimeline[activeScheduleType] ?? [];
-  const coverageStats = activeCoverage.reduce((acc, slot) => {
-    if (slot.totalExcess < 0) acc.gaps++;
-    else if (slot.totalExcess > 0) acc.excess++;
-    return acc;
-  }, { gaps: 0, excess: 0 });
+  const coverageStats = DAY_TYPES.reduce(
+    (acc, dayType) => {
+      const intervals = coverageTimeline[dayType] ?? [];
+      intervals.forEach((slot) => {
+        if (slot.totalExcess < 0) acc.gaps += 1;
+        else if (slot.totalExcess > 0) acc.excess += 1;
+      });
+      return acc;
+    },
+    { gaps: 0, excess: 0 }
+  );
+
+  const shiftCountsByDay = DAY_TYPES.map((dayType) => ({
+    dayType,
+    count: shifts.filter((shift) => shift.scheduleType === dayType).length
+  }));
 
   const canOptimize = Boolean(importMetadata.importedAt && importMetadata.cityFileName);
   const isOptimizing = loading.optimization;
@@ -106,7 +104,7 @@ const ShiftManagementPage: React.FC = () => {
           <Grid
             size={{
               xs: 12,
-              md: 4
+              md: 6
             }}>
             <Typography variant="h5" gutterBottom>
               Shift Management
@@ -125,27 +123,13 @@ const ShiftManagementPage: React.FC = () => {
               </Typography>
             )}
           </Grid>
-          
+
           <Grid
             size={{
               xs: 12,
-              md: 4
+              md: 6
             }}>
-            <Tabs value={['weekday', 'saturday', 'sunday'].indexOf(activeScheduleType)} 
-                  onChange={handleScheduleTypeChange}
-                  centered>
-              <Tab label="Weekday" />
-              <Tab label="Saturday" />
-              <Tab label="Sunday" />
-            </Tabs>
-          </Grid>
-          
-          <Grid
-            size={{
-              xs: 12,
-              md: 4
-            }}>
-            <Box display="flex" justifyContent="flex-end" gap={2}>
+            <Box display="flex" justifyContent="flex-end" flexWrap="wrap" gap={3}>
               <Box textAlign="center">
                 <Typography variant="h6">{complianceStats.compliant}/{complianceStats.total}</Typography>
                 <Typography variant="caption">Compliant Shifts</Typography>
@@ -163,6 +147,11 @@ const ShiftManagementPage: React.FC = () => {
                 <Typography variant="caption">Warnings</Typography>
               </Box>
             </Box>
+            <Stack direction="row" spacing={1} flexWrap="wrap" justifyContent="flex-end" sx={{ mt: 1 }}>
+              {shiftCountsByDay.map(({ dayType, count }) => (
+                <Chip key={dayType} label={`${dayType.charAt(0).toUpperCase()}${dayType.slice(1)}: ${count}`} size="small" />
+              ))}
+            </Stack>
           </Grid>
         </Grid>
       </Paper>

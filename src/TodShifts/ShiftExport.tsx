@@ -35,7 +35,6 @@ const ShiftExport: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
   const {
     shifts,
-    activeScheduleType,
     coverageTimeline,
     colorScale,
     importMetadata
@@ -44,17 +43,27 @@ const ShiftExport: React.FC = () => {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [feedbackSeverity, setFeedbackSeverity] = useState<'success' | 'error' | 'info'>('info');
 
-  const filteredShifts = useMemo(
-    () => shifts.filter((shift: Shift) => shift.scheduleType === activeScheduleType),
-    [shifts, activeScheduleType]
-  );
+  const sortedShifts = useMemo(() => {
+    const order: Record<DayType, number> = {
+      weekday: 0,
+      saturday: 1,
+      sunday: 2
+    };
+    return [...shifts].sort((a, b) => {
+      const dayDiff = order[a.scheduleType] - order[b.scheduleType];
+      if (dayDiff !== 0) {
+        return dayDiff;
+      }
+      return a.startTime.localeCompare(b.startTime);
+    });
+  }, [shifts]);
 
   const hasCoverage = useMemo(
     () => DAY_TYPES.some(day => (coverageTimeline[day] ?? []).length > 0),
     [coverageTimeline]
   );
 
-  const hasShifts = filteredShifts.length > 0;
+  const hasShifts = sortedShifts.length > 0;
 
   const handleExportCSV = () => {
     if (!hasShifts) {
@@ -63,11 +72,12 @@ const ShiftExport: React.FC = () => {
       return;
     }
 
-    const headers = ['Shift Code', 'Zone', 'Start Time', 'End Time', 'Total Hours', 'Compliant'];
+    const headers = ['Shift Code', 'Shift Type', 'Zone', 'Start Time', 'End Time', 'Total Hours', 'Compliant'];
     const csvContent = [
       headers.join(','),
-      ...filteredShifts.map((shift: Shift) => [
+      ...sortedShifts.map((shift: Shift) => [
         shift.shiftCode,
+        shift.scheduleType,
         shift.zone,
         shift.startTime,
         shift.endTime,
@@ -80,7 +90,7 @@ const ShiftExport: React.FC = () => {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `shifts_${activeScheduleType}_${new Date().toISOString().split('T')[0]}.csv`;
+    a.download = `shifts_all_${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
     window.URL.revokeObjectURL(url);
     setFeedbackSeverity('success');
@@ -221,7 +231,7 @@ const ShiftExport: React.FC = () => {
 
       <Box sx={{ mt: 2 }}>
         <Typography variant="body2" color="text.secondary">
-          {filteredShifts.length} shifts in current view ({activeScheduleType}).
+          {sortedShifts.length} shifts available across all days.
         </Typography>
         {importMetadata.lastExportedAt && (
           <Typography variant="caption" color="text.secondary" display="block">
