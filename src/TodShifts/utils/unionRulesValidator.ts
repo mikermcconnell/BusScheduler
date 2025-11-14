@@ -1,4 +1,5 @@
 import { Shift, UnionRule, UnionViolation } from '../types/shift.types';
+import { isMealBreakThresholdRule } from './ruleMatchers';
 
 const FALLBACK_RULES: UnionRule[] = [
   {
@@ -248,13 +249,21 @@ function extractMaxShiftHours(rules: UnionRule[]): number | null {
 }
 
 function extractBreakThresholdHours(rules: UnionRule[]): number | null {
-  const rule = rules.find(
-    (r) =>
-      r.category === 'breaks' &&
-      r.ruleType === 'required' &&
-      r.ruleName.toLowerCase().includes('threshold') &&
-      typeof r.minValue === 'number'
-  );
+  const rule =
+    rules.find(
+      (r) =>
+        r.category === 'breaks' &&
+        r.ruleType === 'required' &&
+        typeof r.minValue === 'number' &&
+        isMealBreakThresholdRule(r)
+    ) ??
+    rules.find(
+      (r) =>
+        r.category === 'breaks' &&
+        r.ruleType === 'required' &&
+        typeof r.minValue === 'number' &&
+        r.ruleName.toLowerCase().includes('threshold')
+    );
 
   if (!rule || typeof rule.minValue !== 'number') {
     return null;

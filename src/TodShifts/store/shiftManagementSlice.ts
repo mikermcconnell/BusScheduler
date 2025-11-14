@@ -15,9 +15,12 @@ import { validateShiftAgainstRules } from '../utils/unionRulesValidator';
 import { todShiftRepository } from '../services/todShiftRepository';
 import { formatIsoTimestamp, DAY_TYPES } from '../utils/timeUtils';
 import { computeCoverageTimeline } from '../utils/coverageCalculator';
+import { trimExcessShifts, TrimSummary } from '../utils/shiftTrimmer';
+import { normalizeShiftTimes } from '../utils/shiftNormalization';
 import type { RootState } from '../../store/store';
 import type { OptimizationReport } from '../types/optimization.types';
-import type { SolverCandidateShift } from '../utils/solverOptimizationEngine';
+import { buildSolverCandidates } from '../utils/solverCandidateFactory';
+import { buildOperationalTimelineFromShifts } from '../utils/autoShiftGenerator';
 
 interface ImportMetadata {
   runId: string | null;
@@ -36,6 +39,9 @@ interface ShiftManagementState {
   colorScale: TodShiftColorScale | null;
   activeScheduleType: DayType;
   importMetadata: ImportMetadata;
+  history: {
+    undoStack: UndoSnapshot[];
+  };
   loading: {
     shifts: boolean;
     unionRules: boolean;
@@ -44,6 +50,7 @@ interface ShiftManagementState {
     persistence: boolean;
     unionRulesPersistence: boolean;
     optimization: boolean;
+    trimming: boolean;
   };
   error: {
     shifts: string | null;
@@ -51,9 +58,21 @@ interface ShiftManagementState {
     imports: string | null;
     persistence: string | null;
     optimization: string | null;
+    trimming: string | null;
   };
   lastOptimizationReport: OptimizationReport | null;
 }
+
+interface UndoSnapshot {
+  shifts: Shift[];
+  operationalTimeline: Record<DayType, OperationalInterval[]>;
+  coverageTimeline: Record<DayType, ShiftCoverageInterval[]>;
+  colorScale: TodShiftColorScale | null;
+  label: string;
+  timestamp: string;
+}
+
+const MAX_UNDO_HISTORY = 20;
 
 function createEmptyCityTimeline(): Record<DayType, CityRequirementInterval[]> {
   return DAY_TYPES.reduce((acc, dayType) => {
@@ -218,6 +237,9 @@ const initialState: ShiftManagementState = {
   importMetadata: {
     runId: null
   },
+  history: {
+    undoStack: []
+  },
   loading: {
     shifts: false,
     unionRules: false,
@@ -225,14 +247,16 @@ const initialState: ShiftManagementState = {
     fetchRun: false,
     persistence: false,
     unionRulesPersistence: false,
-    optimization: false
+    optimization: false,
+    trimming: false
   },
   error: {
     shifts: null,
     unionRules: null,
     imports: null,
     persistence: null,
-    optimization: null
+    optimization: null,
+    trimming: null
   },
   lastOptimizationReport: null
 };
@@ -383,6 +407,72 @@ export const persistUnionRules = createAsyncThunk<UnionRule[], UnionRule[], { re
   }
 );
 
+export const applyExcessTrimming = createAsyncThunk<
+  {
+    shifts: Shift[];
+    operationalTimeline: Record<DayType, OperationalInterval[]>;
+    coverageTimeline: Record<DayType, ShiftCoverageInterval[]>;
+    colorScale: TodShiftColorScale | null;
+    trimSummary: TrimSummary;
+  },
+  void,
+  { rejectValue: string }
+>(
+  'shiftManagement/applyExcessTrimming',
+  async (_, { getState, rejectWithValue }) => {
+    try {
+      const state = getState() as RootState;
+      const { shifts, coverageTimeline, unionRules, cityTimeline, importMetadata } = state.shiftManagement;
+      const hasCoverage = DAY_TYPES.some((dayType) => (coverageTimeline[dayType] ?? []).length > 0);
+
+      if (!hasCoverage) {
+        return rejectWithValue('Coverage data unavailable. Run an optimization before trimming.');
+      }
+
+      const activeRules = unionRules.length > 0 ? unionRules : DEFAULT_UNION_RULES;
+      const trimResult = trimExcessShifts({
+        shifts,
+        coverageTimeline,
+        unionRules: activeRules
+      });
+
+      if (trimResult.summary.hoursRemoved <= 0) {
+        return rejectWithValue('No surplus vehicle hours available to trim.');
+      }
+
+      const { buildOperationalTimelineFromShifts } = await import('../utils/autoShiftGenerator');
+      const operationalTimeline = buildOperationalTimelineFromShifts(trimResult.shifts);
+      const coverage = computeCoverageTimeline({
+        cityTimeline,
+        operationalTimeline
+      });
+
+      if (importMetadata.runId) {
+        try {
+          await todShiftRepository.updateRun(importMetadata.runId, {
+            shifts: trimResult.shifts,
+            operationalTimeline,
+            coverageTimeline: coverage.timeline
+          });
+        } catch (err) {
+          console.warn('Unable to persist trimming changes to TOD shift run.', err);
+        }
+      }
+
+      return {
+        shifts: trimResult.shifts,
+        operationalTimeline,
+        coverageTimeline: coverage.timeline,
+        colorScale: coverage.colorScale,
+        trimSummary: trimResult.summary
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to trim excess vehicle hours.';
+      return rejectWithValue(message);
+    }
+  }
+);
+
 export const optimizeShifts = createAsyncThunk<
   {
     run: TodShiftRun;
@@ -399,7 +489,7 @@ export const optimizeShifts = createAsyncThunk<
       const hasCityData = DAY_TYPES.some((day) => (cityTimeline[day] ?? []).length > 0);
 
       if (!hasCityData) {
-        return rejectWithValue('Master schedule data is missing. Import the city requirements before optimizing.');
+        return rejectWithValue('Master schedule data is missing. Import the city requirements before building shifts.');
       }
 
       const activeRules =
@@ -415,20 +505,36 @@ export const optimizeShifts = createAsyncThunk<
       });
 
       const solverFeatureEnabled = process.env.REACT_APP_TOD_SOLVER === 'true';
+      const solverStaggerEnabled = process.env.REACT_APP_TOD_SOLVER_STAGGER === 'true';
+      const trimExcessEnabled = process.env.REACT_APP_TOD_TRIM_EXCESS === 'true';
 
       let finalShifts = generation.shifts;
       let finalOperationalTimeline = generation.operationalTimeline;
       let solverWarnings: string[] = [];
+      let solverCandidateCount = 0;
+      let solverSelectedCount = 0;
+      let trimmingSummary: TrimSummary | null = null;
 
       if (solverFeatureEnabled) {
         const { runShiftSolver } = await import('../utils/solverOptimizationEngine');
-        const existingCandidates = state.shiftManagement.shifts.map((shift, index) =>
-          createSolverCandidate(shift, `existing-${index}`, true)
+        const existingCandidates = state.shiftManagement.shifts.flatMap((shift, index) =>
+          buildSolverCandidates(shift, {
+            prefix: `existing-${index}`,
+            existing: true,
+            unionRules: activeRules,
+            enableVariants: solverStaggerEnabled
+          })
         );
-        const generatedCandidates = generation.shifts.map((shift, index) =>
-          createSolverCandidate(shift, `generated-${index}`, false)
+        const generatedCandidates = generation.shifts.flatMap((shift, index) =>
+          buildSolverCandidates(shift, {
+            prefix: `generated-${index}`,
+            existing: false,
+            unionRules: activeRules,
+            enableVariants: solverStaggerEnabled
+          })
         );
         const candidatePool = [...existingCandidates, ...generatedCandidates];
+        solverCandidateCount = candidatePool.length;
 
         const solverSelected: Shift[] = [];
         const solverIssues: string[] = [];
@@ -461,6 +567,8 @@ export const optimizeShifts = createAsyncThunk<
           }
         }
 
+        solverSelectedCount = solverSelected.length;
+
         if (solverSelected.length > 0 && solverIssues.length === 0) {
           const evaluatedShifts = await annotateSolverCompliance(solverSelected, activeRules);
           finalShifts = evaluatedShifts;
@@ -472,10 +580,28 @@ export const optimizeShifts = createAsyncThunk<
         }
       }
 
-      const coverage = computeCoverageTimeline({
+      let coverage = computeCoverageTimeline({
         cityTimeline,
         operationalTimeline: finalOperationalTimeline
       });
+
+      if (trimExcessEnabled) {
+        const trimResult = trimExcessShifts({
+          shifts: finalShifts,
+          coverageTimeline: coverage.timeline,
+          unionRules: activeRules
+        });
+
+        if (trimResult.summary.hoursRemoved > 0) {
+          finalShifts = trimResult.shifts;
+          finalOperationalTimeline = buildOperationalTimelineFromShifts(finalShifts);
+          coverage = computeCoverageTimeline({
+            cityTimeline,
+            operationalTimeline: finalOperationalTimeline
+          });
+          trimmingSummary = trimResult.summary;
+        }
+      }
 
       const existingRunId = state.shiftManagement.importMetadata.runId;
       if (existingRunId) {
@@ -539,13 +665,13 @@ export const optimizeShifts = createAsyncThunk<
         flattenedWarnings.push(...solverWarnings);
       }
 
-      const deficitByDayType = DAY_TYPES.reduce((acc, dayType) => {
-        const intervals = coverage.timeline[dayType] ?? [];
-        acc[dayType] = intervals.filter((interval) => interval.totalExcess < 0).length;
-        return acc;
-      }, {} as Record<DayType, number>);
+      if (trimmingSummary) {
+        flattenedWarnings.push(
+          `Trimmed ${trimmingSummary.hoursRemoved.toFixed(2)} surplus vehicle-hours across ${trimmingSummary.shiftsModified} shift${trimmingSummary.shiftsModified === 1 ? '' : 's'}.`
+        );
+      }
 
-      const totalDeficitIntervals = Object.values(deficitByDayType).reduce((sum, value) => sum + value, 0);
+      const { deficitByDayType, totalDeficitIntervals } = summarizeDeficitIntervals(coverage.timeline);
       const compliantShifts = finalShifts.filter((shift) => shift.unionCompliant).length;
       const warningShifts = finalShifts.filter((shift) => (shift.complianceWarnings?.length ?? 0) > 0).length;
 
@@ -558,7 +684,11 @@ export const optimizeShifts = createAsyncThunk<
         deficitByDayType,
         warnings: flattenedWarnings,
         strategy: finalShifts === generation.shifts ? 'heuristic' : 'solver',
-        solverWarnings
+        solverWarnings,
+        solverCandidatesEvaluated: solverCandidateCount,
+        solverShiftsSelected: solverSelectedCount,
+        trimmedVehicleHours: trimmingSummary?.hoursRemoved ?? 0,
+        trimmedShiftCount: trimmingSummary?.shiftsModified ?? 0
       };
 
       return {
@@ -566,7 +696,7 @@ export const optimizeShifts = createAsyncThunk<
         report
       };
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to generate optimized shifts.';
+      const message = error instanceof Error ? error.message : 'Failed to build shifts.';
       return rejectWithValue(message);
     }
   }
@@ -582,14 +712,40 @@ export const saveShift = createAsyncThunk(
         : DEFAULT_UNION_RULES;
 
     const violations = await validateShiftAgainstRules(shift, activeRules);
-    const shiftWithCompliance = {
+    const shiftWithCompliance: Shift = {
       ...shift,
       unionCompliant: !violations.some((v: UnionViolation) => v.violationType === 'error'),
       complianceWarnings: violations.map((v: UnionViolation) => v.violationMessage)
     };
 
-    return { ...shiftWithCompliance, id: Date.now() };
+    const normalized = normalizeShiftTimes(shiftWithCompliance);
+    return { ...normalized, id: Date.now() };
   }
+);
+
+export const updateShift = createAsyncThunk(
+  'shiftManagement/updateShift',
+  async (shift: Shift, { getState }) => {
+    const state = getState() as RootState;
+    const activeRules =
+      state.shiftManagement.unionRules.length > 0
+        ? state.shiftManagement.unionRules
+        : DEFAULT_UNION_RULES;
+
+    const violations = await validateShiftAgainstRules(shift, activeRules);
+    const shiftWithCompliance: Shift = {
+      ...shift,
+      unionCompliant: !violations.some((v) => v.violationType === 'error'),
+      complianceWarnings: violations.map((v) => v.violationMessage)
+    };
+
+    return normalizeShiftTimes(shiftWithCompliance);
+  }
+);
+
+export const deleteShift = createAsyncThunk(
+  'shiftManagement/deleteShift',
+  async (shiftId: Shift['id']) => shiftId
 );
 
 const shiftManagementSlice = createSlice({
@@ -605,8 +761,19 @@ const shiftManagementSlice = createSlice({
         unionRules: null,
         imports: null,
         persistence: null,
-        optimization: null
+        optimization: null,
+        trimming: null
       };
+    },
+    undoLastShiftChange: (state) => {
+      const snapshot = state.history.undoStack.pop();
+      if (!snapshot) {
+        return;
+      }
+      state.shifts = snapshot.shifts;
+      state.operationalTimeline = snapshot.operationalTimeline;
+      state.coverageTimeline = snapshot.coverageTimeline;
+      state.colorScale = snapshot.colorScale;
     }
   },
   extraReducers: (builder) => {
@@ -661,6 +828,49 @@ const shiftManagementSlice = createSlice({
         state.loading.unionRulesPersistence = false;
         state.error.unionRules = (action.payload as string) || action.error.message || 'Failed to save union rules.';
       })
+      .addCase(applyExcessTrimming.pending, (state) => {
+        state.loading.trimming = true;
+        state.error.trimming = null;
+      })
+      .addCase(applyExcessTrimming.fulfilled, (state, action) => {
+        state.loading.trimming = false;
+        state.error.trimming = null;
+        recordUndoSnapshot(state, 'Trim excess vehicle hours');
+        state.shifts = action.payload.shifts;
+        state.operationalTimeline = action.payload.operationalTimeline;
+        state.coverageTimeline = action.payload.coverageTimeline;
+        state.colorScale = action.payload.colorScale;
+
+        const { deficitByDayType, totalDeficitIntervals } = summarizeDeficitIntervals(action.payload.coverageTimeline);
+        const compliantShifts = action.payload.shifts.filter((shift) => shift.unionCompliant).length;
+        const warningShifts = action.payload.shifts.filter((shift) => (shift.complianceWarnings?.length ?? 0) > 0).length;
+        const timestamp = formatIsoTimestamp();
+
+        const baseReport = state.lastOptimizationReport ?? {
+          generatedAt: timestamp,
+          totalShifts: action.payload.shifts.length,
+          compliantShifts,
+          warningShifts,
+          deficitIntervals: totalDeficitIntervals,
+          deficitByDayType,
+          warnings: ['Coverage trimmed to reduce surplus vehicle hours.']
+        };
+
+        state.lastOptimizationReport = {
+          ...baseReport,
+          totalShifts: action.payload.shifts.length,
+          compliantShifts,
+          warningShifts,
+          deficitIntervals: totalDeficitIntervals,
+          deficitByDayType,
+          trimmedVehicleHours: (baseReport.trimmedVehicleHours ?? 0) + action.payload.trimSummary.hoursRemoved,
+          trimmedShiftCount: (baseReport.trimmedShiftCount ?? 0) + action.payload.trimSummary.shiftsModified
+        };
+      })
+      .addCase(applyExcessTrimming.rejected, (state, action) => {
+        state.loading.trimming = false;
+        state.error.trimming = (action.payload as string) || action.error.message || 'Failed to trim excess.';
+      })
       .addCase(optimizeShifts.pending, (state) => {
         state.loading.optimization = true;
         state.error.optimization = null;
@@ -673,7 +883,7 @@ const shiftManagementSlice = createSlice({
       })
       .addCase(optimizeShifts.rejected, (state, action) => {
         state.loading.optimization = false;
-        state.error.optimization = (action.payload as string) || action.error.message || 'Failed to optimize shifts.';
+        state.error.optimization = (action.payload as string) || action.error.message || 'Failed to build shifts.';
       })
       .addCase(saveShift.pending, (state) => {
         state.loading.shifts = true;
@@ -681,11 +891,48 @@ const shiftManagementSlice = createSlice({
       })
       .addCase(saveShift.fulfilled, (state, action) => {
         state.loading.shifts = false;
+        recordUndoSnapshot(state, `Add ${describeShift(action.payload)}`);
         state.shifts.push(action.payload);
+        recomputeManualCoverage(state);
       })
       .addCase(saveShift.rejected, (state, action) => {
         state.loading.shifts = false;
         state.error.shifts = action.error.message || 'Failed to save shift.';
+      })
+      .addCase(updateShift.pending, (state) => {
+        state.loading.shifts = true;
+        state.error.shifts = null;
+      })
+      .addCase(updateShift.fulfilled, (state, action) => {
+        state.loading.shifts = false;
+        const index = state.shifts.findIndex((shift) => shift.id === action.payload.id);
+        if (index !== -1) {
+          recordUndoSnapshot(state, `Update ${describeShift(state.shifts[index])}`);
+          state.shifts[index] = action.payload;
+          recomputeManualCoverage(state);
+        }
+      })
+      .addCase(updateShift.rejected, (state, action) => {
+        state.loading.shifts = false;
+        state.error.shifts = action.error.message || 'Failed to update shift.';
+      })
+      .addCase(deleteShift.pending, (state) => {
+        state.loading.shifts = true;
+        state.error.shifts = null;
+      })
+      .addCase(deleteShift.fulfilled, (state, action) => {
+        state.loading.shifts = false;
+        const targetIndex = state.shifts.findIndex((shift) => shift.id === action.payload);
+        if (targetIndex === -1) {
+          return;
+        }
+        recordUndoSnapshot(state, `Delete ${describeShift(state.shifts[targetIndex])}`);
+        state.shifts.splice(targetIndex, 1);
+        recomputeManualCoverage(state);
+      })
+      .addCase(deleteShift.rejected, (state, action) => {
+        state.loading.shifts = false;
+        state.error.shifts = action.error.message || 'Failed to delete shift.';
       })
       .addCase(recordShiftExport.pending, (state) => {
         state.loading.persistence = true;
@@ -701,15 +948,6 @@ const shiftManagementSlice = createSlice({
       });
   }
 });
-
-function createSolverCandidate(shift: Shift, prefix: string, existing: boolean): SolverCandidateShift {
-  const identifier = `${shift.shiftCode ?? shift.id ?? 'shift'}`;
-  return {
-    ...shift,
-    solverId: `${prefix}-${identifier}`,
-    existing
-  };
-}
 
 function buildCoverageIntervalsFromCityTimeline(
   dayType: DayType,
@@ -740,8 +978,9 @@ async function annotateSolverCompliance(shifts: Shift[], unionRules: UnionRule[]
   return Promise.all(
     shifts.map(async (shift) => {
       const violations = await validateShiftAgainstRules(shift, unionRules);
+      const normalized = normalizeShiftTimes(shift);
       return {
-        ...shift,
+        ...normalized,
         unionCompliant: !violations.some((violation) => violation.violationType === 'error'),
         complianceWarnings: violations.map((violation) => violation.violationMessage)
       };
@@ -749,12 +988,108 @@ async function annotateSolverCompliance(shifts: Shift[], unionRules: UnionRule[]
   );
 }
 
+function cloneShifts(shifts: Shift[]): Shift[] {
+  return shifts.map((shift) => ({
+    ...shift,
+    complianceWarnings: shift.complianceWarnings ? [...shift.complianceWarnings] : undefined
+  }));
+}
+
+function cloneOperationalTimeline(
+  source: Record<DayType, OperationalInterval[]>
+): Record<DayType, OperationalInterval[]> {
+  return DAY_TYPES.reduce((acc, dayType) => {
+    acc[dayType] = (source[dayType] ?? []).map((interval) => ({ ...interval }));
+    return acc;
+  }, {} as Record<DayType, OperationalInterval[]>);
+}
+
+function cloneCoverageTimeline(
+  source: Record<DayType, ShiftCoverageInterval[]>
+): Record<DayType, ShiftCoverageInterval[]> {
+  return DAY_TYPES.reduce((acc, dayType) => {
+    acc[dayType] = (source[dayType] ?? []).map((interval) => ({ ...interval }));
+    return acc;
+  }, {} as Record<DayType, ShiftCoverageInterval[]>);
+}
+
+function cloneColorScale(scale: TodShiftColorScale | null): TodShiftColorScale | null {
+  if (!scale) {
+    return null;
+  }
+  return {
+    ...scale,
+    thresholds: { ...scale.thresholds }
+  };
+}
+
+function describeShift(shift?: Shift, fallback = 'shift'): string {
+  if (!shift) {
+    return fallback;
+  }
+  if (shift.shiftCode && shift.shiftCode.trim().length > 0) {
+    return shift.shiftCode;
+  }
+  if (shift.id !== undefined && shift.id !== null) {
+    return String(shift.id);
+  }
+  return fallback;
+}
+
+function recordUndoSnapshot(state: ShiftManagementState, label: string): void {
+  const snapshot: UndoSnapshot = {
+    shifts: cloneShifts(state.shifts),
+    operationalTimeline: cloneOperationalTimeline(state.operationalTimeline),
+    coverageTimeline: cloneCoverageTimeline(state.coverageTimeline),
+    colorScale: cloneColorScale(state.colorScale),
+    label,
+    timestamp: formatIsoTimestamp()
+  };
+  state.history.undoStack.push(snapshot);
+  if (state.history.undoStack.length > MAX_UNDO_HISTORY) {
+    state.history.undoStack.shift();
+  }
+}
+
+function ensureUniqueShiftIds(shifts: Shift[]): Shift[] {
+  const seen = new Set<string>();
+  return shifts.map((shift, index) => {
+    const clone = {
+      ...shift,
+      complianceWarnings: shift.complianceWarnings ? [...shift.complianceWarnings] : undefined
+    };
+    const baseId = deriveShiftIdentifier(clone, index);
+    let candidate = baseId;
+    let suffix = 1;
+    while (seen.has(candidate)) {
+      candidate = `${baseId}-${suffix++}`;
+    }
+    seen.add(candidate);
+    clone.id = candidate;
+    return clone;
+  });
+}
+
+function deriveShiftIdentifier(shift: Shift, index: number): string {
+  if (shift.id !== undefined && shift.id !== null) {
+    const trimmed = String(shift.id).trim();
+    if (trimmed.length > 0) {
+      return trimmed;
+    }
+  }
+  if (shift.shiftCode && shift.shiftCode.trim().length > 0) {
+    return `${shift.shiftCode}-${shift.scheduleType ?? 'day'}-${index}`;
+  }
+  return `shift-${shift.scheduleType ?? 'day'}-${index}`;
+}
+
 function applyRunToState(state: ShiftManagementState, run: TodShiftRun): void {
-  state.shifts = run.shifts;
+  state.shifts = ensureUniqueShiftIds(run.shifts);
   state.cityTimeline = run.cityTimeline;
-  state.operationalTimeline = run.operationalTimeline;
-  state.coverageTimeline = run.coverageTimeline ?? createEmptyCoverageTimeline();
-  state.colorScale = run.colorScale ?? null;
+  state.operationalTimeline = cloneOperationalTimeline(run.operationalTimeline);
+  const coverageSource = run.coverageTimeline ?? createEmptyCoverageTimeline();
+  state.coverageTimeline = cloneCoverageTimeline(coverageSource);
+  state.colorScale = cloneColorScale(run.colorScale ?? null);
   state.importMetadata = {
     runId: run.id,
     cityFileName: run.cityFileName,
@@ -762,7 +1097,31 @@ function applyRunToState(state: ShiftManagementState, run: TodShiftRun): void {
     importedAt: run.importedAt,
     lastExportedAt: run.lastExportedAt
   };
+  state.history.undoStack = [];
 }
 
-export const { setActiveScheduleType, clearErrors } = shiftManagementSlice.actions;
+function summarizeDeficitIntervals(
+  timeline: Record<DayType, ShiftCoverageInterval[]>
+): { deficitByDayType: Record<DayType, number>; totalDeficitIntervals: number } {
+  const deficitByDayType = DAY_TYPES.reduce((acc, dayType) => {
+    const intervals = timeline[dayType] ?? [];
+    acc[dayType] = intervals.filter((interval) => interval.totalExcess < 0).length;
+    return acc;
+  }, {} as Record<DayType, number>);
+
+  const totalDeficitIntervals = Object.values(deficitByDayType).reduce((sum, value) => sum + value, 0);
+  return { deficitByDayType, totalDeficitIntervals };
+}
+
+function recomputeManualCoverage(state: ShiftManagementState): void {
+  state.operationalTimeline = buildOperationalTimelineFromShifts(state.shifts);
+  const coverage = computeCoverageTimeline({
+    cityTimeline: state.cityTimeline,
+    operationalTimeline: state.operationalTimeline
+  });
+  state.coverageTimeline = coverage.timeline;
+  state.colorScale = coverage.colorScale;
+}
+
+export const { setActiveScheduleType, clearErrors, undoLastShiftChange } = shiftManagementSlice.actions;
 export default shiftManagementSlice.reducer;

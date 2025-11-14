@@ -12,8 +12,8 @@ import {
   IconButton,
   Tooltip
 } from '@mui/material';
-import { useSelector } from 'react-redux';
-import { RootState } from '../store/store';
+import { useDispatch, useSelector } from 'react-redux';
+import { AppDispatch, RootState } from '../store/store';
 import {
   computeOptimizationInsights,
   OptimizationRecommendation,
@@ -39,6 +39,9 @@ import { useTheme } from '@mui/material/styles';
 import { DAY_TYPES } from './utils/timeUtils';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import { BreakReliefSummary, computeBreakReliefSummary } from './utils/breakReliefAudit';
+import { computeExcessVehicleHours } from './utils/coverageCalculator';
+import { applyExcessTrimming } from './store/shiftManagementSlice';
+import { useStableDifferenceDomain } from './utils/useStableDifferenceDomain';
 
 const recommendationTypeLabels: Record<OptimizationRecommendation['type'], string> = {
   extend_shift: 'Extend Shift',
@@ -80,9 +83,10 @@ interface OptimizationDaySectionProps {
   coverageTimeline: RootState['shiftManagement']['coverageTimeline'];
   shifts: RootState['shiftManagement']['shifts'];
   unionRules: RootState['shiftManagement']['unionRules'];
+  breakMap: Map<string, number>;
   insights: OptimizationInsights;
   appliedIds: string[];
-  onUpdateAppliedIds: (updater: (prev: string[]) => string[]) => void;
+  onUpdateAppliedIds: (dayType: DayType, updater: (prev: string[]) => string[]) => void;
 }
 
 const OptimizationDaySection: React.FC<OptimizationDaySectionProps> = ({
@@ -90,29 +94,34 @@ const OptimizationDaySection: React.FC<OptimizationDaySectionProps> = ({
   coverageTimeline,
   shifts,
   unionRules,
+  breakMap,
   insights,
   appliedIds,
   onUpdateAppliedIds
 }) => {
   const dayLabel = dayTypeLabels[dayType];
   const idealShiftHours = useMemo(() => extractIdealShiftHours(unionRules) ?? 7.2, [unionRules]);
+  const handleUpdateAppliedIds = useCallback(
+    (updater: (prev: string[]) => string[]) => onUpdateAppliedIds(dayType, updater),
+    [dayType, onUpdateAppliedIds]
+  );
 
   const handleApplyAll = useCallback(() => {
     const ids = insights.recommendations.map((recommendation) => recommendation.id);
-    onUpdateAppliedIds(() => ids);
-  }, [insights.recommendations, onUpdateAppliedIds]);
+    handleUpdateAppliedIds(() => ids);
+  }, [handleUpdateAppliedIds, insights.recommendations]);
 
   const handleReset = useCallback(() => {
-    onUpdateAppliedIds(() => []);
-  }, [onUpdateAppliedIds]);
+    handleUpdateAppliedIds(() => []);
+  }, [handleUpdateAppliedIds]);
 
   const handleToggle = useCallback(
     (id: string) => {
-      onUpdateAppliedIds((previous) =>
+      handleUpdateAppliedIds((previous) =>
         previous.includes(id) ? previous.filter((existingId) => existingId !== id) : [...previous, id]
       );
     },
-    [onUpdateAppliedIds]
+    [handleUpdateAppliedIds]
   );
 
   return (
@@ -125,10 +134,11 @@ const OptimizationDaySection: React.FC<OptimizationDaySectionProps> = ({
         shifts={shifts}
         unionRules={unionRules}
         appliedIds={appliedIds}
-        updateAppliedIds={onUpdateAppliedIds}
+        updateAppliedIds={handleUpdateAppliedIds}
         onApplyAll={handleApplyAll}
         onReset={handleReset}
         idealShiftHours={idealShiftHours}
+        breakMap={breakMap}
       />
 
       <Paper sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -175,7 +185,8 @@ const OptimizationDaySection: React.FC<OptimizationDaySectionProps> = ({
 };
 
 const ShiftOptimizationView: React.FC = () => {
-  const { coverageTimeline, shifts, unionRules, loading } = useSelector(
+  const dispatch = useDispatch<AppDispatch>();
+  const { coverageTimeline, shifts, unionRules, loading, operationalTimeline } = useSelector(
     (state: RootState) => state.shiftManagement
   );
   const [appliedRecommendationIds, setAppliedRecommendationIds] = useState<Record<DayType, string[]>>({
@@ -195,7 +206,19 @@ const ShiftOptimizationView: React.FC = () => {
     []
   );
 
+  const breakMaps = useMemo(() => {
+    return DAY_TYPES.reduce((acc, dayType) => {
+      const map = new Map<string, number>();
+      (operationalTimeline[dayType] ?? []).forEach((interval) => {
+        map.set(interval.startTime, interval.breakCount ?? 0);
+      });
+      acc[dayType] = map;
+      return acc;
+    }, {} as Record<DayType, Map<string, number>>);
+  }, [operationalTimeline]);
+
   const isLoading = loading.fetchRun || loading.imports;
+  const isTrimming = loading.trimming;
   const insightsByDay = useMemo(() => {
     return DAY_TYPES.reduce((acc, dayType) => {
       acc[dayType] = computeOptimizationInsights({
@@ -208,6 +231,7 @@ const ShiftOptimizationView: React.FC = () => {
   }, {} as Record<DayType, OptimizationInsights>);
   }, [coverageTimeline, shifts, unionRules]);
   const breakReliefSummary = useMemo(() => computeBreakReliefSummary(shifts), [shifts]);
+  const excessStats = useMemo(() => computeExcessVehicleHours(coverageTimeline), [coverageTimeline]);
   const optimizationOverview = useMemo<OptimizationOverviewSummary>(() => {
     const perDay = DAY_TYPES.map<OptimizationOverviewDay>((dayType) => ({
       dayType,
@@ -252,6 +276,11 @@ const ShiftOptimizationView: React.FC = () => {
     return summary;
   }, [insightsByDay]);
 
+  const hasExcess = excessStats.totalHours >= 0.1;
+  const handleTrimExcess = useCallback(() => {
+    dispatch(applyExcessTrimming());
+  }, [dispatch]);
+
   if (isLoading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" height="100%">
@@ -263,6 +292,36 @@ const ShiftOptimizationView: React.FC = () => {
 
   return (
     <Stack spacing={3}>
+      <Paper sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }}>
+          <Box>
+            <Typography variant="h6">Coverage Balance Snapshot</Typography>
+            <Typography variant="body2" color="text.secondary">
+              Deficit windows total {optimizationOverview.totalVehicleHours.toFixed(1)} vehicle-hours; surplus coverage totals {excessStats.totalHours.toFixed(1)} vehicle-hours.
+            </Typography>
+          </Box>
+          <Stack direction="row" spacing={1} flexWrap="wrap">
+            {DAY_TYPES.map((dayType) => (
+              <Chip
+                key={`excess-${dayType}`}
+                label={`${dayTypeLabels[dayType]} surplus ${excessStats.byDayType[dayType].toFixed(1)} hrs`}
+                color={excessStats.byDayType[dayType] > 0 ? 'warning' : 'default'}
+                size="small"
+              />
+            ))}
+          </Stack>
+        </Stack>
+        <Box display="flex" justifyContent="flex-end">
+          <Button
+            variant="contained"
+            color="secondary"
+            disabled={!hasExcess || isTrimming}
+            onClick={handleTrimExcess}
+          >
+            {isTrimming ? 'Trimming…' : 'Trim Excess'}
+          </Button>
+        </Box>
+      </Paper>
       {hasReliefDemand && <BreakReliefAuditPanel summaries={breakReliefSummary} />}
       {optimizationOverview.totalRecommendations > 0 && (
         <OptimizationOverviewPanel overview={optimizationOverview} />
@@ -274,9 +333,10 @@ const ShiftOptimizationView: React.FC = () => {
           coverageTimeline={coverageTimeline}
           shifts={shifts}
           unionRules={unionRules}
+          breakMap={breakMaps[dayType]}
           insights={insightsByDay[dayType]}
           appliedIds={appliedRecommendationIds[dayType]}
-          onUpdateAppliedIds={(updater) => setAppliedIdsForDay(dayType, updater)}
+          onUpdateAppliedIds={setAppliedIdsForDay}
         />
       ))}
     </Stack>
@@ -521,7 +581,7 @@ const BreakReliefAuditPanel: React.FC<{ summaries: BreakReliefSummary[] }> = ({ 
   );
 };
 
-type SlideKey = 'total' | 'north' | 'south';
+type SlideKey = 'total' | 'north' | 'south' | 'floater';
 
 interface OptimizationChartPoint {
   key: string;
@@ -533,12 +593,14 @@ interface OptimizationChartPoint {
   adjustedCoverage: number;
   baselineDifference: number;
   adjustedDifference: number;
+  breakCount: number;
 }
 
 const OPTIMIZATION_SLIDER_OPTIONS: Array<{ key: SlideKey; label: string }> = [
   { key: 'total', label: 'Total coverage' },
   { key: 'north', label: 'North coverage' },
-  { key: 'south', label: 'South coverage' }
+  { key: 'south', label: 'South coverage' },
+  { key: 'floater', label: 'Floater coverage' }
 ];
 
 function OptimizationPreview({
@@ -551,7 +613,8 @@ function OptimizationPreview({
   updateAppliedIds,
   onApplyAll,
   onReset,
-  idealShiftHours
+  idealShiftHours,
+  breakMap
 }: {
   dayType: DayType;
   coverageTimeline: RootState['shiftManagement']['coverageTimeline'];
@@ -563,6 +626,7 @@ function OptimizationPreview({
   onApplyAll: () => void;
   onReset: () => void;
   idealShiftHours: number;
+  breakMap: Map<string, number>;
 }) {
   const theme = useTheme();
   const [activeSlide, setActiveSlide] = useState<SlideKey>('total');
@@ -596,6 +660,7 @@ function OptimizationPreview({
     cloned.forEach((interval, index) => {
       intervalIndexMap.set(createIntervalKey(interval, 'North'), index);
       intervalIndexMap.set(createIntervalKey(interval, 'South'), index);
+      intervalIndexMap.set(createIntervalKey(interval, 'Floater'), index);
     });
 
     appliedIds.forEach((id) => {
@@ -611,7 +676,7 @@ function OptimizationPreview({
         }
 
         const interval = cloned[intervalIndex];
-        const field = zone === 'North' ? 'northExcess' : 'southExcess';
+        const field = zone === 'North' ? 'northExcess' : zone === 'South' ? 'southExcess' : 'floaterExcess';
         const currentValue = interval[field] ?? 0;
         const nextValue =
           currentValue < 0 ? Math.min(0, currentValue + coverageGain) : currentValue;
@@ -649,18 +714,21 @@ function OptimizationPreview({
     const base: Record<SlideKey, OptimizationChartPoint[]> = {
       total: [],
       north: [],
-      south: []
+      south: [],
+      floater: []
     };
     const ticks: Record<SlideKey, string[]> = {
       total: [],
       north: [],
-      south: []
+      south: [],
+      floater: []
     };
 
     activeCoverage.forEach((interval, index) => {
       const adjustedInterval = adjustedIntervals[index] ?? interval;
       const label = `${interval.startTime} – ${interval.endTime}`;
       const keySuffix = `${interval.startTime}-${index}`;
+      const breakCount = breakMap.get(interval.startTime) ?? 0;
 
       const pushPoint = (
         slide: SlideKey,
@@ -680,7 +748,8 @@ function OptimizationPreview({
           baselineCoverage,
           adjustedCoverage,
           baselineDifference,
-          adjustedDifference
+          adjustedDifference,
+          breakCount
         });
 
         if (index % 4 === 0) {
@@ -713,23 +782,47 @@ function OptimizationPreview({
         interval.southExcess ?? 0,
         adjustedInterval.southExcess ?? interval.southExcess ?? 0
       );
+
+      pushPoint(
+        'floater',
+        interval.floaterRequired ?? 0,
+        interval.floaterExcess ?? 0,
+        adjustedInterval.floaterExcess ?? interval.floaterExcess ?? 0
+      );
     });
 
     return { seriesMap: base, tickMap: ticks };
-  }, [activeCoverage, adjustedIntervals]);
+  }, [activeCoverage, adjustedIntervals, breakMap]);
 
   const requirementColor = theme.palette.primary.main;
   const baselineCoverageColor = theme.palette.warning.main;
   const adjustedCoverageColor = theme.palette.success.main;
   const positiveDifferenceColor = theme.palette.success.light;
   const negativeDifferenceColor = theme.palette.error.light;
+  const adjustedPositiveDifferenceColor = theme.palette.success.main;
+  const adjustedNegativeDifferenceColor = theme.palette.error.main;
+  const breakColor = theme.palette.info.main;
 
   const activeSeries = seriesMap[activeSlide];
   const activeTicks = tickMap[activeSlide];
   const hasChartData = activeSeries.length > 0;
+  const differenceValues = useMemo(
+    () =>
+      activeSeries.flatMap((point) => [
+        point.baselineDifference ?? 0,
+        point.adjustedDifference ?? 0
+      ]),
+    [activeSeries]
+  );
+  const differenceDomain = useStableDifferenceDomain(differenceValues, 3);
 
   const vehicleHourImprovement =
     insights.totals.totalVehicleHours - adjustedInsights.totals.totalVehicleHours;
+
+  const chartRevisionKey = useMemo(() => {
+    const sortedIds = [...appliedIds].sort().join('|');
+    return `${dayType}-${sortedIds}`;
+  }, [appliedIds, dayType]);
 
   return (
     <Paper sx={{ p: 3 }}>
@@ -833,15 +926,26 @@ function OptimizationPreview({
               variant="dashed"
             />
             <LegendSwatch
+              label="Breaks"
+              color={breakColor}
+              variant="dashed"
+            />
+            <LegendSwatch
               label="Current net difference"
               color={positiveDifferenceColor}
               secondaryColor={negativeDifferenceColor}
               variant="bar"
             />
+            <LegendSwatch
+              label="With selections net difference"
+              color={adjustedPositiveDifferenceColor}
+              secondaryColor={adjustedNegativeDifferenceColor}
+              variant="bar"
+            />
           </Stack>
 
           <Box sx={{ height: 300 }}>
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" key={chartRevisionKey}>
               <ComposedChart data={activeSeries} margin={{ top: 8, bottom: 16, left: 8, right: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis
@@ -851,10 +955,28 @@ function OptimizationPreview({
                   interval={0}
                   height={30}
                 />
-                <YAxis allowDecimals={false} />
-                <ReferenceLine y={0} stroke={negativeDifferenceColor} strokeDasharray="3 3" />
+                <YAxis yAxisId="coverage" allowDecimals={false} />
+                <YAxis
+                  yAxisId="difference"
+                  domain={differenceDomain}
+                  allowDecimals={false}
+                  orientation="right"
+                  tickFormatter={(value) => (value > 0 ? `+${value}` : `${value}`)}
+                  width={40}
+                />
+                <ReferenceLine
+                  yAxisId="difference"
+                  y={0}
+                  stroke={negativeDifferenceColor}
+                  strokeDasharray="3 3"
+                />
                 <RechartTooltip content={<OptimizationTooltip />} />
-                <Bar dataKey="baselineDifference" barSize={16} radius={[4, 4, 0, 0]}>
+                <Bar
+                  dataKey="baselineDifference"
+                  barSize={16}
+                  radius={[4, 4, 0, 0]}
+                  yAxisId="difference"
+                >
                   {activeSeries.map((point) => (
                     <Cell
                       key={`${point.key}-difference`}
@@ -864,7 +986,25 @@ function OptimizationPreview({
                     />
                   ))}
                 </Bar>
+                <Bar
+                  dataKey="adjustedDifference"
+                  barSize={10}
+                  radius={[4, 4, 0, 0]}
+                  yAxisId="difference"
+                >
+                  {activeSeries.map((point) => (
+                    <Cell
+                      key={`${point.key}-adjusted-difference`}
+                      fill={
+                        point.adjustedDifference >= 0
+                          ? adjustedPositiveDifferenceColor
+                          : adjustedNegativeDifferenceColor
+                      }
+                    />
+                  ))}
+                </Bar>
                 <Line
+                  yAxisId="coverage"
                   type="monotone"
                   dataKey="requirement"
                   stroke={requirementColor}
@@ -873,6 +1013,7 @@ function OptimizationPreview({
                   isAnimationActive={false}
                 />
                 <Line
+                  yAxisId="coverage"
                   type="monotone"
                   dataKey="baselineCoverage"
                   stroke={baselineCoverageColor}
@@ -881,12 +1022,23 @@ function OptimizationPreview({
                   isAnimationActive={false}
                 />
                 <Line
+                  yAxisId="coverage"
                   type="monotone"
                   dataKey="adjustedCoverage"
                   stroke={adjustedCoverageColor}
                   strokeWidth={2}
                   strokeDasharray="5 3"
                   dot={{ r: 2, stroke: adjustedCoverageColor, fill: adjustedCoverageColor }}
+                  isAnimationActive={false}
+                />
+                <Line
+                  yAxisId="coverage"
+                  type="monotone"
+                  dataKey="breakCount"
+                  stroke={breakColor}
+                  strokeWidth={1.5}
+                  strokeDasharray="4 4"
+                  dot={false}
                   isAnimationActive={false}
                 />
               </ComposedChart>
@@ -955,6 +1107,7 @@ const OptimizationTooltip: React.FC<OptimizationTooltipProps> = ({ active, paylo
       <Typography variant="body2">
         With selections difference: {formatSigned(point.adjustedDifference)}
       </Typography>
+      <Typography variant="body2">Break windows: {formatValue(point.breakCount)}</Typography>
     </Paper>
   );
 };

@@ -24,6 +24,7 @@ import { RootState, AppDispatch } from '../store/store';
 import { saveShift } from './store/shiftManagementSlice';
 import { validateShiftAgainstRules } from './utils/unionRulesValidator';
 import { Shift, UnionViolation } from './types/shift.types';
+import { snapDayjsToInterval } from './utils/shiftNormalization';
 
 interface Props {
   onShiftCreated: () => void;
@@ -80,13 +81,18 @@ const ManualShiftCreator: React.FC<Props> = ({ onShiftCreated }) => {
     return Math.round(hours * 100) / 100;
   };
 
-  const handleTimeChange = (field: string, value: Dayjs | null) => {
-    if (value) {
-      setShift((prev: Partial<Shift>) => ({
-        ...prev,
-        [field]: value.format('HH:mm'),
-      }));
+  const handleTimeChange = (
+    field: 'startTime' | 'endTime' | 'breakStart' | 'breakEnd' | 'mealBreakStart' | 'mealBreakEnd',
+    value: Dayjs | null
+  ) => {
+    if (!value) {
+      return;
     }
+    const snapped = snapDayjsToInterval(value, field.includes('Start') ? 'floor' : 'ceil');
+    setShift((prev: Partial<Shift>) => ({
+      ...prev,
+      [field]: snapped,
+    }));
   };
 
   const handleSubmit = async () => {
@@ -198,6 +204,7 @@ const ManualShiftCreator: React.FC<Props> = ({ onShiftCreated }) => {
               label="Start Time"
               value={dayjs(`2024-01-01 ${shift.startTime}`)}
               onChange={(value: Dayjs | null) => handleTimeChange('startTime', value)}
+              timeSteps={{ minutes: 15 }}
               slotProps={{ textField: { fullWidth: true } }}
             />
           </Grid>
@@ -211,6 +218,7 @@ const ManualShiftCreator: React.FC<Props> = ({ onShiftCreated }) => {
               label="End Time"
               value={dayjs(`2024-01-01 ${shift.endTime}`)}
               onChange={(value: Dayjs | null) => handleTimeChange('endTime', value)}
+              timeSteps={{ minutes: 15 }}
               slotProps={{ textField: { fullWidth: true } }}
             />
           </Grid>

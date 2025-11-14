@@ -4094,7 +4094,7 @@ const BlockSummarySchedule: React.FC = () => {
                         Service Band
                       </TableCell>
                       {schedule.timePoints.map((tp, index) => (
-                        <TableCell key={tp.name} align="center" sx={{ 
+                        <TableCell key={tp.id || `${tp.name}-${index}`} align="center" sx={{ 
                           fontWeight: 'bold',
                           fontSize: '12px',
                           color: '#374151',
@@ -4176,7 +4176,11 @@ const BlockSummarySchedule: React.FC = () => {
                         Master Template
                       </TableCell>
                       {schedule.timePoints.map((tp, index) => (
-                        <TableCell key={`master-${tp.name}`} align="center" sx={{ py: 2 }}>
+                        <TableCell
+                          key={tp.id ? `master-${tp.id}` : `master-${tp.name}-${index}`}
+                          align="center"
+                          sx={{ py: 2 }}
+                        >
                           <TextField
                             size="small"
                             type="number"

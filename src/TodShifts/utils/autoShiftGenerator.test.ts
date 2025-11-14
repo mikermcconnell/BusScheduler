@@ -143,4 +143,29 @@ describe('generateAutoShifts union compliance', () => {
     expect(reliefShifts.length).toBeGreaterThan(0);
     expect(reliefShifts.every((shift) => shift.unionCompliant)).toBe(true);
   });
+
+  it('generates floater shifts when floater requirements are present', async () => {
+    const floaterWindow: CityRequirementInterval = {
+      dayType: 'weekday',
+      startTime: '06:00',
+      endTime: '12:00',
+      northRequired: 0,
+      southRequired: 0,
+      floaterRequired: 2
+    };
+
+    const cityTimeline = {
+      ...emptyTimeline,
+      weekday: [floaterWindow]
+    };
+
+    const result = await generateAutoShifts({ cityTimeline, unionRules: BASE_UNION_RULES });
+    const floaterShifts = result.shifts.filter((shift) => shift.zone === 'Floater' && !shift.shiftCode.startsWith('AUTO-REL'));
+
+    expect(floaterShifts.length).toBeGreaterThan(0);
+    floaterShifts.forEach((shift) => {
+      expect(shift.scheduleType).toBe('weekday');
+      expect(shift.unionCompliant).toBe(true);
+    });
+  });
 });

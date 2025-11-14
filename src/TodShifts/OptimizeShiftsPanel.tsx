@@ -23,7 +23,7 @@ interface OptimizeShiftsPanelProps {
 }
 
 /**
- * Presents guarded access to the automatic shift optimization flow.
+ * Presents guarded access to the automatic shift build flow.
  * Provides a confirmation warning because the operation replaces all current shifts.
  */
 const OptimizeShiftsPanel: React.FC<OptimizeShiftsPanelProps> = ({
@@ -53,10 +53,10 @@ const OptimizeShiftsPanel: React.FC<OptimizeShiftsPanelProps> = ({
   return (
     <Paper elevation={2} sx={{ p: 3 }}>
       <Stack spacing={2}>
-        <Typography variant="h6">Optimize Shifts</Typography>
+        <Typography variant="h6">Build Shifts</Typography>
         <Typography variant="body2" color="text.secondary">
           Automatically generate weekday, Saturday, and Sunday TOD shifts based on the latest master schedule.
-          Existing shifts will be replaced during optimization.
+          Existing shifts will be replaced during the build process.
         </Typography>
 
         {!canOptimize && disabledReason && (
@@ -75,7 +75,7 @@ const OptimizeShiftsPanel: React.FC<OptimizeShiftsPanelProps> = ({
           <Alert severity={lastReport.deficitIntervals > 0 ? 'warning' : 'success'}>
             <Stack spacing={0.5}>
               <Typography variant="subtitle2">
-                Optimization completed {new Date(lastReport.generatedAt).toLocaleString()}
+                Build completed {new Date(lastReport.generatedAt).toLocaleString()}
               </Typography>
               <Typography variant="body2">
                 {lastReport.compliantShifts}/{lastReport.totalShifts} shifts union compliant;
@@ -84,6 +84,16 @@ const OptimizeShiftsPanel: React.FC<OptimizeShiftsPanelProps> = ({
               {lastReport.strategy && (
                 <Typography variant="body2">
                   Strategy: {lastReport.strategy === 'solver' ? 'Solver-assisted plan' : 'Heuristic auto-generation'}.
+                </Typography>
+              )}
+              {typeof lastReport.solverCandidatesEvaluated === 'number' && lastReport.solverCandidatesEvaluated > 0 && (
+                <Typography variant="body2">
+                  Solver evaluated {lastReport.solverCandidatesEvaluated} candidate shift{lastReport.solverCandidatesEvaluated === 1 ? '' : 's'} and kept {lastReport.solverShiftsSelected ?? 0}.
+                </Typography>
+              )}
+              {typeof lastReport.trimmedVehicleHours === 'number' && lastReport.trimmedVehicleHours > 0 && (
+                <Typography variant="body2">
+                  Trimmed {lastReport.trimmedVehicleHours.toFixed(1)} surplus vehicle-hours across {lastReport.trimmedShiftCount ?? 0} shift{(lastReport.trimmedShiftCount ?? 0) === 1 ? '' : 's'}.
                 </Typography>
               )}
               <Typography variant="body2">
@@ -119,22 +129,22 @@ const OptimizeShiftsPanel: React.FC<OptimizeShiftsPanelProps> = ({
           onClick={handleLaunch}
           disabled={buttonDisabled}
         >
-          {isOptimizing ? 'Optimizing…' : 'Optimize Shifts'}
+          {isOptimizing ? 'Building…' : 'Build Shifts'}
         </Button>
 
         <Typography variant="caption" color="text.secondary">
-          Contractor shift imports remain available after optimization if you need vendor comparisons.
+          Contractor shift imports remain available after builds if you need vendor comparisons.
         </Typography>
       </Stack>
 
       <Dialog open={showDialog} onClose={() => setShowDialog(false)}>
         <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <WarningAmberIcon color="warning" />
-          Confirm Optimization
+          Confirm Build
         </DialogTitle>
         <DialogContent dividers>
           <Typography variant="body2" color="text.secondary">
-            Optimization replaces all current shifts with an auto-generated schedule. A historical copy is kept,
+            Building shifts replaces all current shifts with an auto-generated schedule. A historical copy is kept,
             but any unsaved manual edits will be removed. Proceed?
           </Typography>
         </DialogContent>
@@ -143,7 +153,7 @@ const OptimizeShiftsPanel: React.FC<OptimizeShiftsPanelProps> = ({
             Cancel
           </Button>
           <Button onClick={handleConfirm} color="warning" variant="contained">
-            Optimize &amp; Replace
+            Build &amp; Replace
           </Button>
         </DialogActions>
       </Dialog>

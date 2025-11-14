@@ -21,6 +21,8 @@ import {
   ceilToInterval
 } from './timeUtils';
 import { validateShiftAgainstRules } from './unionRulesValidator';
+import { normalizeShiftTimes } from './shiftNormalization';
+import { isMealBreakThresholdRule } from './ruleMatchers';
 
 interface ActiveShift {
   rank: number;
@@ -243,8 +245,10 @@ async function finalizeShift(
     complianceWarnings: violations.map((violation) => violation.violationMessage)
   };
 
+  const normalizedShift = normalizeShiftTimes(shift);
+
   if (violations.length === 0) {
-    return { shift, warnings: null };
+    return { shift: normalizedShift, warnings: null };
   }
 
   const warning: ShiftGenerationWarning = {
@@ -252,7 +256,7 @@ async function finalizeShift(
     messages: violations.map((violation: UnionViolation) => violation.violationMessage)
   };
 
-  return { shift, warnings: warning };
+  return { shift: normalizedShift, warnings: warning };
 }
 
 function ensureIntervalRecord(
@@ -563,10 +567,26 @@ export async function generateAutoShifts(
     (rule) => rule.ruleName.toLowerCase().includes('meal break duration'),
     DEFAULT_MEAL_DURATION_MINUTES
   );
+  const generalThresholdMinutes = extractRuleMinutes(
+    unionRules,
+    (rule) =>
+      rule.isActive &&
+      rule.category === 'breaks' &&
+      rule.ruleType === 'required' &&
+      typeof rule.minValue === 'number' &&
+      rule.ruleName.toLowerCase().includes('threshold'),
+    DEFAULT_BREAK_THRESHOLD_MINUTES
+  );
+
   const breakThresholdMinutes = extractRuleMinutes(
     unionRules,
-    (rule) => rule.ruleName.toLowerCase().includes('threshold'),
-    DEFAULT_BREAK_THRESHOLD_MINUTES
+    (rule) =>
+      rule.isActive &&
+      rule.category === 'breaks' &&
+      rule.ruleType === 'required' &&
+      typeof rule.minValue === 'number' &&
+      isMealBreakThresholdRule(rule),
+    generalThresholdMinutes
   );
   const breakLatestStartMinutes = extractRuleMinutes(
     unionRules,

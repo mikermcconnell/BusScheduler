@@ -6,6 +6,7 @@ import {
   UnionRule
 } from '../types/shift.types';
 import { INTERVAL_MINUTES, minutesToTimeString, parseTimeToMinutes } from './timeUtils';
+import { isMealBreakThresholdRule } from './ruleMatchers';
 
 type RecommendationType = 'extend_shift' | 'new_shift' | 'break_adjustment';
 
@@ -631,14 +632,23 @@ function extractBreakDurationMinutes(rules: UnionRule[]): number | null {
 }
 
 function extractBreakThresholdHours(rules: UnionRule[]): number | null {
-  const candidate = rules.find(
-    (rule) =>
-      rule.isActive &&
-      rule.category === 'breaks' &&
-      rule.ruleType === 'required' &&
-      typeof rule.minValue === 'number' &&
-      rule.ruleName.toLowerCase().includes('threshold')
-  );
+  const candidate =
+    rules.find(
+      (rule) =>
+        rule.isActive &&
+        rule.category === 'breaks' &&
+        rule.ruleType === 'required' &&
+        typeof rule.minValue === 'number' &&
+        isMealBreakThresholdRule(rule)
+    ) ??
+    rules.find(
+      (rule) =>
+        rule.isActive &&
+        rule.category === 'breaks' &&
+        rule.ruleType === 'required' &&
+        typeof rule.minValue === 'number' &&
+        rule.ruleName.toLowerCase().includes('threshold')
+    );
 
   if (!candidate || typeof candidate.minValue !== 'number') {
     return null;

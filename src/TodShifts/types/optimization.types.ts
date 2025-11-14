@@ -10,4 +10,8 @@ export interface OptimizationReport {
   warnings: string[];
   strategy?: 'heuristic' | 'solver';
   solverWarnings?: string[];
+  solverCandidatesEvaluated?: number;
+  solverShiftsSelected?: number;
+  trimmedVehicleHours?: number;
+  trimmedShiftCount?: number;
 }

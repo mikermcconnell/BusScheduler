@@ -29,7 +29,7 @@ const coverage: ShiftCoverageInterval[] = buildCoverageIntervals('weekday', [
 
 function buildCoverageIntervals(
   dayType: DayType,
-  rows: Array<{ start: string; end: string; north: number; south: number }>
+  rows: Array<{ start: string; end: string; north: number; south: number; floater?: number }>
 ): ShiftCoverageInterval[] {
   return rows.map((row) => ({
     dayType,
@@ -37,7 +37,7 @@ function buildCoverageIntervals(
     endTime: row.end,
     northRequired: row.north,
     southRequired: row.south,
-    floaterRequired: 0,
+    floaterRequired: row.floater ?? 0,
     northOperational: 0,
     southOperational: 0,
     floaterOperational: 0,
@@ -45,8 +45,8 @@ function buildCoverageIntervals(
     floaterAllocatedSouth: 0,
     northExcess: -row.north,
     southExcess: -row.south,
-    floaterExcess: 0,
-    totalExcess: -(row.north + row.south),
+    floaterExcess: row.floater ? -row.floater : 0,
+    totalExcess: -(row.north + row.south + (row.floater ?? 0)),
     status: 'deficit'
   }));
 }
@@ -105,6 +105,25 @@ describe('solverOptimizationEngine', () => {
     });
 
     expect(result.selectedShifts.length).toBeGreaterThan(0);
+    expect(result.unmetConstraints).toHaveLength(0);
+  });
+
+  it('allocates floater coverage when floater deficits exist', () => {
+    const floaterCoverage = buildCoverageIntervals('weekday', [
+      { start: '08:00', end: '08:15', north: 0, south: 0, floater: 1 }
+    ]);
+
+    const floaterCandidate = candidate('floater-1', 'Floater', '08:00', '13:00', false);
+
+    const result = runShiftSolver({
+      dayType: 'weekday',
+      coverageTimeline: floaterCoverage,
+      unionRules,
+      candidateShifts: [floaterCandidate]
+    });
+
+    expect(result.selectedShifts).toHaveLength(1);
+    expect(result.selectedShifts[0].zone).toBe('Floater');
     expect(result.unmetConstraints).toHaveLength(0);
   });
 });

@@ -29,6 +29,7 @@ import {
 import { RootState } from '../store/store';
 import { DAY_TYPES, INTERVAL_MINUTES, parseTimeToMinutes } from './utils/timeUtils';
 import { colorForValue, COLOR_BALANCED, COLOR_EXCESS_HEAVY, COLOR_DEFICIT_HEAVY } from './utils/colorScale';
+import { useStableDifferenceDomain } from './utils/useStableDifferenceDomain';
 import FullscreenIcon from '@mui/icons-material/Fullscreen';
 import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
 import type { Shift } from './types/shift.types';
@@ -83,11 +84,12 @@ interface ChartSection {
   totalSeries: ZoneTimelinePoint[];
   northSeries: ZoneTimelinePoint[];
   southSeries: ZoneTimelinePoint[];
+  floaterSeries: ZoneTimelinePoint[];
   summary: DayCoverageSummary;
 }
 
-type SlideKey = 'total' | 'north' | 'south';
-type SeriesKey = 'totalSeries' | 'northSeries' | 'southSeries';
+type SlideKey = 'total' | 'north' | 'south' | 'floater';
+type SeriesKey = 'totalSeries' | 'northSeries' | 'southSeries' | 'floaterSeries';
 
 interface SliderOption {
   key: SlideKey;
@@ -198,6 +200,7 @@ const ShiftGanttChart: React.FC = () => {
         label: `${interval.startTime} – ${interval.endTime}`,
         requirement: interval.northRequired ?? 0,
         coverage: (interval.northOperational ?? 0) + (interval.floaterAllocatedNorth ?? 0),
+        breakCount: breakMap.get(interval.startTime) ?? 0,
         difference: ((interval.northOperational ?? 0) + (interval.floaterAllocatedNorth ?? 0)) - (interval.northRequired ?? 0)
       }));
 
@@ -208,6 +211,7 @@ const ShiftGanttChart: React.FC = () => {
         label: `${interval.startTime} – ${interval.endTime}`,
         requirement: interval.southRequired ?? 0,
         coverage: (interval.southOperational ?? 0) + (interval.floaterAllocatedSouth ?? 0),
+        breakCount: breakMap.get(interval.startTime) ?? 0,
         difference: ((interval.southOperational ?? 0) + (interval.floaterAllocatedSouth ?? 0)) - (interval.southRequired ?? 0)
       }));
 
@@ -227,6 +231,25 @@ const ShiftGanttChart: React.FC = () => {
       const breakHours = (operationalTimeline[dayType] ?? [])
         .reduce((sum, interval) => sum + (interval.breakCount ?? 0) * hoursFactor, 0);
 
+      const floaterSeries: ZoneTimelinePoint[] = intervals.map((interval, index) => {
+        const floaterCoverage = Math.max(
+          0,
+          (interval.floaterOperational ?? 0) -
+            (interval.floaterAllocatedNorth ?? 0) -
+            (interval.floaterAllocatedSouth ?? 0)
+        );
+        return {
+          key: `${dayType}-floater-${interval.startTime}-${index}`,
+          startTime: interval.startTime,
+          endTime: interval.endTime,
+          label: `${interval.startTime} – ${interval.endTime}`,
+          requirement: interval.floaterRequired ?? 0,
+          coverage: floaterCoverage,
+          breakCount: breakMap.get(interval.startTime) ?? 0,
+          difference: floaterCoverage - (interval.floaterRequired ?? 0)
+        };
+      });
+
       return {
         dayType,
         rows,
@@ -234,6 +257,7 @@ const ShiftGanttChart: React.FC = () => {
         totalSeries,
         northSeries,
         southSeries,
+        floaterSeries,
         summary: {
           deficitHours,
           surplusHours,
@@ -255,8 +279,9 @@ const ShiftGanttChart: React.FC = () => {
 
   const sliderOptions: SliderOption[] = [
     { key: 'total', label: 'Total coverage', seriesKey: 'totalSeries', showBreaks: true },
-    { key: 'north', label: 'North coverage', seriesKey: 'northSeries', showBreaks: false },
-    { key: 'south', label: 'South coverage', seriesKey: 'southSeries', showBreaks: false }
+    { key: 'north', label: 'North coverage', seriesKey: 'northSeries', showBreaks: true },
+    { key: 'south', label: 'South coverage', seriesKey: 'southSeries', showBreaks: true },
+    { key: 'floater', label: 'Floater coverage', seriesKey: 'floaterSeries', showBreaks: true }
   ];
 
   const sharedContentProps: Omit<ShiftGanttChartContentProps, 'chartHeight'> = {
@@ -500,18 +525,26 @@ const TimelineSeriesChart: React.FC<TimelineSeriesChartProps> = ({
   positiveDifferenceColor,
   negativeDifferenceColor,
   chartHeight
-}) => (
-  <Box sx={{ flex: '1 1 100%', minWidth: '100%' }}>
-    <Typography variant="subtitle2" sx={{ mb: 1 }}>
-      {title}
-    </Typography>
-    <Stack
-      direction="row"
-      spacing={2}
-      flexWrap="wrap"
-      alignItems="center"
-      sx={{ mb: 1 }}
-    >
+}) => {
+  const differenceValues = useMemo(
+    () => (showDifference ? data.map((point) => point.difference ?? 0) : []),
+    [data, showDifference]
+  );
+  const differenceDomain = useStableDifferenceDomain(differenceValues, 3);
+  const showDifferenceAxis = showDifference && differenceValues.length > 0;
+
+  return (
+    <Box sx={{ flex: '1 1 100%', minWidth: '100%' }}>
+      <Typography variant="subtitle2" sx={{ mb: 1 }}>
+        {title}
+      </Typography>
+      <Stack
+        direction="row"
+        spacing={2}
+        flexWrap="wrap"
+        alignItems="center"
+        sx={{ mb: 1 }}
+      >
       <LegendSwatch label="Requirement (City)" color={requirementColor} variant="line" />
       <LegendSwatch
         label="Coverage (MVT + floaters)"
@@ -529,8 +562,8 @@ const TimelineSeriesChart: React.FC<TimelineSeriesChartProps> = ({
       {showBreaks && (
       <LegendSwatch label="Breaks" color={breakColor ?? coverageColor} variant="dashed" />
       )}
-    </Stack>
-    <Box sx={{ height: chartHeight, borderRadius: 1, backgroundColor: 'background.default', border: '1px solid', borderColor: 'divider', p: 1 }}>
+      </Stack>
+      <Box sx={{ height: chartHeight, borderRadius: 1, backgroundColor: 'background.default', border: '1px solid', borderColor: 'divider', p: 1 }}>
       {data.length === 0 ? (
         <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <Typography variant="body2" color="text.secondary">
@@ -548,8 +581,26 @@ const TimelineSeriesChart: React.FC<TimelineSeriesChartProps> = ({
               interval={0}
               height={30}
             />
-            <YAxis allowDecimals={false} />
-            <ReferenceLine y={0} stroke={negativeDifferenceColor} strokeDasharray="3 3" />
+            <YAxis yAxisId="coverage" allowDecimals={false} />
+            {showDifferenceAxis && (
+              <YAxis
+                yAxisId="difference"
+                domain={differenceDomain}
+                allowDecimals={false}
+                orientation="right"
+                tickFormatter={(value) => (value > 0 ? `+${value}` : `${value}`)}
+                width={40}
+                stroke={negativeDifferenceColor}
+              />
+            )}
+            {showDifferenceAxis && (
+              <ReferenceLine
+                yAxisId="difference"
+                y={0}
+                stroke={negativeDifferenceColor}
+                strokeDasharray="3 3"
+              />
+            )}
             <RechartTooltip
               content={(props) => (
                 <FleetTooltip
@@ -561,7 +612,7 @@ const TimelineSeriesChart: React.FC<TimelineSeriesChartProps> = ({
               )}
             />
             {showDifference && (
-              <Bar dataKey="difference" barSize={16} radius={[4, 4, 0, 0]}>
+              <Bar dataKey="difference" barSize={16} radius={[4, 4, 0, 0]} yAxisId="difference">
                 {data.map(point => (
                   <Cell
                     key={`${title}-${point.key}-difference`}
@@ -575,6 +626,7 @@ const TimelineSeriesChart: React.FC<TimelineSeriesChartProps> = ({
               </Bar>
             )}
             <Line
+              yAxisId="coverage"
               type="monotone"
               dataKey="requirement"
               stroke={requirementColor}
@@ -583,6 +635,7 @@ const TimelineSeriesChart: React.FC<TimelineSeriesChartProps> = ({
               isAnimationActive={false}
             />
             <Line
+              yAxisId="coverage"
               type="monotone"
               dataKey="coverage"
               stroke={coverageColor}
@@ -592,6 +645,7 @@ const TimelineSeriesChart: React.FC<TimelineSeriesChartProps> = ({
             />
             {showBreaks && (
               <Line
+                yAxisId="coverage"
                 type="monotone"
                 dataKey="breakCount"
                 stroke={breakColor ?? coverageColor}
@@ -604,9 +658,10 @@ const TimelineSeriesChart: React.FC<TimelineSeriesChartProps> = ({
           </ComposedChart>
         </ResponsiveContainer>
       )}
+      </Box>
     </Box>
-  </Box>
-);
+  );
+};
 
 interface LegendSwatchProps {
   label: string;

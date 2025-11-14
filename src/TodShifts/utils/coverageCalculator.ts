@@ -5,7 +5,7 @@ import {
   ShiftCoverageInterval,
   TodShiftColorScale
 } from '../types/shift.types';
-import { DAY_TYPES } from './timeUtils';
+import { DAY_TYPES, parseTimeToMinutes } from './timeUtils';
 
 interface CoverageInput {
   cityTimeline: Record<DayType, CityRequirementInterval[]>;
@@ -15,6 +15,11 @@ interface CoverageInput {
 export interface CoverageComputationResult {
   timeline: Record<DayType, ShiftCoverageInterval[]>;
   colorScale: TodShiftColorScale;
+}
+
+export interface ExcessVehicleHourStats {
+  totalHours: number;
+  byDayType: Record<DayType, number>;
 }
 
 function createEmptyCoverage(): Record<DayType, ShiftCoverageInterval[]> {
@@ -71,18 +76,22 @@ export function computeCoverageTimeline({
 
       const northDeficit = Math.max(0, requirements.northRequired - operations.northOperational);
       const southDeficit = Math.max(0, requirements.southRequired - operations.southOperational);
+      const floaterRequirement = Math.max(0, requirements.floaterRequired ?? 0);
+      const floaterCapacity = Math.max(0, operations.floaterOperational ?? 0);
 
-      const floaterAllocatedToNorth = Math.min(northDeficit, operations.floaterOperational);
-      const floaterRemaining = operations.floaterOperational - floaterAllocatedToNorth;
-      const floaterAllocatedToSouth = Math.min(southDeficit, Math.max(0, floaterRemaining));
+      let floaterPool = floaterCapacity;
+
+      const floaterAllocatedToNorth = Math.min(northDeficit, floaterPool);
+      floaterPool -= floaterAllocatedToNorth;
+
+      const floaterAllocatedToSouth = Math.min(southDeficit, floaterPool);
+      floaterPool -= floaterAllocatedToSouth;
 
       const northExcess = operations.northOperational + floaterAllocatedToNorth - requirements.northRequired;
       const southExcess = operations.southOperational + floaterAllocatedToSouth - requirements.southRequired;
-      const floaterUnallocated = Math.max(
-        0,
-        operations.floaterOperational - floaterAllocatedToNorth - floaterAllocatedToSouth
-      );
-      const floaterExcess = floaterUnallocated - (requirements.floaterRequired ?? 0);
+
+      const floaterCoverage = Math.max(0, floaterPool);
+      const floaterExcess = floaterCoverage - floaterRequirement;
       const totalExcess = northExcess + southExcess + floaterExcess;
 
       minTotalExcess = Math.min(minTotalExcess, totalExcess, northExcess, southExcess, floaterExcess);
@@ -124,4 +133,45 @@ export function computeCoverageTimeline({
     timeline: coverageTimeline,
     colorScale
   };
+}
+
+export function computeExcessVehicleHours(
+  timeline: Record<DayType, ShiftCoverageInterval[]>
+): ExcessVehicleHourStats {
+  const stats: ExcessVehicleHourStats = {
+    totalHours: 0,
+    byDayType: DAY_TYPES.reduce((acc, dayType) => {
+      acc[dayType] = 0;
+      return acc;
+    }, {} as Record<DayType, number>)
+  };
+
+  DAY_TYPES.forEach((dayType) => {
+    const intervals = timeline[dayType] ?? [];
+    const dayTotal = intervals.reduce((sum, interval) => {
+      if (interval.totalExcess <= 0) {
+        return sum;
+      }
+
+      const minutes = getIntervalDurationMinutes(interval);
+      return sum + (interval.totalExcess * minutes) / 60;
+    }, 0);
+
+    stats.byDayType[dayType] = Number(dayTotal.toFixed(2));
+    stats.totalHours += dayTotal;
+  });
+
+  stats.totalHours = Number(stats.totalHours.toFixed(2));
+  return stats;
+}
+
+function getIntervalDurationMinutes(interval: ShiftCoverageInterval): number {
+  const startMinutes = parseTimeToMinutes(interval.startTime);
+  let endMinutes = parseTimeToMinutes(interval.endTime);
+
+  if (endMinutes <= startMinutes) {
+    endMinutes += 24 * 60;
+  }
+
+  return Math.max(0, endMinutes - startMinutes);
 }

@@ -41,6 +41,9 @@ interface CandidateSummary {
 const EXISTING_SHIFT_COST = 1;
 const NEW_SHIFT_COST = 5;
 const OVERTIME_COST_PER_INTERVAL = 0.1;
+const PREFERRED_DURATION_MINUTES = 7 * 60;
+const PREFERRED_DURATION_WINDOW = 120;
+const MAX_DURATION_BONUS = 1;
 
 export function runShiftSolver(input: ShiftSolverInput): ShiftSolverResult {
   const demands = buildIntervalDemands(input.coverageTimeline);
@@ -78,7 +81,8 @@ function buildIntervalDemands(intervals: ShiftCoverageInterval[]): IntervalDeman
   return intervals.flatMap((interval) => {
     const deficits: Array<[ShiftZone, number]> = [
       ['North', Math.max(0, interval.northRequired - interval.northOperational)],
-      ['South', Math.max(0, interval.southRequired - interval.southOperational)]
+      ['South', Math.max(0, interval.southRequired - interval.southOperational)],
+      ['Floater', Math.max(0, (interval.floaterRequired ?? 0) - (interval.floaterOperational ?? 0))]
     ];
 
     return deficits
@@ -120,7 +124,9 @@ function summarizeCandidates(
 
     const overtimeIntervals = Math.max(0, window.durationMinutes - 8 * 60) / INTERVAL_MINUTES;
     const baseCost = shift.existing ? EXISTING_SHIFT_COST : NEW_SHIFT_COST;
-    const cost = baseCost + overtimeIntervals * OVERTIME_COST_PER_INTERVAL;
+    const durationBonus = computePreferredDurationBonus(window.durationMinutes);
+    const costBeforeFloor = baseCost + overtimeIntervals * OVERTIME_COST_PER_INTERVAL - durationBonus;
+    const cost = Math.max(0.1, costBeforeFloor);
 
     summaries.set(shift.solverId, {
       shift,
@@ -253,4 +259,13 @@ function extractRuleHours(rules: UnionRule[], field: 'minValue' | 'maxValue'): n
   }
 
   return candidate.unit === 'minutes' ? value / 60 : value;
+}
+
+function computePreferredDurationBonus(durationMinutes: number): number {
+  const distance = Math.abs(durationMinutes - PREFERRED_DURATION_MINUTES);
+  if (distance >= PREFERRED_DURATION_WINDOW) {
+    return 0;
+  }
+  // Apply a linear falloff so 7h shifts get the full bonus and fade outside the window.
+  return MAX_DURATION_BONUS * (1 - distance / PREFERRED_DURATION_WINDOW);
 }

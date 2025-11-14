@@ -19,12 +19,12 @@ import {
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState, AppDispatch } from '../store/store';
 import MasterScheduleImport from './MasterScheduleImport';
-import ManualShiftCreator from './ManualShiftCreator';
 import ShiftGanttChart from './ShiftGanttChart';
 import ShiftSummaryTable from './ShiftSummaryTable';
 import ShiftExport from './ShiftExport';
 import ShiftOptimizationView from './ShiftOptimizationView';
 import OptimizeShiftsPanel from './OptimizeShiftsPanel';
+import ManualShiftAdjustmentsPage from './ManualShiftAdjustmentsPage';
 import UnionRulesConfiguration from './UnionRulesConfiguration';
 import CloseIcon from '@mui/icons-material/Close';
 import { loadUnionRules, fetchLatestTodShiftRun, optimizeShifts } from './store/shiftManagementSlice';
@@ -90,7 +90,7 @@ const ShiftManagementPage: React.FC = () => {
   const optimizationError = error.optimization;
   const optimizationDisabledReason = canOptimize
     ? undefined
-    : 'Import the master schedule before optimizing shifts.';
+    : 'Import the master schedule before building shifts.';
 
   const handleOptimizeShifts = () => {
     dispatch(optimizeShifts());
@@ -156,9 +156,9 @@ const ShiftManagementPage: React.FC = () => {
         </Grid>
       </Paper>
       {/* Error Alert */}
-      {(error.shifts || error.imports || error.unionRules || error.persistence) && (
+      {(error.shifts || error.imports || error.unionRules || error.persistence || error.optimization || error.trimming) && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => {}}>
-          {error.shifts || error.imports || error.unionRules || error.persistence}
+          {error.shifts || error.imports || error.unionRules || error.persistence || error.optimization || error.trimming}
         </Alert>
       )}
       {/* Main Content Area */}
@@ -168,6 +168,7 @@ const ShiftManagementPage: React.FC = () => {
           <Tab label="Configure Shifts" />
           <Tab label="Schedule View" />
           <Tab label="Shift Optimization" />
+          <Tab label="Manual Adjustments" />
           <Tab label="Summary & Export" />
         </Tabs>
 
@@ -210,15 +211,7 @@ const ShiftManagementPage: React.FC = () => {
               </Grid>
               <Grid
                 size={{
-                  xs: 12,
-                  md: 8
-                }}>
-                <ManualShiftCreator onShiftCreated={() => showSuccessNotification('Shift created successfully')} />
-              </Grid>
-              <Grid
-                size={{
-                  xs: 12,
-                  md: 4
+                  xs: 12
                 }}>
                 <OptimizeShiftsPanel
                   canOptimize={canOptimize}
@@ -247,6 +240,10 @@ const ShiftManagementPage: React.FC = () => {
           )}
 
           {activeTab === 4 && (
+            <ManualShiftAdjustmentsPage />
+          )}
+
+          {activeTab === 5 && (
             <Grid container spacing={3}>
               <Grid size={12}>
                 <ShiftSummaryTable />
