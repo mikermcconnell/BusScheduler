@@ -5,6 +5,12 @@
 
 import React from 'react';
 
+const SECURITY_API_BASE =
+  (process.env.REACT_APP_SECURITY_API_BASE_URL || '').replace(/\/$/, '');
+const DEFAULT_REMOTE_ENDPOINT = SECURITY_API_BASE
+  ? `${SECURITY_API_BASE}/audit`
+  : '/api/audit';
+
 export enum AuditEventType {
   // Authentication events
   LOGIN = 'AUTH_LOGIN',
@@ -90,7 +96,7 @@ class AuditLogger {
   constructor(options: AuditLogOptions = {}) {
     this.options = {
       maxLocalLogs: 1000,
-      remoteEndpoint: '/api/audit',
+      remoteEndpoint: DEFAULT_REMOTE_ENDPOINT,
       batchSize: 50,
       flushInterval: 30000, // 30 seconds
       enableConsoleLog: true,
