@@ -1,0 +1,392 @@
+
+> scheduler2@0.1.0 start
+> cross-env PORT=3050 HOST=0.0.0.0 NODE_NO_WARNINGS=1 react-scripts start
+
+Attempting to bind to HOST environment variable: 0.0.0.0
+If this was unintentional, check that you haven't mistakenly set it in your shell.
+Learn more here: https://cra.link/advanced-config
+
+Starting the development server...
+
+Compiled successfully!
+
+You can now view scheduler2 in the browser.
+
+  Local:            http://localhost:3050
+  On Your Network:  http://192.168.40.181:3050
+
+Note that the development build is not optimized.
+To create a production build, use npm run build.
+
+webpack compiled successfully
+No issues found.
+Compiling...
+Compiled successfully!
+webpack compiled successfully
+ERROR in src/TodShifts/ShiftOptimizationView.tsx:323:73
+TS2345: Argument of type 'string' is not assignable to parameter of type '(previous: string[]) => string[]'.
+  Type 'string' is not assignable to type '(previous: string[]) => string[]'.
+    321 |           insights={insightsByDay[dayType]}
+    322 |           appliedIds={appliedRecommendationIds[dayType]}
+  > 323 |           onUpdateAppliedIds={(updater) => setAppliedIdsForDay(dayType, updater)}
+        |                                                                         ^^^^^^^
+    324 |         />
+    325 |       ))}
+    326 |     </Stack>
+
+Compiling...
+Compiled successfully!
+webpack compiled successfully
+No issues found.
+Compiling...
+Compiled successfully!
+webpack compiled successfully
+No issues found.
+Compiling...
+Compiled successfully!
+webpack compiled successfully
+No issues found.
+Compiling...
+Compiled successfully!
+webpack compiled successfully
+No issues found.
+Compiling...
+Compiled successfully!
+webpack compiled successfully
+No issues found.
+Compiling...
+Compiled successfully!
+webpack compiled successfully
+ERROR in src/TodShifts/utils/shiftNormalization.ts:52:44
+TS2503: Cannot find namespace 'dayjs'.
+    50 | }
+    51 |
+  > 52 | export function snapDayjsToInterval(value: dayjs.Dayjs, mode: SnapMode): string {
+       |                                            ^^^^^
+    53 |   const minutes = value.hour() * 60 + value.minute();
+    54 |   const snapped = snapMinutes(minutes, mode);
+    55 |   return minutesToTimeString(snapped % MINUTES_PER_DAY);
+
+Compiling...
+Compiled successfully!
+webpack compiled successfully
+No issues found.
+Compiling...
+Compiled successfully!
+webpack compiled successfully
+ERROR in src/TodShifts/ManualShiftCreator.tsx:253:67
+TS2345: Argument of type '"breakStart"' is not assignable to parameter of type '"startTime" | "endTime"'.
+    251 |               label="Break Start"
+    252 |               value={shift.breakStart ? dayjs(`2024-01-01 ${shift.breakStart}`) : null}
+  > 253 |               onChange={(value: Dayjs | null) => handleTimeChange('breakStart', value)}
+        |                                                                   ^^^^^^^^^^^^
+    254 |               slotProps={{ textField: { fullWidth: true } }}
+    255 |             />
+    256 |           </Grid>
+
+ERROR in src/TodShifts/ManualShiftCreator.tsx:266:67
+TS2345: Argument of type '"breakEnd"' is not assignable to parameter of type '"startTime" | "endTime"'.
+    264 |               label="Break End"
+    265 |               value={shift.breakEnd ? dayjs(`2024-01-01 ${shift.breakEnd}`) : null}
+  > 266 |               onChange={(value: Dayjs | null) => handleTimeChange('breakEnd', value)}
+        |                                                                   ^^^^^^^^^^
+    267 |               slotProps={{ textField: { fullWidth: true } }}
+    268 |             />
+    269 |           </Grid>
+
+ERROR in src/TodShifts/ManualShiftCreator.tsx:304:71
+TS2345: Argument of type '"mealBreakStart"' is not assignable to parameter of type '"startTime" | "endTime"'.
+    302 |                   label="Meal Break Start"
+    303 |                   value={shift.mealBreakStart ? dayjs(`2024-01-01 ${shift.mealBreakStart}`) : null}
+  > 304 |                   onChange={(value: Dayjs | null) => handleTimeChange('mealBreakStart', value)}
+        |                                                                       ^^^^^^^^^^^^^^^^
+    305 |                   slotProps={{ textField: { fullWidth: true } }}
+    306 |                 />
+    307 |               </Grid>
+
+ERROR in src/TodShifts/ManualShiftCreator.tsx:317:71
+TS2345: Argument of type '"mealBreakEnd"' is not assignable to parameter of type '"startTime" | "endTime"'.
+    315 |                   label="Meal Break End"
+    316 |                   value={shift.mealBreakEnd ? dayjs(`2024-01-01 ${shift.mealBreakEnd}`) : null}
+  > 317 |                   onChange={(value: Dayjs | null) => handleTimeChange('mealBreakEnd', value)}
+        |                                                                       ^^^^^^^^^^^^^^
+    318 |                   slotProps={{ textField: { fullWidth: true } }}
+    319 |                 />
+    320 |               </Grid>
+
+Compiling...
+Compiled successfully!
+webpack compiled successfully
+Files successfully emitted, waiting for typecheck results...
+Issues checking in progress...
+ERROR in src/TodShifts/ManualShiftCreator.tsx:253:67
+TS2345: Argument of type '"breakStart"' is not assignable to parameter of type '"startTime" | "endTime"'.
+    251 |               label="Break Start"
+    252 |               value={shift.breakStart ? dayjs(`2024-01-01 ${shift.breakStart}`) : null}
+  > 253 |               onChange={(value: Dayjs | null) => handleTimeChange('breakStart', value)}
+        |                                                                   ^^^^^^^^^^^^
+    254 |               slotProps={{ textField: { fullWidth: true } }}
+    255 |             />
+    256 |           </Grid>
+
+ERROR in src/TodShifts/ManualShiftCreator.tsx:266:67
+TS2345: Argument of type '"breakEnd"' is not assignable to parameter of type '"startTime" | "endTime"'.
+    264 |               label="Break End"
+    265 |               value={shift.breakEnd ? dayjs(`2024-01-01 ${shift.breakEnd}`) : null}
+  > 266 |               onChange={(value: Dayjs | null) => handleTimeChange('breakEnd', value)}
+        |                                                                   ^^^^^^^^^^
+    267 |               slotProps={{ textField: { fullWidth: true } }}
+    268 |             />
+    269 |           </Grid>
+
+ERROR in src/TodShifts/ManualShiftCreator.tsx:304:71
+TS2345: Argument of type '"mealBreakStart"' is not assignable to parameter of type '"startTime" | "endTime"'.
+    302 |                   label="Meal Break Start"
+    303 |                   value={shift.mealBreakStart ? dayjs(`2024-01-01 ${shift.mealBreakStart}`) : null}
+  > 304 |                   onChange={(value: Dayjs | null) => handleTimeChange('mealBreakStart', value)}
+        |                                                                       ^^^^^^^^^^^^^^^^
+    305 |                   slotProps={{ textField: { fullWidth: true } }}
+    306 |                 />
+    307 |               </Grid>
+
+ERROR in src/TodShifts/ManualShiftCreator.tsx:317:71
+TS2345: Argument of type '"mealBreakEnd"' is not assignable to parameter of type '"startTime" | "endTime"'.
+    315 |                   label="Meal Break End"
+    316 |                   value={shift.mealBreakEnd ? dayjs(`2024-01-01 ${shift.mealBreakEnd}`) : null}
+  > 317 |                   onChange={(value: Dayjs | null) => handleTimeChange('mealBreakEnd', value)}
+        |                                                                       ^^^^^^^^^^^^^^
+    318 |                   slotProps={{ textField: { fullWidth: true } }}
+    319 |                 />
+    320 |               </Grid>
+
+Compiling...
+Compiled successfully!
+webpack compiled successfully
+Files successfully emitted, waiting for typecheck results...
+Issues checking in progress...
+ERROR in src/TodShifts/ManualShiftCreator.tsx:253:67
+TS2345: Argument of type '"breakStart"' is not assignable to parameter of type '"startTime" | "endTime"'.
+    251 |               label="Break Start"
+    252 |               value={shift.breakStart ? dayjs(`2024-01-01 ${shift.breakStart}`) : null}
+  > 253 |               onChange={(value: Dayjs | null) => handleTimeChange('breakStart', value)}
+        |                                                                   ^^^^^^^^^^^^
+    254 |               slotProps={{ textField: { fullWidth: true } }}
+    255 |             />
+    256 |           </Grid>
+
+ERROR in src/TodShifts/ManualShiftCreator.tsx:266:67
+TS2345: Argument of type '"breakEnd"' is not assignable to parameter of type '"startTime" | "endTime"'.
+    264 |               label="Break End"
+    265 |               value={shift.breakEnd ? dayjs(`2024-01-01 ${shift.breakEnd}`) : null}
+  > 266 |               onChange={(value: Dayjs | null) => handleTimeChange('breakEnd', value)}
+        |                                                                   ^^^^^^^^^^
+    267 |               slotProps={{ textField: { fullWidth: true } }}
+    268 |             />
+    269 |           </Grid>
+
+ERROR in src/TodShifts/ManualShiftCreator.tsx:304:71
+TS2345: Argument of type '"mealBreakStart"' is not assignable to parameter of type '"startTime" | "endTime"'.
+    302 |                   label="Meal Break Start"
+    303 |                   value={shift.mealBreakStart ? dayjs(`2024-01-01 ${shift.mealBreakStart}`) : null}
+  > 304 |                   onChange={(value: Dayjs | null) => handleTimeChange('mealBreakStart', value)}
+        |                                                                       ^^^^^^^^^^^^^^^^
+    305 |                   slotProps={{ textField: { fullWidth: true } }}
+    306 |                 />
+    307 |               </Grid>
+
+ERROR in src/TodShifts/ManualShiftCreator.tsx:317:71
+TS2345: Argument of type '"mealBreakEnd"' is not assignable to parameter of type '"startTime" | "endTime"'.
+    315 |                   label="Meal Break End"
+    316 |                   value={shift.mealBreakEnd ? dayjs(`2024-01-01 ${shift.mealBreakEnd}`) : null}
+  > 317 |                   onChange={(value: Dayjs | null) => handleTimeChange('mealBreakEnd', value)}
+        |                                                                       ^^^^^^^^^^^^^^
+    318 |                   slotProps={{ textField: { fullWidth: true } }}
+    319 |                 />
+    320 |               </Grid>
+
+Compiling...
+Compiled successfully!
+webpack compiled successfully
+ERROR in src/TodShifts/ManualShiftCreator.tsx:253:67
+TS2345: Argument of type '"breakStart"' is not assignable to parameter of type '"startTime" | "endTime"'.
+    251 |               label="Break Start"
+    252 |               value={shift.breakStart ? dayjs(`2024-01-01 ${shift.breakStart}`) : null}
+  > 253 |               onChange={(value: Dayjs | null) => handleTimeChange('breakStart', value)}
+        |                                                                   ^^^^^^^^^^^^
+    254 |               slotProps={{ textField: { fullWidth: true } }}
+    255 |             />
+    256 |           </Grid>
+
+ERROR in src/TodShifts/ManualShiftCreator.tsx:266:67
+TS2345: Argument of type '"breakEnd"' is not assignable to parameter of type '"startTime" | "endTime"'.
+    264 |               label="Break End"
+    265 |               value={shift.breakEnd ? dayjs(`2024-01-01 ${shift.breakEnd}`) : null}
+  > 266 |               onChange={(value: Dayjs | null) => handleTimeChange('breakEnd', value)}
+        |                                                                   ^^^^^^^^^^
+    267 |               slotProps={{ textField: { fullWidth: true } }}
+    268 |             />
+    269 |           </Grid>
+
+ERROR in src/TodShifts/ManualShiftCreator.tsx:304:71
+TS2345: Argument of type '"mealBreakStart"' is not assignable to parameter of type '"startTime" | "endTime"'.
+    302 |                   label="Meal Break Start"
+    303 |                   value={shift.mealBreakStart ? dayjs(`2024-01-01 ${shift.mealBreakStart}`) : null}
+  > 304 |                   onChange={(value: Dayjs | null) => handleTimeChange('mealBreakStart', value)}
+        |                                                                       ^^^^^^^^^^^^^^^^
+    305 |                   slotProps={{ textField: { fullWidth: true } }}
+    306 |                 />
+    307 |               </Grid>
+
+ERROR in src/TodShifts/ManualShiftCreator.tsx:317:71
+TS2345: Argument of type '"mealBreakEnd"' is not assignable to parameter of type '"startTime" | "endTime"'.
+    315 |                   label="Meal Break End"
+    316 |                   value={shift.mealBreakEnd ? dayjs(`2024-01-01 ${shift.mealBreakEnd}`) : null}
+  > 317 |                   onChange={(value: Dayjs | null) => handleTimeChange('mealBreakEnd', value)}
+        |                                                                       ^^^^^^^^^^^^^^
+    318 |                   slotProps={{ textField: { fullWidth: true } }}
+    319 |                 />
+    320 |               </Grid>
+
+Compiling...
+Compiled successfully!
+webpack compiled successfully
+ERROR in src/TodShifts/ManualShiftCreator.tsx:253:67
+TS2345: Argument of type '"breakStart"' is not assignable to parameter of type '"startTime" | "endTime"'.
+    251 |               label="Break Start"
+    252 |               value={shift.breakStart ? dayjs(`2024-01-01 ${shift.breakStart}`) : null}
+  > 253 |               onChange={(value: Dayjs | null) => handleTimeChange('breakStart', value)}
+        |                                                                   ^^^^^^^^^^^^
+    254 |               slotProps={{ textField: { fullWidth: true } }}
+    255 |             />
+    256 |           </Grid>
+
+ERROR in src/TodShifts/ManualShiftCreator.tsx:266:67
+TS2345: Argument of type '"breakEnd"' is not assignable to parameter of type '"startTime" | "endTime"'.
+    264 |               label="Break End"
+    265 |               value={shift.breakEnd ? dayjs(`2024-01-01 ${shift.breakEnd}`) : null}
+  > 266 |               onChange={(value: Dayjs | null) => handleTimeChange('breakEnd', value)}
+        |                                                                   ^^^^^^^^^^
+    267 |               slotProps={{ textField: { fullWidth: true } }}
+    268 |             />
+    269 |           </Grid>
+
+ERROR in src/TodShifts/ManualShiftCreator.tsx:304:71
+TS2345: Argument of type '"mealBreakStart"' is not assignable to parameter of type '"startTime" | "endTime"'.
+    302 |                   label="Meal Break Start"
+    303 |                   value={shift.mealBreakStart ? dayjs(`2024-01-01 ${shift.mealBreakStart}`) : null}
+  > 304 |                   onChange={(value: Dayjs | null) => handleTimeChange('mealBreakStart', value)}
+        |                                                                       ^^^^^^^^^^^^^^^^
+    305 |                   slotProps={{ textField: { fullWidth: true } }}
+    306 |                 />
+    307 |               </Grid>
+
+ERROR in src/TodShifts/ManualShiftCreator.tsx:317:71
+TS2345: Argument of type '"mealBreakEnd"' is not assignable to parameter of type '"startTime" | "endTime"'.
+    315 |                   label="Meal Break End"
+    316 |                   value={shift.mealBreakEnd ? dayjs(`2024-01-01 ${shift.mealBreakEnd}`) : null}
+  > 317 |                   onChange={(value: Dayjs | null) => handleTimeChange('mealBreakEnd', value)}
+        |                                                                       ^^^^^^^^^^^^^^
+    318 |                   slotProps={{ textField: { fullWidth: true } }}
+    319 |                 />
+    320 |               </Grid>
+
+Compiling...
+Compiled successfully!
+webpack compiled successfully
+ERROR in src/TodShifts/ManualShiftCreator.tsx:253:67
+TS2345: Argument of type '"breakStart"' is not assignable to parameter of type '"startTime" | "endTime"'.
+    251 |               label="Break Start"
+    252 |               value={shift.breakStart ? dayjs(`2024-01-01 ${shift.breakStart}`) : null}
+  > 253 |               onChange={(value: Dayjs | null) => handleTimeChange('breakStart', value)}
+        |                                                                   ^^^^^^^^^^^^
+    254 |               slotProps={{ textField: { fullWidth: true } }}
+    255 |             />
+    256 |           </Grid>
+
+ERROR in src/TodShifts/ManualShiftCreator.tsx:266:67
+TS2345: Argument of type '"breakEnd"' is not assignable to parameter of type '"startTime" | "endTime"'.
+    264 |               label="Break End"
+    265 |               value={shift.breakEnd ? dayjs(`2024-01-01 ${shift.breakEnd}`) : null}
+  > 266 |               onChange={(value: Dayjs | null) => handleTimeChange('breakEnd', value)}
+        |                                                                   ^^^^^^^^^^
+    267 |               slotProps={{ textField: { fullWidth: true } }}
+    268 |             />
+    269 |           </Grid>
+
+ERROR in src/TodShifts/ManualShiftCreator.tsx:304:71
+TS2345: Argument of type '"mealBreakStart"' is not assignable to parameter of type '"startTime" | "endTime"'.
+    302 |                   label="Meal Break Start"
+    303 |                   value={shift.mealBreakStart ? dayjs(`2024-01-01 ${shift.mealBreakStart}`) : null}
+  > 304 |                   onChange={(value: Dayjs | null) => handleTimeChange('mealBreakStart', value)}
+        |                                                                       ^^^^^^^^^^^^^^^^
+    305 |                   slotProps={{ textField: { fullWidth: true } }}
+    306 |                 />
+    307 |               </Grid>
+
+ERROR in src/TodShifts/ManualShiftCreator.tsx:317:71
+TS2345: Argument of type '"mealBreakEnd"' is not assignable to parameter of type '"startTime" | "endTime"'.
+    315 |                   label="Meal Break End"
+    316 |                   value={shift.mealBreakEnd ? dayjs(`2024-01-01 ${shift.mealBreakEnd}`) : null}
+  > 317 |                   onChange={(value: Dayjs | null) => handleTimeChange('mealBreakEnd', value)}
+        |                                                                       ^^^^^^^^^^^^^^
+    318 |                   slotProps={{ textField: { fullWidth: true } }}
+    319 |                 />
+    320 |               </Grid>
+
+Compiling...
+Compiled successfully!
+webpack compiled successfully
+Files successfully emitted, waiting for typecheck results...
+Issues checking in progress...
+ERROR in src/TodShifts/ManualShiftCreator.tsx:253:67
+TS2345: Argument of type '"breakStart"' is not assignable to parameter of type '"startTime" | "endTime"'.
+    251 |               label="Break Start"
+    252 |               value={shift.breakStart ? dayjs(`2024-01-01 ${shift.breakStart}`) : null}
+  > 253 |               onChange={(value: Dayjs | null) => handleTimeChange('breakStart', value)}
+        |                                                                   ^^^^^^^^^^^^
+    254 |               slotProps={{ textField: { fullWidth: true } }}
+    255 |             />
+    256 |           </Grid>
+
+ERROR in src/TodShifts/ManualShiftCreator.tsx:266:67
+TS2345: Argument of type '"breakEnd"' is not assignable to parameter of type '"startTime" | "endTime"'.
+    264 |               label="Break End"
+    265 |               value={shift.breakEnd ? dayjs(`2024-01-01 ${shift.breakEnd}`) : null}
+  > 266 |               onChange={(value: Dayjs | null) => handleTimeChange('breakEnd', value)}
+        |                                                                   ^^^^^^^^^^
+    267 |               slotProps={{ textField: { fullWidth: true } }}
+    268 |             />
+    269 |           </Grid>
+
+ERROR in src/TodShifts/ManualShiftCreator.tsx:304:71
+TS2345: Argument of type '"mealBreakStart"' is not assignable to parameter of type '"startTime" | "endTime"'.
+    302 |                   label="Meal Break Start"
+    303 |                   value={shift.mealBreakStart ? dayjs(`2024-01-01 ${shift.mealBreakStart}`) : null}
+  > 304 |                   onChange={(value: Dayjs | null) => handleTimeChange('mealBreakStart', value)}
+        |                                                                       ^^^^^^^^^^^^^^^^
+    305 |                   slotProps={{ textField: { fullWidth: true } }}
+    306 |                 />
+    307 |               </Grid>
+
+ERROR in src/TodShifts/ManualShiftCreator.tsx:317:71
+TS2345: Argument of type '"mealBreakEnd"' is not assignable to parameter of type '"startTime" | "endTime"'.
+    315 |                   label="Meal Break End"
+    316 |                   value={shift.mealBreakEnd ? dayjs(`2024-01-01 ${shift.mealBreakEnd}`) : null}
+  > 317 |                   onChange={(value: Dayjs | null) => handleTimeChange('mealBreakEnd', value)}
+        |                                                                       ^^^^^^^^^^^^^^
+    318 |                   slotProps={{ textField: { fullWidth: true } }}
+    319 |                 />
+    320 |               </Grid>
+
+Compiling...
+Compiled successfully!
+webpack compiled successfully
+No issues found.
+Compiling...
+Compiled successfully!
+webpack compiled successfully
+No issues found.
+Compiling...
+Compiled successfully!
+webpack compiled successfully
+No issues found.

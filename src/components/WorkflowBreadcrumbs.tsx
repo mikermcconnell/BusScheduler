@@ -506,7 +506,7 @@ const WorkflowBreadcrumbs: React.FC<WorkflowBreadcrumbsProps> = ({
     const pathMappings: { [key: string]: { label: string; icon?: React.ReactNode } } = {
       'upload': { label: 'Load Data', icon: <UploadIcon /> },
       'new-schedule': { label: 'New Schedule', icon: <UploadIcon /> },
-      'edit-schedule': { label: 'Edit Existing Schedule', icon: <EditIcon /> },
+      'edit-schedule': { label: 'Fixed Transit', icon: <EditIcon /> },
       'timepoints': { label: 'Optimize Timing', icon: <TimelineIcon /> },
       'block-configuration': { label: 'Plan Blocks', icon: <ConfigIcon /> },
       'block-summary-schedule': { label: 'Build Schedule', icon: <SummaryIcon /> },

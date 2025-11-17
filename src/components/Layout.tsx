@@ -25,6 +25,7 @@ import AppHeader from './AppHeader';
 import useKeyboardShortcuts from '../hooks/useKeyboardShortcuts';
 import { draftService } from '../services/draftService';
 import { useAuth } from '../contexts/AuthContext';
+import { useFeatureFlags } from '../contexts/FeatureFlagContext';
 
 // Pages
 import Dashboard from '../pages/Dashboard';
@@ -53,6 +54,13 @@ const Layout: React.FC = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const { user, loading: authLoading, signOut: signOutUser } = useAuth();
+  const {
+    isNewScheduleEnabled,
+    isEditScheduleEnabled,
+    isBrowseSchedulesEnabled,
+    isManageRoutesEnabled,
+    isBlockConfigurationEnabled
+  } = useFeatureFlags();
   
   // Initialize sidebar state with persistence and auto-open behavior
   const [sidebarOpen, setSidebarOpen] = useState(() => {
@@ -137,12 +145,11 @@ const Layout: React.FC = () => {
     '/block-summary-schedule',
     '/connection-optimization',
     '/visual-dashboard',
-    '/routes',
-    '/tod-shifts'
+    '/routes'
   ].some(path => location.pathname.startsWith(path));
 
   // Hide breadcrumbs on dashboard, draft library and simple pages
-  const shouldShowBreadcrumbs = location.pathname !== '/' && location.pathname !== '/settings' && location.pathname !== '/draft-library';
+  const shouldShowBreadcrumbs = location.pathname !== '/' && location.pathname !== '/settings' && location.pathname !== '/draft-library' && location.pathname !== '/tod-shifts';
 
   // Check if sidebar is actually collapsed from SidebarNavigation internal state
   const currentSidebarWidth = isMobile ? 0 : (sidebarCollapsed ? COLLAPSED_WIDTH : DRAWER_WIDTH);
@@ -222,17 +229,32 @@ const Layout: React.FC = () => {
           {/* Page Routes */}
           <Routes>
             <Route path="/" element={<Dashboard />} />
-            <Route path="/new-schedule" element={<NewSchedule />} />
-            <Route path="/edit-schedule" element={<EditSchedule />} />
+            <Route
+              path="/new-schedule"
+              element={isNewScheduleEnabled ? <NewSchedule /> : <Navigate to="/" replace />}
+            />
+            <Route
+              path="/edit-schedule"
+              element={isEditScheduleEnabled ? <EditSchedule /> : <Navigate to="/" replace />}
+            />
             <Route path="/upload" element={<Navigate to="/new-schedule" replace />} />
             <Route path="/generate-summary" element={<GenerateSummarySchedule />} />
             <Route path="/generate/edit/:scheduleId" element={<EditCSVSchedule />} />
             <Route path="/summary-schedule/:scheduleId" element={<SummarySchedule />} />
             <Route path="/timepoints" element={<TimePoints />} />
-            <Route path="/schedules" element={<ViewSchedules />} />
-            <Route path="/routes" element={<ManageRoutes />} />
+            <Route
+              path="/schedules"
+              element={isBrowseSchedulesEnabled ? <ViewSchedules /> : <Navigate to="/" replace />}
+            />
+            <Route
+              path="/routes"
+              element={isManageRoutesEnabled ? <ManageRoutes /> : <Navigate to="/" replace />}
+            />
             <Route path="/draft-library" element={<DraftLibrary />} />
-            <Route path="/block-configuration" element={<BlockConfiguration />} />
+            <Route
+              path="/block-configuration"
+              element={isBlockConfigurationEnabled ? <BlockConfiguration /> : <Navigate to="/" replace />}
+            />
             <Route path="/block-summary-schedule" element={<BlockSummarySchedule />} />
             <Route path="/connection-optimization" element={<ConnectionOptimization />} />
             <Route path="/visual-dashboard" element={<VisualDashboard />} />

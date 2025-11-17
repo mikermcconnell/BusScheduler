@@ -9,7 +9,10 @@ import {
   TodShiftRunPayload,
   DayType,
   ShiftCoverageInterval,
-  TodShiftColorScale
+  TodShiftColorScale,
+  UndoSnapshot,
+  TodShiftRunFiles,
+  TodShiftRunStatus
 } from '../types/shift.types';
 import { validateShiftAgainstRules } from '../utils/unionRulesValidator';
 import { todShiftRepository } from '../services/todShiftRepository';
@@ -24,10 +27,17 @@ import { buildOperationalTimelineFromShifts } from '../utils/autoShiftGenerator'
 
 interface ImportMetadata {
   runId: string | null;
+  draftName?: string;
+  persistedDraftName?: string;
+  status: TodShiftRunStatus;
   cityFileName?: string;
   contractorFileName?: string;
   importedAt?: string;
   lastExportedAt?: string;
+  lastSavedAt?: string;
+  lastAutosavedAt?: string;
+  sourceFiles: TodShiftRunFiles | null;
+  hasUserSave?: boolean;
 }
 
 interface ShiftManagementState {
@@ -39,6 +49,18 @@ interface ShiftManagementState {
   colorScale: TodShiftColorScale | null;
   activeScheduleType: DayType;
   importMetadata: ImportMetadata;
+  draftDirty: boolean;
+  autosave: {
+    enabled: boolean;
+    intervalMs: number;
+    inFlight: boolean;
+    lastAttempt?: string;
+  };
+  drafts: {
+    items: TodShiftRun[];
+    loading: boolean;
+    error: string | null;
+  };
   history: {
     undoStack: UndoSnapshot[];
   };
@@ -51,6 +73,7 @@ interface ShiftManagementState {
     unionRulesPersistence: boolean;
     optimization: boolean;
     trimming: boolean;
+    drafts: boolean;
   };
   error: {
     shifts: string | null;
@@ -59,17 +82,9 @@ interface ShiftManagementState {
     persistence: string | null;
     optimization: string | null;
     trimming: string | null;
+    drafts: string | null;
   };
   lastOptimizationReport: OptimizationReport | null;
-}
-
-interface UndoSnapshot {
-  shifts: Shift[];
-  operationalTimeline: Record<DayType, OperationalInterval[]>;
-  coverageTimeline: Record<DayType, ShiftCoverageInterval[]>;
-  colorScale: TodShiftColorScale | null;
-  label: string;
-  timestamp: string;
 }
 
 const MAX_UNDO_HISTORY = 20;
@@ -235,7 +250,22 @@ const initialState: ShiftManagementState = {
   colorScale: null,
   activeScheduleType: 'weekday',
   importMetadata: {
-    runId: null
+    runId: null,
+    status: 'draft',
+    sourceFiles: null,
+    hasUserSave: false,
+    persistedDraftName: undefined
+  },
+  draftDirty: false,
+  autosave: {
+    enabled: true,
+    intervalMs: 120000,
+    inFlight: false
+  },
+  drafts: {
+    items: [],
+    loading: false,
+    error: null
   },
   history: {
     undoStack: []
@@ -248,7 +278,8 @@ const initialState: ShiftManagementState = {
     persistence: false,
     unionRulesPersistence: false,
     optimization: false,
-    trimming: false
+    trimming: false,
+    drafts: false
   },
   error: {
     shifts: null,
@@ -256,58 +287,82 @@ const initialState: ShiftManagementState = {
     imports: null,
     persistence: null,
     optimization: null,
-    trimming: null
+    trimming: null,
+    drafts: null
   },
   lastOptimizationReport: null
 };
 
 export const processTodShiftImports = createAsyncThunk<
   TodShiftRun,
-  { cityFile: File; contractorFile: File },
-  { rejectValue: string }
+  { cityFile: File; contractorFile: File; draftName?: string },
+  { rejectValue: string; state: RootState }
 >(
   'shiftManagement/processTodShiftImports',
-  async ({ cityFile, contractorFile }, { rejectWithValue }) => {
+  async ({ cityFile, contractorFile, draftName }, { getState, rejectWithValue }) => {
     try {
       const { parseCityRequirementsCsv, parseContractorShiftsCsv } = await import('../utils/todShiftImport');
+      const state = getState();
+      const existingRules = state.shiftManagement.unionRules.length > 0
+        ? state.shiftManagement.unionRules
+        : DEFAULT_UNION_RULES;
+
+      const runId = await todShiftRepository.allocateRunId();
+      const importedAt = formatIsoTimestamp();
 
       const [cityTimeline, contractorResult] = await Promise.all([
         parseCityRequirementsCsv(cityFile),
         parseContractorShiftsCsv(contractorFile)
       ]);
 
+      const coverage = computeCoverageTimeline({
+        cityTimeline,
+        operationalTimeline: contractorResult.operationalTimeline
+      });
+
+      const [citySourceFile, contractorSourceFile] = await Promise.all([
+        todShiftRepository.uploadSourceFile({
+          runId,
+          blob: cityFile,
+          fileName: cityFile.name,
+          kind: 'city'
+        }),
+        todShiftRepository.uploadSourceFile({
+          runId,
+          blob: contractorFile,
+          fileName: contractorFile.name,
+          kind: 'contractor'
+        })
+      ]);
+
+      const normalizedDraftName = draftName && draftName.trim().length > 0
+        ? draftName.trim()
+        : `Draft ${new Date(importedAt).toLocaleString()}`;
+
       const payload: TodShiftRunPayload = {
         cityFileName: cityFile.name,
         contractorFileName: contractorFile.name,
-        importedAt: formatIsoTimestamp(),
+        importedAt,
         cityTimeline,
         operationalTimeline: contractorResult.operationalTimeline,
-        shifts: contractorResult.shifts
-      };
-
-      const coverage = computeCoverageTimeline({
-        cityTimeline: payload.cityTimeline,
-        operationalTimeline: payload.operationalTimeline
-      });
-
-      const run = await todShiftRepository.createRun(payload);
-
-      const augmentedRun: TodShiftRun = {
-        ...run,
+        shifts: contractorResult.shifts,
         coverageTimeline: coverage.timeline,
-        colorScale: coverage.colorScale
+        colorScale: coverage.colorScale,
+        draftName: normalizedDraftName,
+        status: 'draft',
+        unionRulesSnapshot: existingRules.map((rule) => ({ ...rule })),
+        historySnapshot: [],
+        sourceFiles: {
+          city: citySourceFile,
+          contractor: contractorSourceFile
+        },
+        lastSavedAt: importedAt,
+        lastOptimizationReport: null,
+        hasUserSave: false
       };
 
-      try {
-        await todShiftRepository.updateRun(augmentedRun.id, {
-          coverageTimeline: coverage.timeline,
-          colorScale: coverage.colorScale
-        });
-      } catch (err) {
-        console.warn('Unable to persist coverage timeline to Firebase:', err);
-      }
-
-      return augmentedRun;
+      const run = await todShiftRepository.createRun(payload, runId);
+      return run;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to process TOD shift imports.';
       return rejectWithValue(message);
@@ -374,6 +429,154 @@ export const recordShiftExport = createAsyncThunk<
       return exportedAt;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to record export event.';
+      return rejectWithValue(message);
+    }
+  }
+);
+
+export const saveDraft = createAsyncThunk<
+  { run: TodShiftRun; autosave: boolean; savedAt: string },
+  { autosave?: boolean } | void,
+  { rejectValue: string; state: RootState }
+>(
+  'shiftManagement/saveDraft',
+  async (request, { getState, rejectWithValue }) => {
+    try {
+      const autosave = Boolean(request?.autosave);
+      const savedAt = formatIsoTimestamp();
+      const state = getState().shiftManagement;
+      const payload = buildRunPayloadFromState(state, { savedAt, autosave });
+      const existingRunId = state.importMetadata.runId;
+      const trimmedCurrentName = (state.importMetadata.draftName ?? '').trim();
+      const trimmedPersistedName = (state.importMetadata.persistedDraftName ?? '').trim();
+      const shouldCreateNewDraft =
+        Boolean(
+          !autosave &&
+            existingRunId &&
+            trimmedCurrentName.length > 0 &&
+            trimmedPersistedName.length > 0 &&
+            trimmedCurrentName !== trimmedPersistedName
+        );
+
+      let run: TodShiftRun;
+      if (!existingRunId) {
+        const allocatedId = await todShiftRepository.allocateRunId();
+        run = await todShiftRepository.createRun(payload, allocatedId);
+      } else if (shouldCreateNewDraft) {
+        run = await todShiftRepository.createRun(payload);
+      } else {
+        await todShiftRepository.overwriteRun(existingRunId, payload);
+        run = {
+          id: existingRunId,
+          ...payload
+        };
+      }
+      return { run, autosave, savedAt };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to save draft.';
+      return rejectWithValue(message);
+    }
+  }
+);
+
+export const loadTodDraftLibrary = createAsyncThunk<
+  TodShiftRun[],
+  void,
+  { rejectValue: string }
+>(
+  'shiftManagement/loadTodDraftLibrary',
+  async (_, { rejectWithValue }) => {
+    try {
+      return await todShiftRepository.listRuns(100);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to load TOD draft schedules.';
+      return rejectWithValue(message);
+    }
+  }
+);
+
+export const loadDraftById = createAsyncThunk<
+  TodShiftRun,
+  { runId: string },
+  { rejectValue: string }
+>(
+  'shiftManagement/loadDraftById',
+  async ({ runId }, { rejectWithValue }) => {
+    try {
+      const run = await todShiftRepository.getRun(runId);
+      if (!run) {
+        return rejectWithValue('Draft not found.');
+      }
+
+      if (!run.coverageTimeline || !run.colorScale) {
+        const coverage = computeCoverageTimeline({
+          cityTimeline: run.cityTimeline,
+          operationalTimeline: run.operationalTimeline
+        });
+        const hydratedRun: TodShiftRun = {
+          ...run,
+          coverageTimeline: coverage.timeline,
+          colorScale: coverage.colorScale
+        };
+        await todShiftRepository.updateRun(hydratedRun.id, {
+          coverageTimeline: coverage.timeline,
+          colorScale: coverage.colorScale
+        });
+        return hydratedRun;
+      }
+
+      return run;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to load draft.';
+      return rejectWithValue(message);
+    }
+  }
+);
+
+export const revertToSourceFiles = createAsyncThunk<
+  {
+    cityTimeline: Record<DayType, CityRequirementInterval[]>;
+    operationalTimeline: Record<DayType, OperationalInterval[]>;
+    shifts: Shift[];
+    coverageTimeline: Record<DayType, ShiftCoverageInterval[]>;
+    colorScale: TodShiftColorScale | null;
+    importedAt: string;
+  },
+  void,
+  { rejectValue: string; state: RootState }
+>(
+  'shiftManagement/revertToSourceFiles',
+  async (_, { getState, rejectWithValue }) => {
+    try {
+      const state = getState().shiftManagement;
+      const sourceFiles = state.importMetadata.sourceFiles;
+      if (!sourceFiles) {
+        return rejectWithValue('No source files available for this draft.');
+      }
+
+      const [cityBlob, contractorBlob] = await Promise.all([
+        todShiftRepository.fetchSourceFile(sourceFiles.city),
+        todShiftRepository.fetchSourceFile(sourceFiles.contractor)
+      ]);
+      const { parseCityRequirementsCsv, parseContractorShiftsCsv } = await import('../utils/todShiftImport');
+      const [cityTimeline, contractorResult] = await Promise.all([
+        parseCityRequirementsCsv(cityBlob),
+        parseContractorShiftsCsv(contractorBlob)
+      ]);
+      const coverage = computeCoverageTimeline({
+        cityTimeline,
+        operationalTimeline: contractorResult.operationalTimeline
+      });
+      return {
+        cityTimeline,
+        operationalTimeline: contractorResult.operationalTimeline,
+        shifts: contractorResult.shifts,
+        coverageTimeline: coverage.timeline,
+        colorScale: coverage.colorScale,
+        importedAt: formatIsoTimestamp()
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to revert to source files.';
       return rejectWithValue(message);
     }
   }
@@ -626,13 +829,27 @@ export const optimizeShifts = createAsyncThunk<
       }
 
       const optimizedAt = formatIsoTimestamp();
+      const derivedName = state.shiftManagement.importMetadata.draftName
+        ? `${state.shiftManagement.importMetadata.draftName} (Optimized ${new Date(optimizedAt).toLocaleString()})`
+        : `Optimized Draft ${new Date(optimizedAt).toLocaleString()}`;
+
       const optimizedPayload: TodShiftRunPayload = {
         cityFileName: state.shiftManagement.importMetadata.cityFileName ?? 'City Requirements',
         contractorFileName: 'Auto-generated Shifts',
         importedAt: optimizedAt,
         cityTimeline,
         operationalTimeline: finalOperationalTimeline,
-        shifts: finalShifts
+        shifts: finalShifts,
+        coverageTimeline: coverage.timeline,
+        colorScale: coverage.colorScale,
+        draftName: derivedName,
+        status: 'draft',
+        unionRulesSnapshot: activeRules.map((rule) => ({ ...rule })),
+        historySnapshot: [],
+        sourceFiles: state.shiftManagement.importMetadata.sourceFiles ?? undefined,
+        lastSavedAt: optimizedAt,
+        lastAutosavedAt: undefined,
+        lastOptimizationReport: null
       };
 
       const createdRun = await todShiftRepository.createRun(optimizedPayload);
@@ -642,15 +859,6 @@ export const optimizeShifts = createAsyncThunk<
         coverageTimeline: coverage.timeline,
         colorScale: coverage.colorScale
       };
-
-      try {
-        await todShiftRepository.updateRun(persistedRun.id, {
-          coverageTimeline: coverage.timeline,
-          colorScale: coverage.colorScale
-        });
-      } catch (updateError) {
-        console.warn('Unable to persist coverage timeline for optimized run.', updateError);
-      }
 
       const flattenedWarnings =
         finalShifts === generation.shifts
@@ -690,6 +898,15 @@ export const optimizeShifts = createAsyncThunk<
         trimmedVehicleHours: trimmingSummary?.hoursRemoved ?? 0,
         trimmedShiftCount: trimmingSummary?.shiftsModified ?? 0
       };
+
+      try {
+        await todShiftRepository.updateRun(persistedRun.id, {
+          lastOptimizationReport: report
+        });
+        persistedRun.lastOptimizationReport = report;
+      } catch (updateError) {
+        console.warn('Unable to persist optimization report for TOD shift run.', updateError);
+      }
 
       return {
         run: persistedRun,
@@ -762,7 +979,8 @@ const shiftManagementSlice = createSlice({
         imports: null,
         persistence: null,
         optimization: null,
-        trimming: null
+        trimming: null,
+        drafts: null
       };
     },
     undoLastShiftChange: (state) => {
@@ -774,6 +992,11 @@ const shiftManagementSlice = createSlice({
       state.operationalTimeline = snapshot.operationalTimeline;
       state.coverageTimeline = snapshot.coverageTimeline;
       state.colorScale = snapshot.colorScale;
+      markDraftDirty(state);
+    },
+    setDraftName: (state, action: PayloadAction<string>) => {
+      state.importMetadata.draftName = action.payload.trim();
+      markDraftDirty(state);
     }
   },
   extraReducers: (builder) => {
@@ -823,6 +1046,7 @@ const shiftManagementSlice = createSlice({
       .addCase(persistUnionRules.fulfilled, (state, action) => {
         state.loading.unionRulesPersistence = false;
         state.unionRules = action.payload;
+        markDraftDirty(state);
       })
       .addCase(persistUnionRules.rejected, (state, action) => {
         state.loading.unionRulesPersistence = false;
@@ -840,6 +1064,7 @@ const shiftManagementSlice = createSlice({
         state.operationalTimeline = action.payload.operationalTimeline;
         state.coverageTimeline = action.payload.coverageTimeline;
         state.colorScale = action.payload.colorScale;
+        markDraftDirty(state);
 
         const { deficitByDayType, totalDeficitIntervals } = summarizeDeficitIntervals(action.payload.coverageTimeline);
         const compliantShifts = action.payload.shifts.filter((shift) => shift.unionCompliant).length;
@@ -894,6 +1119,7 @@ const shiftManagementSlice = createSlice({
         recordUndoSnapshot(state, `Add ${describeShift(action.payload)}`);
         state.shifts.push(action.payload);
         recomputeManualCoverage(state);
+        markDraftDirty(state);
       })
       .addCase(saveShift.rejected, (state, action) => {
         state.loading.shifts = false;
@@ -910,6 +1136,7 @@ const shiftManagementSlice = createSlice({
           recordUndoSnapshot(state, `Update ${describeShift(state.shifts[index])}`);
           state.shifts[index] = action.payload;
           recomputeManualCoverage(state);
+          markDraftDirty(state);
         }
       })
       .addCase(updateShift.rejected, (state, action) => {
@@ -929,10 +1156,37 @@ const shiftManagementSlice = createSlice({
         recordUndoSnapshot(state, `Delete ${describeShift(state.shifts[targetIndex])}`);
         state.shifts.splice(targetIndex, 1);
         recomputeManualCoverage(state);
+        markDraftDirty(state);
       })
       .addCase(deleteShift.rejected, (state, action) => {
         state.loading.shifts = false;
         state.error.shifts = action.error.message || 'Failed to delete shift.';
+      })
+      .addCase(saveDraft.pending, (state, action) => {
+        state.error.persistence = null;
+        if (action.meta.arg?.autosave) {
+          state.autosave.inFlight = true;
+        } else {
+          state.loading.persistence = true;
+        }
+      })
+      .addCase(saveDraft.fulfilled, (state, action) => {
+        if (action.payload.autosave) {
+          state.autosave.inFlight = false;
+        } else {
+          state.loading.persistence = false;
+        }
+        state.autosave.lastAttempt = action.payload.savedAt;
+        applyRunToState(state, action.payload.run);
+        state.draftDirty = false;
+      })
+      .addCase(saveDraft.rejected, (state, action) => {
+        if (action.meta.arg?.autosave) {
+          state.autosave.inFlight = false;
+        } else {
+          state.loading.persistence = false;
+        }
+        state.error.persistence = (action.payload as string) || action.error.message || 'Failed to save draft.';
       })
       .addCase(recordShiftExport.pending, (state) => {
         state.loading.persistence = true;
@@ -945,6 +1199,59 @@ const shiftManagementSlice = createSlice({
       .addCase(recordShiftExport.rejected, (state, action) => {
         state.loading.persistence = false;
         state.error.persistence = (action.payload as string) || action.error.message || 'Failed to record export.';
+      })
+      .addCase(loadTodDraftLibrary.pending, (state) => {
+        state.loading.drafts = true;
+        state.error.drafts = null;
+        state.drafts.loading = true;
+        state.drafts.error = null;
+      })
+      .addCase(loadTodDraftLibrary.fulfilled, (state, action) => {
+        state.loading.drafts = false;
+        state.drafts.items = action.payload;
+        state.drafts.loading = false;
+        state.drafts.error = null;
+      })
+      .addCase(loadTodDraftLibrary.rejected, (state, action) => {
+        state.loading.drafts = false;
+        state.error.drafts = (action.payload as string) || action.error.message || 'Failed to load TOD draft schedules.';
+        state.drafts.loading = false;
+        state.drafts.error = state.error.drafts;
+      })
+      .addCase(loadDraftById.pending, (state) => {
+        state.loading.fetchRun = true;
+        state.error.persistence = null;
+      })
+      .addCase(loadDraftById.fulfilled, (state, action) => {
+        state.loading.fetchRun = false;
+        applyRunToState(state, action.payload);
+      })
+      .addCase(loadDraftById.rejected, (state, action) => {
+        state.loading.fetchRun = false;
+        state.error.persistence = (action.payload as string) || action.error.message || 'Failed to load draft.';
+      })
+      .addCase(revertToSourceFiles.pending, (state) => {
+        state.loading.imports = true;
+        state.error.imports = null;
+      })
+      .addCase(revertToSourceFiles.fulfilled, (state, action) => {
+        state.loading.imports = false;
+        recordUndoSnapshot(state, 'Revert to source files');
+        state.shifts = ensureUniqueShiftIds(action.payload.shifts);
+        state.cityTimeline = action.payload.cityTimeline;
+        state.operationalTimeline = cloneOperationalTimeline(action.payload.operationalTimeline);
+        state.coverageTimeline = cloneCoverageTimeline(action.payload.coverageTimeline);
+        state.colorScale = cloneColorScale(action.payload.colorScale);
+        state.importMetadata.importedAt = action.payload.importedAt;
+        if (state.importMetadata.sourceFiles) {
+          state.importMetadata.cityFileName = state.importMetadata.sourceFiles.city.name;
+          state.importMetadata.contractorFileName = state.importMetadata.sourceFiles.contractor.name;
+        }
+        markDraftDirty(state);
+      })
+      .addCase(revertToSourceFiles.rejected, (state, action) => {
+        state.loading.imports = false;
+        state.error.imports = (action.payload as string) || action.error.message || 'Failed to revert to source files.';
       });
   }
 });
@@ -1023,6 +1330,46 @@ function cloneColorScale(scale: TodShiftColorScale | null): TodShiftColorScale |
   };
 }
 
+function buildRunPayloadFromState(
+  state: ShiftManagementState,
+  options: { savedAt: string; autosave: boolean; draftNameOverride?: string }
+): TodShiftRunPayload {
+  const { savedAt, autosave, draftNameOverride } = options;
+  const derivedDraftName =
+    draftNameOverride ??
+    state.importMetadata.draftName ??
+    `Draft ${new Date(savedAt).toLocaleString()}`;
+
+  const historySnapshot = state.history.undoStack.map((snapshot) => ({
+    ...snapshot,
+    shifts: cloneShifts(snapshot.shifts),
+    operationalTimeline: cloneOperationalTimeline(snapshot.operationalTimeline),
+    coverageTimeline: cloneCoverageTimeline(snapshot.coverageTimeline),
+    colorScale: cloneColorScale(snapshot.colorScale)
+  }));
+
+  return {
+    cityFileName: state.importMetadata.cityFileName ?? 'City Requirements',
+    contractorFileName: state.importMetadata.contractorFileName ?? 'Contractor Shifts',
+    importedAt: state.importMetadata.importedAt ?? savedAt,
+    cityTimeline: state.cityTimeline,
+    operationalTimeline: state.operationalTimeline,
+    shifts: state.shifts,
+    coverageTimeline: state.coverageTimeline,
+    colorScale: state.colorScale,
+    lastExportedAt: state.importMetadata.lastExportedAt,
+    draftName: derivedDraftName,
+    status: state.importMetadata.status ?? 'draft',
+    unionRulesSnapshot: state.unionRules.map((rule) => ({ ...rule })),
+    historySnapshot,
+    sourceFiles: state.importMetadata.sourceFiles ?? undefined,
+    lastSavedAt: autosave ? state.importMetadata.lastSavedAt ?? savedAt : savedAt,
+    lastAutosavedAt: autosave ? savedAt : state.importMetadata.lastAutosavedAt,
+    lastOptimizationReport: state.lastOptimizationReport,
+    hasUserSave: autosave ? state.importMetadata.hasUserSave ?? false : true
+  };
+}
+
 function describeShift(shift?: Shift, fallback = 'shift'): string {
   if (!shift) {
     return fallback;
@@ -1048,6 +1395,12 @@ function recordUndoSnapshot(state: ShiftManagementState, label: string): void {
   state.history.undoStack.push(snapshot);
   if (state.history.undoStack.length > MAX_UNDO_HISTORY) {
     state.history.undoStack.shift();
+  }
+}
+
+function markDraftDirty(state: ShiftManagementState): void {
+  if (!state.draftDirty) {
+    state.draftDirty = true;
   }
 }
 
@@ -1092,12 +1445,30 @@ function applyRunToState(state: ShiftManagementState, run: TodShiftRun): void {
   state.colorScale = cloneColorScale(run.colorScale ?? null);
   state.importMetadata = {
     runId: run.id,
+    draftName: run.draftName ?? state.importMetadata.draftName,
+    persistedDraftName: run.draftName ?? state.importMetadata.persistedDraftName,
+    status: run.status ?? state.importMetadata.status ?? 'draft',
     cityFileName: run.cityFileName,
     contractorFileName: run.contractorFileName,
     importedAt: run.importedAt,
-    lastExportedAt: run.lastExportedAt
+    lastExportedAt: run.lastExportedAt,
+    lastSavedAt: run.lastSavedAt ?? run.importedAt,
+    lastAutosavedAt: run.lastAutosavedAt ?? state.importMetadata.lastAutosavedAt,
+    sourceFiles: run.sourceFiles ?? state.importMetadata.sourceFiles ?? null,
+    hasUserSave: run.hasUserSave ?? state.importMetadata.hasUserSave ?? false
   };
-  state.history.undoStack = [];
+  state.lastOptimizationReport = run.lastOptimizationReport ?? state.lastOptimizationReport;
+  state.history.undoStack = (run.historySnapshot ?? []).map((snapshot) => ({
+    ...snapshot,
+    shifts: cloneShifts(snapshot.shifts),
+    operationalTimeline: cloneOperationalTimeline(snapshot.operationalTimeline),
+    coverageTimeline: cloneCoverageTimeline(snapshot.coverageTimeline),
+    colorScale: cloneColorScale(snapshot.colorScale)
+  }));
+  state.unionRules = run.unionRulesSnapshot ?? state.unionRules;
+  persistUnionRulesToStorage(state.unionRules);
+  state.draftDirty = false;
+  state.autosave.inFlight = false;
 }
 
 function summarizeDeficitIntervals(
@@ -1123,5 +1494,5 @@ function recomputeManualCoverage(state: ShiftManagementState): void {
   state.colorScale = coverage.colorScale;
 }
 
-export const { setActiveScheduleType, clearErrors, undoLastShiftChange } = shiftManagementSlice.actions;
+export const { setActiveScheduleType, clearErrors, undoLastShiftChange, setDraftName } = shiftManagementSlice.actions;
 export default shiftManagementSlice.reducer;

@@ -168,4 +168,56 @@ describe('generateAutoShifts union compliance', () => {
       expect(shift.unionCompliant).toBe(true);
     });
   });
+
+  it('prioritizes seven-hour shifts when demand supports multiples', async () => {
+    const coverageWindow: CityRequirementInterval = {
+      dayType: 'weekday',
+      startTime: '05:00',
+      endTime: '17:00',
+      northRequired: 1,
+      southRequired: 0,
+      floaterRequired: 0
+    };
+
+    const cityTimeline = {
+      ...emptyTimeline,
+      weekday: [coverageWindow]
+    };
+
+    const result = await generateAutoShifts({ cityTimeline, unionRules: BASE_UNION_RULES });
+    const primaryShifts = result.shifts.filter(
+      (shift) => !shift.shiftCode.startsWith('AUTO-REL') && shift.zone === 'North'
+    );
+
+    expect(primaryShifts).toHaveLength(2);
+    expect(primaryShifts[0].totalHours).toBeCloseTo(7, 2);
+    expect(primaryShifts[1].totalHours).toBeCloseTo(5, 2);
+  });
+
+  it('only exceeds seven hours when the remaining demand is below the minimum shift length', async () => {
+    const coverageWindow: CityRequirementInterval = {
+      dayType: 'weekday',
+      startTime: '05:00',
+      endTime: '21:00',
+      northRequired: 1,
+      southRequired: 0,
+      floaterRequired: 0
+    };
+
+    const cityTimeline = {
+      ...emptyTimeline,
+      weekday: [coverageWindow]
+    };
+
+    const result = await generateAutoShifts({ cityTimeline, unionRules: BASE_UNION_RULES });
+    const primaryShifts = result.shifts.filter(
+      (shift) => !shift.shiftCode.startsWith('AUTO-REL') && shift.zone === 'North'
+    );
+
+    expect(primaryShifts.length).toBeGreaterThanOrEqual(2);
+    expect(primaryShifts[0].totalHours).toBeCloseTo(7, 2);
+    const longestShift = Math.max(...primaryShifts.map((shift) => shift.totalHours));
+    expect(longestShift).toBeGreaterThan(7);
+    expect(longestShift).toBeLessThanOrEqual(9.75);
+  });
 });

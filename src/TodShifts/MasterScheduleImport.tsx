@@ -7,7 +7,8 @@ import {
   CircularProgress,
   Paper,
   Stack,
-  Divider
+  Divider,
+  TextField
 } from '@mui/material';
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch, RootState } from '../store/store';
@@ -32,6 +33,7 @@ const MasterScheduleImport: React.FC<MasterScheduleImportProps> = ({ onSuccess }
   const [contractorFile, setContractorFile] = useState<File | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
   const [localSuccess, setLocalSuccess] = useState<string | null>(null);
+  const [draftName, setDraftName] = useState('');
 
   const resetInputs = () => {
     setCityFile(null);
@@ -54,13 +56,14 @@ const MasterScheduleImport: React.FC<MasterScheduleImportProps> = ({ onSuccess }
     setLocalSuccess(null);
 
     try {
-      await dispatch(processTodShiftImports({ cityFile, contractorFile })).unwrap();
+      await dispatch(processTodShiftImports({ cityFile, contractorFile, draftName })).unwrap();
       setLocalSuccess(`Import completed (${cityFile.name} / ${contractorFile.name}).`);
       onSuccess?.({
         cityFileName: cityFile.name,
         contractorFileName: contractorFile.name
       });
       resetInputs();
+      setDraftName('');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to process imports.';
       setLocalError(message);
@@ -126,6 +129,15 @@ const MasterScheduleImport: React.FC<MasterScheduleImportProps> = ({ onSuccess }
         </Box>
 
         <Divider />
+
+        <TextField
+          label="Draft name"
+          value={draftName}
+          onChange={(event) => setDraftName(event.target.value)}
+          placeholder="Name this draft schedule"
+          disabled={loading}
+          fullWidth
+        />
 
         <Stack direction="row" spacing={2} alignItems="center">
           <Button

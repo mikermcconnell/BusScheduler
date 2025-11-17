@@ -24,7 +24,13 @@ export enum FeatureFlag {
   // Enable draft library view
   DRAFT_LIBRARY = 'draft_library',
   // Enable CSV editing in command center
-  CSV_INLINE_EDITING = 'csv_inline_editing'
+  CSV_INLINE_EDITING = 'csv_inline_editing',
+  // Navigation visibility controls
+  NAV_NEW_SCHEDULE = 'nav_new_schedule',
+  NAV_EDIT_SCHEDULE = 'nav_edit_schedule',
+  NAV_BROWSE_SCHEDULES = 'nav_browse_schedules',
+  NAV_MANAGE_ROUTES = 'nav_manage_routes',
+  NAV_BLOCK_CONFIGURATION = 'nav_block_configuration'
 }
 
 /**
@@ -100,6 +106,36 @@ const FEATURE_FLAGS: Record<FeatureFlag, FeatureFlagConfig> = {
     description: 'Enable direct CSV editing in command center',
     defaultValue: false,
     rolloutPercentage: 30,
+    environments: ['development', 'staging']
+  },
+  [FeatureFlag.NAV_NEW_SCHEDULE]: {
+    name: 'New Schedule Workflow',
+    description: 'Enable access to the new schedule creation workflow',
+    defaultValue: true,
+    environments: ['development', 'staging']
+  },
+  [FeatureFlag.NAV_EDIT_SCHEDULE]: {
+    name: 'Fixed Transit Workspace',
+    description: 'Enable the consolidated Fixed Transit workflow entry point',
+    defaultValue: true,
+    environments: ['development', 'staging']
+  },
+  [FeatureFlag.NAV_BROWSE_SCHEDULES]: {
+    name: 'Browse Schedules',
+    description: 'Enable browsing previously published schedules',
+    defaultValue: true,
+    environments: ['development', 'staging']
+  },
+  [FeatureFlag.NAV_MANAGE_ROUTES]: {
+    name: 'Manage Routes',
+    description: 'Enable the manage routes section',
+    defaultValue: true,
+    environments: ['development', 'staging']
+  },
+  [FeatureFlag.NAV_BLOCK_CONFIGURATION]: {
+    name: 'Block Configuration',
+    description: 'Enable block configuration workflow',
+    defaultValue: true,
     environments: ['development', 'staging']
   }
 };
@@ -246,7 +282,12 @@ class FeatureFlagManager {
         [FeatureFlag.ADVANCED_ANALYTICS]: false,
         [FeatureFlag.CONNECTION_SCHEDULING]: false,
         [FeatureFlag.DRAFT_LIBRARY]: false,
-        [FeatureFlag.CSV_INLINE_EDITING]: false
+        [FeatureFlag.CSV_INLINE_EDITING]: false,
+        [FeatureFlag.NAV_NEW_SCHEDULE]: false,
+        [FeatureFlag.NAV_EDIT_SCHEDULE]: false,
+        [FeatureFlag.NAV_BROWSE_SCHEDULES]: false,
+        [FeatureFlag.NAV_MANAGE_ROUTES]: false,
+        [FeatureFlag.NAV_BLOCK_CONFIGURATION]: false
       },
       lastUpdated: new Date().toISOString()
     };

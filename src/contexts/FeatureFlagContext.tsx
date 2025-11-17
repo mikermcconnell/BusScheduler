@@ -18,6 +18,11 @@ interface FeatureFlagContextType {
   isConnectionScheduling: boolean;
   isDraftLibrary: boolean;
   isCsvInlineEditing: boolean;
+  isNewScheduleEnabled: boolean;
+  isEditScheduleEnabled: boolean;
+  isBrowseSchedulesEnabled: boolean;
+  isManageRoutesEnabled: boolean;
+  isBlockConfigurationEnabled: boolean;
   
   // Control functions
   toggleCommandCenter: () => Promise<boolean>;
@@ -56,6 +61,11 @@ export const FeatureFlagProvider: React.FC<FeatureFlagProviderProps> = ({ childr
   const [isConnectionScheduling, setIsConnectionScheduling] = useState(false);
   const [isDraftLibrary, setIsDraftLibrary] = useState(false);
   const [isCsvInlineEditing, setIsCsvInlineEditing] = useState(false);
+  const [isNewScheduleEnabled, setIsNewScheduleEnabled] = useState(false);
+  const [isEditScheduleEnabled, setIsEditScheduleEnabled] = useState(false);
+  const [isBrowseSchedulesEnabled, setIsBrowseSchedulesEnabled] = useState(false);
+  const [isManageRoutesEnabled, setIsManageRoutesEnabled] = useState(false);
+  const [isBlockConfigurationEnabled, setIsBlockConfigurationEnabled] = useState(false);
 
   /**
    * Initialize feature flags when user changes
@@ -91,6 +101,11 @@ export const FeatureFlagProvider: React.FC<FeatureFlagProviderProps> = ({ childr
     setIsConnectionScheduling(featureFlags.isEnabled(FeatureFlag.CONNECTION_SCHEDULING));
     setIsDraftLibrary(featureFlags.isEnabled(FeatureFlag.DRAFT_LIBRARY));
     setIsCsvInlineEditing(featureFlags.isEnabled(FeatureFlag.CSV_INLINE_EDITING));
+    setIsNewScheduleEnabled(featureFlags.isEnabled(FeatureFlag.NAV_NEW_SCHEDULE));
+    setIsEditScheduleEnabled(featureFlags.isEnabled(FeatureFlag.NAV_EDIT_SCHEDULE));
+    setIsBrowseSchedulesEnabled(featureFlags.isEnabled(FeatureFlag.NAV_BROWSE_SCHEDULES));
+    setIsManageRoutesEnabled(featureFlags.isEnabled(FeatureFlag.NAV_MANAGE_ROUTES));
+    setIsBlockConfigurationEnabled(featureFlags.isEnabled(FeatureFlag.NAV_BLOCK_CONFIGURATION));
   }, []);
 
   /**
@@ -187,6 +202,11 @@ export const FeatureFlagProvider: React.FC<FeatureFlagProviderProps> = ({ childr
     isConnectionScheduling,
     isDraftLibrary,
     isCsvInlineEditing,
+    isNewScheduleEnabled,
+    isEditScheduleEnabled,
+    isBrowseSchedulesEnabled,
+    isManageRoutesEnabled,
+    isBlockConfigurationEnabled,
     
     // Control functions
     toggleCommandCenter,

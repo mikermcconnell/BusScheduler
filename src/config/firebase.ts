@@ -8,6 +8,7 @@ import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
 import { getFunctions, connectFunctionsEmulator } from 'firebase/functions';
 import { getAnalytics } from 'firebase/analytics';
 import { getAuth, connectAuthEmulator } from 'firebase/auth';
+import { getStorage, connectStorageEmulator } from 'firebase/storage';
 // Firebase configuration
 // Check if we have real Firebase config, otherwise use a flag to disable Firebase
 const hasRealFirebaseConfig = process.env.REACT_APP_FIREBASE_API_KEY &&
@@ -30,6 +31,7 @@ const app = initializeApp(firebaseConfig);
 // Initialize Firebase services
 export const db = getFirestore(app);
 export const functions = getFunctions(app);
+export const storage = getStorage(app);
 const authInstance = getAuth(app);
 
 // Initialize Analytics only in production with valid config
@@ -69,6 +71,15 @@ if (process.env.NODE_ENV === 'development' && process.env.REACT_APP_USE_FIREBASE
     } catch (error: any) {
       // Already connected error is expected on hot reload
       if (!error.message?.includes('already connected')) {
+        throw error;
+      }
+    }
+
+    // Storage emulator
+    try {
+      connectStorageEmulator(storage, 'localhost', 9199);
+    } catch (error: any) {
+      if (!error.message?.includes('storage/invalid-argument')) {
         throw error;
       }
     }

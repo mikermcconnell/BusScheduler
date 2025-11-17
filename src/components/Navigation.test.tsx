@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import '@testing-library/jest-dom';
 import Navigation from './Navigation';
+import { FeatureFlagProvider } from '../contexts/FeatureFlagContext';
 import useMediaQuery from '@mui/material/useMediaQuery';
 
 // Mock useMediaQuery
@@ -16,7 +17,9 @@ const renderWithProviders = (initialEntries: string[] = ['/']) => {
   return render(
     <ThemeProvider theme={theme}>
       <MemoryRouter initialEntries={initialEntries}>
-        <Navigation />
+        <FeatureFlagProvider>
+          <Navigation />
+        </FeatureFlagProvider>
       </MemoryRouter>
     </ThemeProvider>
   );

@@ -43,7 +43,7 @@ const AppHeader: React.FC<AppHeaderProps> = ({
     const path = location.pathname;
     if (path === '/') return 'Dashboard';
     if (path === '/new-schedule') return 'New Schedule';
-    if (path === '/edit-schedule') return 'Edit Existing Schedule';
+    if (path === '/edit-schedule') return 'Fixed Transit';
     if (path === '/timepoints') return 'TimePoints Analysis';
     if (path === '/block-configuration') return 'Block Configuration';
     if (path === '/summary-schedule') return 'Summary Schedule';

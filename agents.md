@@ -5,7 +5,46 @@
 > - Tone: Keep updates concise, partner-style, and surface blockers or risks immediately.
 > - Escalation: Confirm before running destructive commands, touching production Firebase data, or altering security-sensitive settings.
 > - Language: When helping this user, explain everything in plain, everyday wording with no technical jargon.
-- Firestore Rules: Whenever rules change, immediately run `firebase deploy --only firestore:rules` yourself via the CLI—never leave this step for the user.
+> - Firestore Rules: Whenever rules change, immediately run `firebase deploy --only firestore:rules` yourself via the CLI—never leave this step for the user.
+
+## Using This Guide
+- **Orientation first**: Read Quick Start and Prompt Library before touching code so shorthand prompts and workflows stay consistent.
+- **Reference smartly**: System design, guardrails, and troubleshooting sections are written for quick lookup—jump via the table of contents.
+- **Tone reminder**: This file uses technical language for accuracy, but always translate answers to the user into plain, everyday wording.
+- **When in doubt**: Follow the Clarification Protocol at the bottom rather than guessing; it keeps scope aligned.
+
+## Table of Contents
+1. [Quick Start](#quick-start)
+2. [Prompt Library](#prompt-library)
+3. [Project Overview](#project-overview)
+4. [Tech Stack & Commands](#tech-stack--commands)
+5. [Core Features](#core-features)
+6. [Project Structure](#project-structure)
+7. [Key Types & File Formats](#key-types--file-formats)
+8. [Canonical Data Sources](#canonical-data-sources)
+9. [Guardrails & Safe Operations](#guardrails--safe-operations)
+10. [Security Features (Critical)](#security-features-critical)
+11. [Navigation & Workflow](#navigation--workflow)
+12. [Bus Block Configuration System](#bus-block-configuration-system)
+13. [Summary Schedule System](#summary-schedule-system)
+14. [Service Band Logic](#service-band-logic)
+15. [Schedule Statistics](#schedule-statistics)
+16. [Firebase Integration](#firebase-integration)
+17. [Technical Implementation](#technical-implementation)
+18. [Development Guidelines](#development-guidelines)
+19. [Testing Strategy](#testing-strategy)
+20. [Troubleshooting](#troubleshooting)
+21. [Architecture Diagrams](#architecture-diagrams)
+22. [Production Status](#production-status)
+23. [Agentic Coding Best Practices](#agentic-coding-best-practices)
+24. [Clarification Protocol](#clarification-protocol---no-assumptions-policy)
+25. [TypeScript Architecture & Agent Guidelines](#typescript-architecture--agent-guidelines)
+26. [Learn-While-Building System](#learn-while-building-system)
+27. [Connection Point Optimization](#connection-point-optimization)
+28. [Workflow Progress Persistence](#workflow-progress-persistence)
+29. [Task Triage Guide](#task-triage-guide)
+30. [Svelte MCP Server](#svelte-mcp-server)
+31. [Maintaining This Guide](#maintaining-this-guide)
 
 ## Quick Start
 
@@ -13,6 +52,81 @@
 1. `npm install` → Copy `.env.example` to `.env` → `npm start`
 2. Upload `example_schedule/Raw_Data.csv` to test
 3. Verify: TimePoints charts → Block Configuration → Summary Schedule → Export
+
+## Prompt Library
+### Prompt One
+Your task is NOT to implement this yet, but to fully understand and prepare.
+
+Here is exactly what I need implemented:
+
+```[DETAILED FEATURE DESCRIPTION HERE]```
+
+--
+
+Your responsibilities:
+
+- Analyze and understand the existing codebase thoroughly.
+- Determine exactly how this feature integrates, including dependencies, structure, edge cases (within reason, don't go overboard), and constraints.
+- Clearly identify anything unclear or ambiguous in my description or the current implementation.
+- List clearly all questions or ambiguities you need clarified.
+
+Remember, your job is not to implement (yet). Just exploring, planning, and then asking me questions to ensure all ambiguities are covered. We will go back and forth until you have no further questions. Do NOT assume any requirements or scope beyond explicitly described details.
+
+### Prompt Two
+# Plan Creation Stage
+
+Based on our full exchange, now, produce a markdown plan document (`plan.md`).
+
+Requirements for the plan:
+
+- Include clear, minimal, concise steps.
+- Track the status of each step using these emojis:
+  - 🟩 Done
+  - 🟨 In Progress
+  - 🟥 To Do
+- Include dynamic tracking of overall progress percentage (at top).
+- Do NOT add extra scope or unnecessary complexity beyond explicitly clarified details.
+- Steps should be modular, elegant, minimal, and integrate seamlessly within the existing codebase.
+
+Markdown Template Example:
+
+```http://plan.md (example)
+# (Example) Feature Implementation Plan
+
+**Overall Progress:** `0%`
+
+### Example Tasks Template
+
+- [ ] 🟥 **Step 1: Setup authentication module**
+  - [ ] 🟥 Create authentication service class
+  - [ ] 🟥 Implement JWT token handling
+  - [ ] 🟥 Connect service to existing database schema
+
+- [ ] 🟥 **Step 2: Develop frontend login UI**
+  - [ ] 🟥 Design login page component (React)
+  - [ ] 🟥 Integrate component with auth endpoints
+  - [ ] 🟥 Add form validation and error handling
+
+- [ ] 🟥 **Step 3: Add user session management**
+  - [ ] 🟥 Set up session cookies securely
+  - [ ] 🟥 Implement session renewal logic
+  - [ ] 🟥 Handle session expiry and logout process
+
+...
+```
+
+Again, for clarity, it's still not time to build yet. Just write the clear plan document. No extra complexity or extra scope beyond what we discussed. The plan should lead to simple, elegant, minimal code that does the job perfectly.
+
+### Prompt Three
+Now implement precisely as planned, in full.
+
+Implementation Requirements:
+
+- Write elegant, minimal, modular code.
+- Adhere strictly to existing code patterns, conventions, and best practices.
+- Include thorough, clear comments/documentation within the code.
+- As you implement each step:
+  - Update the markdown tracking document with emoji status and overall progress percentage dynamically.
 
 ## Project Overview
 **Scheduler2** is a production-ready bus route scheduling application that processes CSV files to generate professional transit schedules. Built with React 19, TypeScript 5.9, Material-UI v7, and Firebase integration.
@@ -90,7 +204,7 @@ src/
 - Coordinate any changes to recovery and optimization rules in `src/services/recoveryBankService.ts` and `src/services/connectionOptimizationService.ts` with product owners to avoid operational regressions.
 - `.env` files hold environment secrets; never commit live credentials and refresh sample values if contract changes.
 
-## Security Features ⚠️ CRITICAL
+## Security Features (Critical)
 - **File Validation**: MIME type + magic byte verification, size limits (5MB max, 1KB min)
 - **XSS Prevention**: HTML entity encoding, attack pattern detection
 - **Memory Protection**: 50MB limit, processing timeouts (30s), circuit breaker pattern
@@ -314,7 +428,7 @@ User edits recovery → Update stop departure → Cascade within trip
                          No        Yes → Update next trip → Cascade to block
 ```
 
-## Production Status: ✅ COMPLETE+
+## Production Status
 
 ### MVP+ Features ✅
 - Core features, security mitigations, professional UI
@@ -703,7 +817,7 @@ Add these to package.json:
 
 ---
 
-## Learn-While-Building System 🎓
+## Learn-While-Building System
 
 ### The "Code Whisper" Learning Mode
 
@@ -757,7 +871,7 @@ Add these to package.json:
 
 ---
 
-## Connection Point Optimization - Production Ready ✅
+## Connection Point Optimization
 
 **Status**: Complete and production-ready transit schedule optimization system
 
@@ -804,7 +918,7 @@ Add these to package.json:
 
 ---
 
-## Workflow Progress Persistence Fix (ALL PHASES COMPLETE ✅)
+## Workflow Progress Persistence
 
 ### Problem Solved
 Workflow progress and data weren't persisting across browser sessions. Users couldn't save work on one computer and continue on another.
@@ -892,7 +1006,7 @@ npm run test:workflow-units             # Unit tests only
 npm run test:workflow-integration       # Integration tests only
 ```
 
-## Svelte MCP Server 🎯
+## Svelte MCP Server
 
 You have access to the Svelte MCP server, providing comprehensive Svelte 5 and SvelteKit documentation. Use these tools effectively when working with Svelte projects:
 
@@ -923,6 +1037,13 @@ After completing the code, ask the user if they want a playground link. Only cal
 **Last Major Update**: 2025-08-11 – Added assistant onboarding guidance, guardrails, and operational playbooks
 **Stack**: React 19, Material-UI v7, TypeScript 5.9, Router v7, Firebase
 **Latest Enhancement**: Complete workflow persistence with resilience, offline support, and comprehensive testing
+
+## Maintaining This Guide
+- **Update structure first**: When adding or renaming sections, refresh the Table of Contents above and keep heading levels consistent.
+- **Document intent**: Note why major instructions changed in this section plus the version metadata block to preserve context.
+- **Keep tone aligned**: Ensure any new content matches the “plain-language to user” guidance stated in *Using This Guide*.
+- **Validate links**: After edits, run `rg "^##" agents.md` to confirm anchors exist for every Table of Contents entry.
+- **Review quarterly**: Re-read guardrails, security checklists, and workflow notes each quarter to retire stale steps and capture new practices.
 
 
 

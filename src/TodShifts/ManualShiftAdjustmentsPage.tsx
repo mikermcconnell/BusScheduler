@@ -11,7 +11,8 @@ import {
   Tooltip as RechartTooltip,
   Bar,
   Cell,
-  ReferenceLine
+  ReferenceLine,
+  LabelList
 } from 'recharts';
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch, RootState } from '../store/store';
@@ -19,10 +20,9 @@ import ShiftSummaryTable from './ShiftSummaryTable';
 import { DAY_TYPES, minutesToTimeString, INTERVAL_MINUTES, parseTimeToMinutes } from './utils/timeUtils';
 import type { ShiftCoverageInterval, DayType, ShiftZone } from './types/shift.types';
 import UndoIcon from '@mui/icons-material/Undo';
-import { undoLastShiftChange } from './store/shiftManagementSlice';
+import { undoLastShiftChange, saveDraft } from './store/shiftManagementSlice';
 import FullscreenIcon from '@mui/icons-material/Fullscreen';
 import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
-import { useStableDifferenceDomain } from './utils/useStableDifferenceDomain';
 
 const dayTypeLabels: Record<DayType, string> = {
   weekday: 'Weekday',
@@ -53,7 +53,23 @@ interface ManualCoveragePoint {
   breakCount: number;
 }
 
-const ManualShiftAdjustmentsPage: React.FC = () => {
+interface ManualShiftAdjustmentsPageProps {
+  onSaveDraft?: () => void;
+  saveDisabled?: boolean;
+  saving?: boolean;
+  lastSavedLabel?: string;
+  autosaveLabel?: string | null;
+  autosaving?: boolean;
+}
+
+const ManualShiftAdjustmentsPage: React.FC<ManualShiftAdjustmentsPageProps> = ({
+  onSaveDraft,
+  saveDisabled,
+  saving,
+  lastSavedLabel,
+  autosaveLabel,
+  autosaving
+}) => {
   const dispatch = useDispatch<AppDispatch>();
   const { shifts, coverageTimeline, operationalTimeline, history } = useSelector(
     (state: RootState) => state.shiftManagement
@@ -90,6 +106,14 @@ const ManualShiftAdjustmentsPage: React.FC = () => {
     }, {} as Record<DayType, Map<string, number>>);
   }, [operationalTimeline]);
 
+  const handleLocalSave = useCallback(() => {
+    if (onSaveDraft) {
+      onSaveDraft();
+      return;
+    }
+    dispatch(saveDraft());
+  }, [dispatch, onSaveDraft]);
+
   const renderAdjustmentsContent = (fullscreenContext = false) => (
     <Stack spacing={3} sx={{ py: fullscreenContext ? 2 : 1, px: fullscreenContext ? 2 : 0 }}>
       <Paper elevation={2} sx={{ p: 3 }}>
@@ -112,14 +136,35 @@ const ManualShiftAdjustmentsPage: React.FC = () => {
                 Build shifts first to unlock manual adjustments.
               </Alert>
             )}
+            {lastSavedLabel && (
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+                {lastSavedLabel}
+                {autosaveLabel ? ` · ${autosaveLabel}` : ''}
+                {autosaving ? ' · Autosaving…' : ''}
+              </Typography>
+            )}
           </Box>
-          <Button
-            variant="outlined"
-            startIcon={fullscreenContext ? <FullscreenExitIcon /> : <FullscreenIcon />}
-            onClick={fullscreenContext ? handleExitFullScreen : handleEnterFullScreen}
-          >
-            {fullscreenContext ? 'Exit full screen' : 'Full screen view'}
-          </Button>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Button
+              variant="outlined"
+              startIcon={fullscreenContext ? <FullscreenExitIcon /> : <FullscreenIcon />}
+              onClick={fullscreenContext ? handleExitFullScreen : handleEnterFullScreen}
+            >
+              {fullscreenContext ? 'Exit full screen' : 'Full screen view'}
+            </Button>
+            <Tooltip title={saveDisabled ? 'No pending edits or save in progress' : 'Save this draft'}>
+              <span>
+                <Button
+                  variant="contained"
+                  color="primary"
+                  disabled={Boolean(saveDisabled)}
+                  onClick={handleLocalSave}
+                >
+                  {saving ? 'Saving…' : 'Save draft'}
+                </Button>
+              </span>
+            </Tooltip>
+          </Stack>
         </Stack>
       </Paper>
 
@@ -262,8 +307,22 @@ const ManualAdjustmentsDaySection: React.FC<ManualAdjustmentsDaySectionProps> = 
           ? theme.palette.error.main
           : theme.palette.success.main;
   const breakColor = theme.palette.warning.main;
-  const differenceValues = useMemo(() => chartData.map((point) => point.difference ?? 0), [chartData]);
-  const differenceDomain = useStableDifferenceDomain(differenceValues, 3);
+  const differenceDomain: [number, number] = [-3, 3];
+  const requirementLookup = useMemo(() => {
+    return new Map(chartData.map((point) => [point.startTime, Math.round(point.requirement)]));
+  }, [chartData]);
+  const hoursFactor = INTERVAL_MINUTES / 60;
+  const coverageSummary = useMemo(() => {
+    return chartData.reduce(
+      (acc, point) => {
+        acc.master += point.requirement * hoursFactor;
+        acc.mvt += point.coverage * hoursFactor;
+        acc.net += (point.coverage - point.requirement) * hoursFactor;
+        return acc;
+      },
+      { master: 0, mvt: 0, net: 0 }
+    );
+  }, [chartData, hoursFactor]);
 
   return (
     <Stack spacing={2}>
@@ -300,19 +359,52 @@ const ManualAdjustmentsDaySection: React.FC<ManualAdjustmentsDaySectionProps> = 
             <ResponsiveContainer width="100%" height={260}>
               <ComposedChart data={chartData} margin={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="startTime" interval={3} height={30} />
-                <YAxis yAxisId="coverage" allowDecimals={false} />
+                <XAxis
+                  xAxisId="time"
+                  dataKey="startTime"
+                  interval={3}
+                  height={30}
+                  label={{
+                    value: 'Time of day',
+                    position: 'insideBottom',
+                    offset: -4,
+                    fill: theme.palette.text.secondary,
+                    fontSize: 12
+                  }}
+                />
+                <XAxis
+                  xAxisId="master"
+                  dataKey="startTime"
+                  interval={3}
+                  orientation="top"
+                  tickLine={false}
+                  axisLine={false}
+                  height={24}
+                  tick={{ fill: requirementColor, fontSize: 11, fontWeight: 600 }}
+                  tickFormatter={(value: string) => {
+                    const label = requirementLookup.get(value);
+                    return label != null ? `${label}` : '';
+                  }}
+                  label={{
+                    value: 'Master schedule (buses)',
+                    position: 'top',
+                    offset: -4,
+                    fill: requirementColor,
+                    fontSize: 11,
+                    fontWeight: 600
+                  }}
+                />
+                <YAxis yAxisId="coverage" allowDecimals={false} hide orientation="right" />
                 <YAxis
                   yAxisId="difference"
                   domain={differenceDomain}
                   allowDecimals={false}
-                  orientation="right"
                   tickFormatter={(value) => (value > 0 ? `+${value}` : `${value}`)}
                   width={40}
                 />
                 <ReferenceLine yAxisId="difference" y={0} stroke={negativeDifferenceColor} strokeDasharray="3 3" />
                 <RechartTooltip content={<ManualCoverageTooltip slide={activeSlide} />} />
-                <Bar dataKey="difference" barSize={16} radius={[4, 4, 0, 0]} yAxisId="difference">
+                <Bar xAxisId="time" dataKey="difference" barSize={16} radius={[4, 4, 0, 0]} yAxisId="difference">
                   {chartData.map((point) => (
                     <Cell
                       key={`${dayType}-${point.startTime}`}
@@ -321,6 +413,7 @@ const ManualAdjustmentsDaySection: React.FC<ManualAdjustmentsDaySectionProps> = 
                   ))}
                 </Bar>
                 <Line
+                  xAxisId="time"
                   yAxisId="coverage"
                   type="monotone"
                   dataKey="requirement"
@@ -330,6 +423,7 @@ const ManualAdjustmentsDaySection: React.FC<ManualAdjustmentsDaySectionProps> = 
                   isAnimationActive={false}
                 />
                 <Line
+                  xAxisId="time"
                   yAxisId="coverage"
                   type="monotone"
                   dataKey="coverage"
@@ -337,8 +431,18 @@ const ManualAdjustmentsDaySection: React.FC<ManualAdjustmentsDaySectionProps> = 
                   strokeWidth={2}
                   dot={{ r: 2, stroke: coverageColor, fill: coverageColor }}
                   isAnimationActive={false}
-                />
+                >
+                  <LabelList
+                    dataKey="coverage"
+                    position="top"
+                    formatter={(label) =>
+                      typeof label === 'number' ? Math.round(label).toString() : label ?? ''
+                    }
+                    fill={coverageColor}
+                  />
+                </Line>
                 <Line
+                  xAxisId="time"
                   yAxisId="coverage"
                   type="monotone"
                   dataKey="breakCount"
@@ -350,6 +454,7 @@ const ManualAdjustmentsDaySection: React.FC<ManualAdjustmentsDaySectionProps> = 
                 />
               </ComposedChart>
             </ResponsiveContainer>
+            <SummaryMetricsRow summary={coverageSummary} />
           </>
         )}
         <Box display="flex" justifyContent="flex-end" mt={2}>
@@ -405,6 +510,52 @@ const LegendSwatch: React.FC<LegendSwatchProps> = ({ label, color, variant, seco
       {label}
     </Typography>
   </Stack>
+);
+
+interface SummaryMetricsRowProps {
+  summary: { master: number; mvt: number; net: number };
+}
+
+const SummaryMetricsRow: React.FC<SummaryMetricsRowProps> = ({ summary }) => {
+  const formatHours = (value: number, withSign = false) => {
+    const rounded = Math.round(value * 10) / 10;
+    const signPrefix = withSign && rounded > 0 ? '+' : '';
+    return `${signPrefix}${rounded.toFixed(1)} hrs`;
+  };
+  return (
+    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} mt={2}>
+      <SummaryMetric label="Master schedule hours" value={formatHours(summary.master)} />
+      <SummaryMetric label="MVT shift hours" value={formatHours(summary.mvt)} />
+      <SummaryMetric label="Net difference" value={formatHours(summary.net, true)} emphasize />
+    </Stack>
+  );
+};
+
+interface SummaryMetricProps {
+  label: string;
+  value: string;
+  emphasize?: boolean;
+}
+
+const SummaryMetric: React.FC<SummaryMetricProps> = ({ label, value, emphasize }) => (
+  <Box
+    sx={{
+      flex: 1,
+      p: 1.5,
+      borderRadius: 1,
+      border: '1px solid',
+      borderColor: emphasize ? 'primary.light' : 'divider',
+      backgroundColor: 'background.paper',
+      boxShadow: emphasize ? 2 : 0
+    }}
+  >
+    <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: 0.5 }}>
+      {label}
+    </Typography>
+    <Typography variant="subtitle1" fontWeight={600} color={emphasize ? 'primary.main' : 'text.primary'}>
+      {value}
+    </Typography>
+  </Box>
 );
 
 const SLIDER_OPTIONS: Array<{ key: ManualSlideKey; label: string }> = [

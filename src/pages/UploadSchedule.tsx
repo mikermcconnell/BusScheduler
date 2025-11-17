@@ -40,7 +40,7 @@ const UploadSchedule: React.FC<UploadScheduleProps> = ({ mode }) => {
   const pageCopy = useMemo(() => {
     if (isEditMode) {
       return {
-        headerTitle: 'Edit an Existing Schedule',
+        headerTitle: 'Fixed Transit',
         headerSubtitle: 'Import a published CSV schedule to tweak service times and export without rerunning optimization.',
         stepLabel: 'Step 1 of 2',
         stepName: 'Import Schedule Data',

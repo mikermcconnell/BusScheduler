@@ -119,8 +119,8 @@ const Dashboard: React.FC = () => {
       variant: 'contained' as const,
     },
     {
-      title: 'Edit Existing Schedule',
-      description: 'Import a published schedule for quick adjustments',
+      title: 'Fixed Transit',
+      description: 'Edit schedules, launch new builds, or jump into block tuning',
       icon: <EditIcon fontSize="large" />,
       path: '/edit-schedule',
       color: 'secondary',

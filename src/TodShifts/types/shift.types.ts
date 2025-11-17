@@ -1,30 +1,32 @@
+import type { OptimizationReport } from './optimization.types';
+
 export type DayType = 'weekday' | 'saturday' | 'sunday';
 
 export type ShiftZone = 'North' | 'South' | 'Floater';
 export type ShiftOrigin = 'imported' | 'manual' | 'optimized';
 
 export interface Shift {
-    id?: number | string;
-    shiftCode: string;
-    driverId?: string;
-    vehicleId?: string;
-    origin?: ShiftOrigin;
-    scheduleType: DayType;
-    zone: ShiftZone;
-    startTime: string; // HH:MM in 24h
-    endTime: string; // HH:MM in 24h, end can be after midnight
-    totalHours: number;
-    breakStart?: string;
-    breakEnd?: string;
-    breakDuration?: number;
-    mealBreakStart?: string;
-    mealBreakEnd?: string;
-    isSplitShift: boolean;
-    unionCompliant: boolean;
-    complianceWarnings?: string[];
-    createdBy?: string;
-    vehicleCount?: number;
-  }
+  id?: number | string;
+  shiftCode: string;
+  driverId?: string;
+  vehicleId?: string;
+  origin?: ShiftOrigin;
+  scheduleType: DayType;
+  zone: ShiftZone;
+  startTime: string; // HH:MM in 24h
+  endTime: string; // HH:MM in 24h, end can be after midnight
+  totalHours: number;
+  breakStart?: string;
+  breakEnd?: string;
+  breakDuration?: number;
+  mealBreakStart?: string;
+  mealBreakEnd?: string;
+  isSplitShift: boolean;
+  unionCompliant: boolean;
+  complianceWarnings?: string[];
+  createdBy?: string;
+  vehicleCount?: number;
+}
 
 export interface MasterScheduleRequirement {
   id?: number;
@@ -92,6 +94,31 @@ export interface TodShiftColorScale {
   };
 }
 
+export type TodShiftRunStatus = 'draft' | 'finalized';
+
+export interface TodShiftStoredFile {
+  name: string;
+  storagePath: string;
+  uploadedAt: string;
+  size?: number;
+  contentType?: string;
+  downloadURL?: string;
+}
+
+export interface TodShiftRunFiles {
+  city: TodShiftStoredFile;
+  contractor: TodShiftStoredFile;
+}
+
+export interface UndoSnapshot {
+  shifts: Shift[];
+  operationalTimeline: Record<DayType, OperationalInterval[]>;
+  coverageTimeline: Record<DayType, ShiftCoverageInterval[]>;
+  colorScale: TodShiftColorScale | null;
+  label: string;
+  timestamp: string;
+}
+
 export interface TodShiftRunPayload {
   cityFileName: string;
   contractorFileName: string;
@@ -99,13 +126,22 @@ export interface TodShiftRunPayload {
   cityTimeline: Record<DayType, CityRequirementInterval[]>;
   operationalTimeline: Record<DayType, OperationalInterval[]>;
   shifts: Shift[];
+  coverageTimeline?: Record<DayType, ShiftCoverageInterval[]>;
+  colorScale?: TodShiftColorScale | null;
   lastExportedAt?: string;
+  draftName?: string;
+  status?: TodShiftRunStatus;
+  unionRulesSnapshot?: UnionRule[];
+  historySnapshot?: UndoSnapshot[];
+  sourceFiles?: TodShiftRunFiles;
+  lastSavedAt?: string;
+  lastAutosavedAt?: string;
+  lastOptimizationReport?: OptimizationReport | null;
+  hasUserSave?: boolean;
 }
 
 export interface TodShiftRun extends TodShiftRunPayload {
   id: string;
-  coverageTimeline?: Record<DayType, ShiftCoverageInterval[]>;
-  colorScale?: TodShiftColorScale;
 }
 
 export interface ShiftCoverageInterval {

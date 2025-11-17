@@ -30,6 +30,8 @@ import {
 import Slider from '@mui/material/Slider';
 import { Edit, Delete, Warning } from '@mui/icons-material';
 import { useDispatch, useSelector } from 'react-redux';
+import { Controller, useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { RootState, AppDispatch } from '../store/store';
 import { Shift, UnionViolation, UnionRule } from './types/shift.types';
 import { saveShift, updateShift, deleteShift } from './store/shiftManagementSlice';
@@ -43,6 +45,7 @@ import {
   TIME_WINDOW_END,
   DAY_TYPES
 } from './utils/timeUtils';
+import { shiftEditorFormSchema, ShiftEditorFormValues } from './utils/shiftFormSchemas';
 
 interface ShiftSummaryTableProps {
   title?: string;
@@ -223,7 +226,12 @@ const ShiftSummaryTable: React.FC<ShiftSummaryTableProps> = ({
             </TableHead>
             <TableBody>
               {filteredShifts.map((shift) => (
-                <TableRow key={shift.id ?? shift.shiftCode} hover>
+                <TableRow
+                  key={shift.id ?? shift.shiftCode}
+                  hover
+                  sx={{ cursor: showActions ? 'pointer' : 'default' }}
+                  onClick={showActions ? () => openEditor('edit', shift) : undefined}
+                >
                   <TableCell>{shift.shiftCode}</TableCell>
                   <TableCell sx={{ textTransform: 'capitalize' }}>{shift.scheduleType}</TableCell>
                   <TableCell>{shift.zone}</TableCell>
@@ -255,7 +263,14 @@ const ShiftSummaryTable: React.FC<ShiftSummaryTableProps> = ({
                     <TableCell>
                       <Tooltip title="Edit shift">
                         <span>
-                          <IconButton color="primary" size="small" onClick={() => openEditor('edit', shift)}>
+                          <IconButton
+                            color="primary"
+                            size="small"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openEditor('edit', shift);
+                            }}
+                          >
                             <Edit fontSize="small" />
                           </IconButton>
                         </span>
@@ -266,7 +281,10 @@ const ShiftSummaryTable: React.FC<ShiftSummaryTableProps> = ({
                             color="error"
                             size="small"
                             disabled={!shift.id || loading.shifts}
-                            onClick={() => handleDelete(shift)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleDelete(shift);
+                            }}
                           >
                             <Delete fontSize="small" />
                           </IconButton>
@@ -317,41 +335,6 @@ const ShiftEditorDialog: React.FC<ShiftEditorDialogProps> = ({
   const dispatch = useDispatch<AppDispatch>();
   const unionRules = useSelector((state: RootState) => state.shiftManagement.unionRules);
   const loading = useSelector((state: RootState) => state.shiftManagement.loading.shifts);
-  const initialShift =
-    shift ??
-    {
-      ...defaultShiftTemplate,
-      scheduleType: defaultScheduleType ?? defaultShiftTemplate.scheduleType,
-      zone: defaultZone ?? defaultShiftTemplate.zone
-    };
-  const parseMinutesOrFallback = (value: string | undefined, fallback: number): number => {
-    if (!value) {
-      return fallback;
-    }
-    try {
-      return parseTimeToMinutes(value);
-    } catch (error) {
-      console.warn('Unable to parse time value, using fallback.', value, error);
-      return fallback;
-    }
-  };
-  const resolvedStart = parseMinutesOrFallback(initialShift.startTime, TIME_WINDOW_START);
-  const resolvedEnd = parseMinutesOrFallback(initialShift.endTime, resolvedStart + 8 * 60);
-  const [shiftCode, setShiftCode] = useState(initialShift.shiftCode);
-  const [scheduleType, setScheduleType] = useState(initialShift.scheduleType);
-  const [zone, setZone] = useState(initialShift.zone);
-  const [range, setRange] = useState<[number, number]>([resolvedStart, resolvedEnd]);
-  const [includeBreak, setIncludeBreak] = useState(Boolean(initialShift.breakStart && initialShift.breakEnd));
-  const defaultBreakStart = resolvedStart + 2 * 60;
-  const defaultBreakEnd = defaultBreakStart + 30;
-  const [breakRange, setBreakRange] = useState<[number, number]>([
-    includeBreak
-      ? parseMinutesOrFallback(initialShift.breakStart as string, defaultBreakStart)
-      : defaultBreakStart,
-    includeBreak
-      ? parseMinutesOrFallback(initialShift.breakEnd as string, defaultBreakEnd)
-      : defaultBreakEnd
-  ]);
   const [violations, setViolations] = useState<UnionViolation[]>([]);
   const minShiftHours = useMemo(
     () => extractShiftLengthLimit(unionRules, 'min', DEFAULT_MIN_SHIFT_HOURS),
@@ -369,38 +352,98 @@ const ShiftEditorDialog: React.FC<ShiftEditorDialogProps> = ({
     () => extractBreakThresholdHours(unionRules, DEFAULT_BREAK_THRESHOLD_HOURS),
     [unionRules]
   );
-
-  useEffect(() => {
-    if (!open) {
-      return;
+  const parseMinutesOrFallback = (value: string | undefined, fallback: number): number => {
+    if (!value) {
+      return fallback;
     }
-    const refreshedShift =
+    try {
+      return parseTimeToMinutes(value);
+    } catch (error) {
+      console.warn('Unable to parse time value, using fallback.', value, error);
+      return fallback;
+    }
+  };
+
+  const createDefaultBreakRange = (start: number, end: number): [number, number] => {
+    const baseStart = Math.min(Math.max(start + 2 * 60, start + INTERVAL_MINUTES), end - 2 * INTERVAL_MINUTES);
+    const baseEnd = Math.min(baseStart + 30, end - INTERVAL_MINUTES);
+    return [baseStart, baseEnd];
+  };
+
+  const resolvedShift = useMemo(
+    () =>
       shift ??
       {
         ...defaultShiftTemplate,
         scheduleType: defaultScheduleType ?? defaultShiftTemplate.scheduleType,
         zone: defaultZone ?? defaultShiftTemplate.zone
-      };
-    const startMinutes = parseMinutesOrFallback(refreshedShift.startTime, TIME_WINDOW_START);
-    const endMinutes = parseMinutesOrFallback(refreshedShift.endTime, startMinutes + 8 * 60);
-    setShiftCode(refreshedShift.shiftCode);
-    setScheduleType(refreshedShift.scheduleType);
-    setZone(refreshedShift.zone);
-    setRange([startMinutes, endMinutes]);
-    const hasBreak = Boolean(refreshedShift.breakStart && refreshedShift.breakEnd);
-    setIncludeBreak(hasBreak);
-    const fallbackBreakStart = startMinutes + 2 * 60;
-    const fallbackBreakEnd = fallbackBreakStart + 30;
-    setBreakRange([
-      hasBreak
-        ? parseMinutesOrFallback(refreshedShift.breakStart as string, fallbackBreakStart)
-        : fallbackBreakStart,
-      hasBreak
-        ? parseMinutesOrFallback(refreshedShift.breakEnd as string, fallbackBreakEnd)
-        : fallbackBreakEnd
-    ]);
+      },
+    [shift, defaultScheduleType, defaultZone]
+  );
+
+  const deriveDefaultValues = (): ShiftEditorFormValues => {
+    const startMinutes = parseMinutesOrFallback(resolvedShift.startTime, TIME_WINDOW_START);
+    const endMinutes = parseMinutesOrFallback(resolvedShift.endTime, Math.min(startMinutes + 8 * 60, TIME_WINDOW_END));
+    const hasBreak = Boolean(resolvedShift.breakStart && resolvedShift.breakEnd);
+    const fallbackBreakRange = createDefaultBreakRange(startMinutes, endMinutes);
+
+    return {
+      shiftCode: resolvedShift.shiftCode,
+      scheduleType: resolvedShift.scheduleType,
+      zone: resolvedShift.zone,
+      range: [startMinutes, endMinutes],
+      includeBreak: hasBreak,
+      breakRange: hasBreak
+        ? [
+            parseMinutesOrFallback(resolvedShift.breakStart as string, fallbackBreakRange[0]),
+            parseMinutesOrFallback(resolvedShift.breakEnd as string, fallbackBreakRange[1])
+          ]
+        : fallbackBreakRange
+    };
+  };
+
+  const defaultFormValues = useMemo(deriveDefaultValues, [resolvedShift]);
+
+  const {
+    control,
+    handleSubmit,
+    watch,
+    reset,
+    setValue,
+    register,
+    formState: { errors, isSubmitting }
+  } = useForm<ShiftEditorFormValues>({
+    resolver: zodResolver(shiftEditorFormSchema),
+    defaultValues: defaultFormValues
+  });
+
+  useEffect(() => {
+    reset(defaultFormValues);
     setViolations([]);
-  }, [open, shift, defaultScheduleType, defaultZone]);
+  }, [defaultFormValues, reset]);
+
+  const range = watch('range');
+  const includeBreak = watch('includeBreak');
+  const breakRange = watch('breakRange');
+
+  useEffect(() => {
+    if (includeBreak && !breakRange) {
+      setValue('breakRange', createDefaultBreakRange(range[0], range[1]), { shouldDirty: true });
+    }
+  }, [includeBreak, breakRange, range, setValue]);
+
+  useEffect(() => {
+    if (!includeBreak || !breakRange) {
+      return;
+    }
+    const minBreakStart = range[0] + INTERVAL_MINUTES;
+    const maxBreakEnd = range[1] - INTERVAL_MINUTES;
+    const clampedStart = Math.min(Math.max(breakRange[0], minBreakStart), maxBreakEnd - INTERVAL_MINUTES);
+    const clampedEnd = Math.min(Math.max(breakRange[1], clampedStart + INTERVAL_MINUTES), maxBreakEnd);
+    if (clampedStart !== breakRange[0] || clampedEnd !== breakRange[1]) {
+      setValue('breakRange', [clampedStart, clampedEnd] as [number, number], { shouldDirty: true });
+    }
+  }, [range, includeBreak, breakRange, setValue]);
 
   const marks = useMemo(() => {
     const values: { value: number; label: string }[] = [];
@@ -410,57 +453,43 @@ const ShiftEditorDialog: React.FC<ShiftEditorDialogProps> = ({
     return values;
   }, []);
 
-  const snap = (value: number) => {
-    return Math.round(value / INTERVAL_MINUTES) * INTERVAL_MINUTES;
-  };
+  const snap = (value: number) => Math.round(value / INTERVAL_MINUTES) * INTERVAL_MINUTES;
 
-  const handleRangeChange = (_: Event, values: number | number[]) => {
-    const [start, end] = values as number[];
-    const snappedStart = Math.max(TIME_WINDOW_START, snap(start));
-    const snappedEnd = Math.min(TIME_WINDOW_END, snap(end));
-    if (snappedEnd <= snappedStart) {
-      return;
-    }
-    setRange([snappedStart, snappedEnd]);
-  };
-
-  const handleBreakRangeChange = (_: Event, values: number | number[]) => {
-    const [start, end] = values as number[];
-    const minBreakStart = range[0] + INTERVAL_MINUTES;
-    const maxBreakEnd = range[1] - INTERVAL_MINUTES;
-    const snappedStart = Math.max(minBreakStart, snap(start));
-    const snappedEnd = Math.min(maxBreakEnd, snap(end));
-    if (snappedEnd <= snappedStart) {
-      return;
-    }
-    setBreakRange([snappedStart, snappedEnd]);
-  };
-
-  const calculateTotalHours = () => {
-    const grossMinutes = range[1] - range[0];
-    const breakMinutes = includeBreak ? breakRange[1] - breakRange[0] : 0;
+  const calculateShiftHours = (
+    currentRange: [number, number],
+    hasBreak: boolean,
+    currentBreak?: [number, number]
+  ) => {
+    const grossMinutes = currentRange[1] - currentRange[0];
+    const breakMinutes = hasBreak && currentBreak ? currentBreak[1] - currentBreak[0] : 0;
     return Number(((grossMinutes - breakMinutes) / 60).toFixed(2));
   };
-  const currentShiftHours = useMemo(() => calculateTotalHours(), [range, breakRange, includeBreak]);
+
+  const currentShiftHours = useMemo(
+    () => calculateShiftHours(range, includeBreak, breakRange),
+    [range, includeBreak, breakRange]
+  );
   const grossShiftHours = useMemo(() => Number(((range[1] - range[0]) / 60).toFixed(2)), [range]);
   const requiresMealBreak = useMemo(
     () => grossShiftHours >= breakThresholdHours - 0.01,
     [grossShiftHours, breakThresholdHours]
   );
+
   const autoBreakRef = useRef(false);
   useEffect(() => {
     if (requiresMealBreak) {
       if (!includeBreak) {
-        setIncludeBreak(true);
+        setValue('includeBreak', true, { shouldDirty: true });
       }
       autoBreakRef.current = true;
     } else if (autoBreakRef.current) {
       if (includeBreak) {
-        setIncludeBreak(false);
+        setValue('includeBreak', false, { shouldDirty: true });
       }
       autoBreakRef.current = false;
     }
-  }, [requiresMealBreak, includeBreak]);
+  }, [requiresMealBreak, includeBreak, setValue]);
+
   const shiftLengthFeedback = useMemo<ShiftLengthFeedback>(() => {
     if (currentShiftHours < minShiftHours) {
       return {
@@ -486,24 +515,38 @@ const ShiftEditorDialog: React.FC<ShiftEditorDialogProps> = ({
     };
   }, [currentShiftHours, idealShiftHours, maxShiftHours, minShiftHours]);
 
-  const buildPayload = (): Shift => ({
-    ...defaultShiftTemplate,
-    ...shift,
-    shiftCode,
-    scheduleType,
-    zone,
-    startTime: minutesToTimeString(range[0]),
-    endTime: minutesToTimeString(range[1]),
-    breakStart: includeBreak ? minutesToTimeString(breakRange[0]) : undefined,
-    breakEnd: includeBreak ? minutesToTimeString(breakRange[1]) : undefined,
-    breakDuration: includeBreak ? breakRange[1] - breakRange[0] : undefined,
-    totalHours: calculateTotalHours(),
-    vehicleCount: shift?.vehicleCount ?? 1,
-    origin: shift?.origin ?? 'manual'
-  });
+  const buildPayload = (values: ShiftEditorFormValues): Shift => {
+    const [startMinutes, endMinutes] = values.range;
+    const payload: Shift = {
+      ...defaultShiftTemplate,
+      ...shift,
+      shiftCode: values.shiftCode,
+      scheduleType: values.scheduleType,
+      zone: values.zone,
+      startTime: minutesToTimeString(startMinutes),
+      endTime: minutesToTimeString(endMinutes),
+      totalHours: calculateShiftHours(values.range, values.includeBreak, values.breakRange),
+      vehicleCount: shift?.vehicleCount ?? 1,
+      origin: shift?.origin ?? 'manual',
+      unionCompliant: true,
+      complianceWarnings: []
+    };
 
-  const handleSave = async () => {
-    const payload = buildPayload();
+    if (values.includeBreak && values.breakRange) {
+      payload.breakStart = minutesToTimeString(values.breakRange[0]);
+      payload.breakEnd = minutesToTimeString(values.breakRange[1]);
+      payload.breakDuration = values.breakRange[1] - values.breakRange[0];
+    } else {
+      payload.breakStart = undefined;
+      payload.breakEnd = undefined;
+      payload.breakDuration = undefined;
+    }
+
+    return payload;
+  };
+
+  const handleSave = async (values: ShiftEditorFormValues) => {
+    const payload = buildPayload(values);
     const ruleSet = unionRules.length > 0 ? unionRules : [];
     const result = await validateShiftAgainstRules(payload, ruleSet);
     setViolations(result);
@@ -530,47 +573,73 @@ const ShiftEditorDialog: React.FC<ShiftEditorDialogProps> = ({
       <DialogContent dividers>
         <Stack spacing={3} mt={1}>
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
-            <TextField label="Shift Code" value={shiftCode} onChange={(event) => setShiftCode(event.target.value)} fullWidth />
-            <FormControl fullWidth>
-              <InputLabel>Shift Type</InputLabel>
-              <Select
-                label="Shift Type"
-                value={scheduleType}
-                onChange={(event) => setScheduleType(event.target.value as Shift['scheduleType'])}
-              >
-                {DAY_TYPES.map((day) => (
-                  <MenuItem key={day} value={day} sx={{ textTransform: 'capitalize' }}>
-                    {day}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            <FormControl fullWidth>
-              <InputLabel>Zone</InputLabel>
-              <Select label="Zone" value={zone} onChange={(event) => setZone(event.target.value as Shift['zone'])}>
-                <MenuItem value="North">North</MenuItem>
-                <MenuItem value="South">South</MenuItem>
-                <MenuItem value="Floater">Floater</MenuItem>
-              </Select>
-            </FormControl>
+            <TextField
+              label="Shift Code"
+              fullWidth
+              {...register('shiftCode')}
+              error={Boolean(errors.shiftCode)}
+              helperText={errors.shiftCode?.message}
+            />
+            <Controller
+              name="scheduleType"
+              control={control}
+              render={({ field }) => (
+                <FormControl fullWidth error={Boolean(errors.scheduleType)}>
+                  <InputLabel>Shift Type</InputLabel>
+                  <Select {...field} label="Shift Type">
+                    {DAY_TYPES.map((day) => (
+                      <MenuItem key={day} value={day} sx={{ textTransform: 'capitalize' }}>
+                        {day}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              )}
+            />
+            <Controller
+              name="zone"
+              control={control}
+              render={({ field }) => (
+                <FormControl fullWidth error={Boolean(errors.zone)}>
+                  <InputLabel>Zone</InputLabel>
+                  <Select {...field} label="Zone">
+                    <MenuItem value="North">North</MenuItem>
+                    <MenuItem value="South">South</MenuItem>
+                    <MenuItem value="Floater">Floater</MenuItem>
+                  </Select>
+                </FormControl>
+              )}
+            />
           </Stack>
 
           <Box>
             <Typography variant="subtitle2" gutterBottom>
               Shift Window ({minutesToTimeString(range[0])} – {minutesToTimeString(range[1])})
             </Typography>
-            <Slider
-              value={range}
-              onChange={handleRangeChange}
-              min={TIME_WINDOW_START}
-              max={TIME_WINDOW_END}
-              step={INTERVAL_MINUTES}
-              marks={marks}
-              valueLabelDisplay="off"
+            <Controller
+              name="range"
+              control={control}
+              render={({ field }) => (
+                <Slider
+                  value={field.value}
+                  onChange={(_, values) => {
+                    const [start, end] = values as number[];
+                    const snappedStart = Math.max(TIME_WINDOW_START, snap(start));
+                    const snappedEnd = Math.min(TIME_WINDOW_END, snap(end));
+                    if (snappedEnd <= snappedStart) {
+                      return;
+                    }
+                    field.onChange([snappedStart, snappedEnd]);
+                  }}
+                  min={TIME_WINDOW_START}
+                  max={TIME_WINDOW_END}
+                  step={INTERVAL_MINUTES}
+                  marks={marks}
+                  valueLabelDisplay="off"
+                />
+              )}
             />
-            <Stack direction="row" spacing={1} flexWrap="wrap" mt={1}
-              sx={{ '& > *': { mb: 0.5 } }}
-            >
+            <Stack direction="row" spacing={1} flexWrap="wrap" mt={1} sx={{ '& > *': { mb: 0.5 } }}>
               <Chip
                 label={`Current ${currentShiftHours.toFixed(2)}h`}
                 color={shiftLengthFeedback.chipColor}
@@ -586,15 +655,15 @@ const ShiftEditorDialog: React.FC<ShiftEditorDialogProps> = ({
           </Box>
 
           <Box>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={includeBreak}
-                  onChange={(event) => setIncludeBreak(event.target.checked)}
-                  disabled={requiresMealBreak}
+            <Controller
+              name="includeBreak"
+              control={control}
+              render={({ field }) => (
+                <FormControlLabel
+                  control={<Switch {...field} checked={field.value} disabled={requiresMealBreak} />}
+                  label={requiresMealBreak ? 'Meal break required (auto applied)' : 'Include meal break'}
                 />
-              }
-              label={requiresMealBreak ? 'Meal break required (auto applied)' : 'Include meal break'}
+              )}
             />
             <Typography variant="caption" color="text.secondary" display="block">
               {requiresMealBreak
@@ -604,16 +673,32 @@ const ShiftEditorDialog: React.FC<ShiftEditorDialogProps> = ({
             {includeBreak && (
               <Box mt={1}>
                 <Typography variant="subtitle2" gutterBottom>
-                  Break Window ({minutesToTimeString(breakRange[0])} – {minutesToTimeString(breakRange[1])})
+                  Break Window (
+                  {breakRange ? minutesToTimeString(breakRange[0]) : '—'} –{' '}
+                  {breakRange ? minutesToTimeString(breakRange[1]) : '—'})
                 </Typography>
-                <Slider
-                  value={breakRange}
-                  onChange={handleBreakRangeChange}
-                  min={range[0] + INTERVAL_MINUTES}
-                  max={range[1] - INTERVAL_MINUTES}
-                  step={INTERVAL_MINUTES}
-                  marks={marks}
-                  valueLabelDisplay="off"
+                <Controller
+                  name="breakRange"
+                  control={control}
+                  render={({ field }) => (
+                    <Slider
+                      value={field.value ?? createDefaultBreakRange(range[0], range[1])}
+                      onChange={(_, values) => {
+                        const [start, end] = values as number[];
+                        const snappedStart = Math.max(range[0] + INTERVAL_MINUTES, snap(start));
+                        const snappedEnd = Math.min(range[1] - INTERVAL_MINUTES, snap(end));
+                        if (snappedEnd <= snappedStart) {
+                          return;
+                        }
+                        field.onChange([snappedStart, snappedEnd]);
+                      }}
+                      min={range[0] + INTERVAL_MINUTES}
+                      max={range[1] - INTERVAL_MINUTES}
+                      step={INTERVAL_MINUTES}
+                      marks={marks}
+                      valueLabelDisplay="off"
+                    />
+                  )}
                 />
               </Box>
             )}
@@ -633,10 +718,10 @@ const ShiftEditorDialog: React.FC<ShiftEditorDialogProps> = ({
         </Stack>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose} disabled={loading}>
+        <Button onClick={onClose} disabled={loading || isSubmitting}>
           Cancel
         </Button>
-        <Button variant="contained" onClick={handleSave} disabled={loading || !shiftCode}>
+        <Button variant="contained" onClick={handleSubmit(handleSave)} disabled={loading || isSubmitting}>
           Save
         </Button>
       </DialogActions>

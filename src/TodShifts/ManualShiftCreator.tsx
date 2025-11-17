@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Paper,
   Grid,
@@ -20,115 +20,187 @@ import { TimePicker, LocalizationProvider } from '@mui/x-date-pickers';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import dayjs, { Dayjs } from 'dayjs';
 import { useDispatch, useSelector } from 'react-redux';
+import { Controller, useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { RootState, AppDispatch } from '../store/store';
 import { saveShift } from './store/shiftManagementSlice';
 import { validateShiftAgainstRules } from './utils/unionRulesValidator';
 import { Shift, UnionViolation } from './types/shift.types';
 import { snapDayjsToInterval } from './utils/shiftNormalization';
+import { manualShiftFormSchema, ManualShiftFormValues } from './utils/shiftFormSchemas';
+import { parseTimeToMinutes } from './utils/timeUtils';
 
 interface Props {
   onShiftCreated: () => void;
 }
 
+const MINUTES_PER_DAY = 24 * 60;
+
 const ManualShiftCreator: React.FC<Props> = ({ onShiftCreated }) => {
   const dispatch = useDispatch<AppDispatch>();
   const { unionRules } = useSelector((state: RootState) => state.shiftManagement);
-  
-  const [shift, setShift] = useState<Partial<Shift>>({
-    shiftCode: '',
-    scheduleType: 'weekday',
-    zone: 'South',
-    startTime: '06:00',
-    endTime: '14:00',
-    breakDuration: 15,
-    isSplitShift: false,
-  });
-  
-  const [violations, setViolations] = useState<UnionViolation[]>([]);
-  const [validating, setValidating] = useState(false);
 
-  useEffect(() => {
-    // Validate on any change
-    if (shift.startTime && shift.endTime) {
-      validateShift();
-    }
-  }, [shift, unionRules]);
-
-  const validateShift = async () => {
-    setValidating(true);
-    const validationResults = await validateShiftAgainstRules(shift as Shift, unionRules);
-    setViolations(validationResults);
-    setValidating(false);
-  };
-
-  const calculateTotalHours = (): number => {
-    if (!shift.startTime || !shift.endTime) return 0;
-    
-    const start = dayjs(`2024-01-01 ${shift.startTime}`);
-    const end = dayjs(`2024-01-01 ${shift.endTime}`);
-    let hours = end.diff(start, 'hour', true);
-    
-    // Subtract break time
-    if (shift.breakDuration) {
-      hours -= shift.breakDuration / 60;
-    }
-    if (shift.mealBreakStart && shift.mealBreakEnd) {
-      const mealStart = dayjs(`2024-01-01 ${shift.mealBreakStart}`);
-      const mealEnd = dayjs(`2024-01-01 ${shift.mealBreakEnd}`);
-      hours -= mealEnd.diff(mealStart, 'hour', true);
-    }
-    
-    return Math.round(hours * 100) / 100;
-  };
-
-  const handleTimeChange = (
-    field: 'startTime' | 'endTime' | 'breakStart' | 'breakEnd' | 'mealBreakStart' | 'mealBreakEnd',
-    value: Dayjs | null
-  ) => {
-    if (!value) {
-      return;
-    }
-    const snapped = snapDayjsToInterval(value, field.includes('Start') ? 'floor' : 'ceil');
-    setShift((prev: Partial<Shift>) => ({
-      ...prev,
-      [field]: snapped,
-    }));
-  };
-
-  const handleSubmit = async () => {
-    if (!shift.shiftCode || !shift.startTime || !shift.endTime) {
-      return;
-    }
-
-    const hasErrors = violations.some(v => v.violationType === 'error');
-    if (hasErrors && !window.confirm('This shift has union compliance errors. Create anyway?')) {
-      return;
-    }
-
-    const completeShift: Shift = {
-      ...shift as Shift,
-      totalHours: calculateTotalHours(),
-      unionCompliant: !hasErrors,
-      complianceWarnings: violations.map(v => v.violationMessage),
-    };
-
-    await dispatch(saveShift(completeShift));
-    onShiftCreated();
-    
-    // Reset form
-    setShift({
+  const defaultValues: ManualShiftFormValues = useMemo(
+    () => ({
       shiftCode: '',
       scheduleType: 'weekday',
       zone: 'South',
       startTime: '06:00',
       endTime: '14:00',
       breakDuration: 15,
-      isSplitShift: false,
-    });
+      breakStart: null,
+      breakEnd: null,
+      mealBreakStart: null,
+      mealBreakEnd: null,
+      isSplitShift: false
+    }),
+    []
+  );
+
+  const {
+    control,
+    register,
+    handleSubmit,
+    watch,
+    reset,
+    formState: { errors, isSubmitting }
+  } = useForm<ManualShiftFormValues>({
+    resolver: zodResolver(manualShiftFormSchema),
+    defaultValues
+  });
+
+  const formValues = watch();
+  const [violations, setViolations] = useState<UnionViolation[]>([]);
+  const [validating, setValidating] = useState(false);
+
+  const computeTotalHours = (values: ManualShiftFormValues): number => {
+    if (!values.startTime || !values.endTime) {
+      return 0;
+    }
+
+    const startMinutes = parseTimeToMinutes(values.startTime);
+    let endMinutes = parseTimeToMinutes(values.endTime);
+    if (endMinutes <= startMinutes) {
+      endMinutes += MINUTES_PER_DAY;
+    }
+
+    let duration = endMinutes - startMinutes;
+
+    if (typeof values.breakDuration === 'number') {
+      duration -= values.breakDuration;
+    }
+
+    if (values.mealBreakStart && values.mealBreakEnd) {
+      let mealStart = parseTimeToMinutes(values.mealBreakStart);
+      let mealEnd = parseTimeToMinutes(values.mealBreakEnd);
+      if (mealEnd <= mealStart) {
+        mealEnd += MINUTES_PER_DAY;
+      }
+      duration -= mealEnd - mealStart;
+    }
+
+    return Number((duration / 60).toFixed(2));
   };
 
-  const hasErrors = violations.some(v => v.violationType === 'error');
-  const hasWarnings = violations.some(v => v.violationType === 'warning');
+  const buildShiftPayload = (values: ManualShiftFormValues): Shift => ({
+    shiftCode: values.shiftCode,
+    scheduleType: values.scheduleType,
+    zone: values.zone,
+    startTime: values.startTime,
+    endTime: values.endTime,
+    breakDuration: values.breakDuration ?? undefined,
+    breakStart: values.breakStart ?? undefined,
+    breakEnd: values.breakEnd ?? undefined,
+    mealBreakStart: values.mealBreakStart ?? undefined,
+    mealBreakEnd: values.mealBreakEnd ?? undefined,
+    totalHours: computeTotalHours(values),
+    unionCompliant: true,
+    complianceWarnings: [],
+    isSplitShift: values.isSplitShift,
+    origin: 'manual'
+  });
+
+  useEffect(() => {
+    let isActive = true;
+    const subscription = watch((values) => {
+      if (!values.startTime || !values.endTime) {
+        setViolations([]);
+        return;
+      }
+
+      setValidating(true);
+      (async () => {
+        try {
+          const payload = buildShiftPayload(values as ManualShiftFormValues);
+          const result = await validateShiftAgainstRules(payload, unionRules);
+          if (isActive) {
+            setViolations(result);
+          }
+        } finally {
+          if (isActive) {
+            setValidating(false);
+          }
+        }
+      })();
+    });
+
+    return () => {
+      isActive = false;
+      subscription.unsubscribe();
+    };
+  }, [watch, unionRules]);
+
+  const onSubmit = async (values: ManualShiftFormValues) => {
+    const payload = buildShiftPayload(values);
+    const result = await validateShiftAgainstRules(payload, unionRules);
+    setViolations(result);
+
+    const hasErrors = result.some((violation) => violation.violationType === 'error');
+    if (hasErrors && !window.confirm('This shift has union compliance errors. Create anyway?')) {
+      return;
+    }
+
+    const shiftToPersist: Shift = {
+      ...payload,
+      unionCompliant: !hasErrors,
+      complianceWarnings: result.map((violation) => violation.violationMessage)
+    };
+
+    await dispatch(saveShift(shiftToPersist));
+    onShiftCreated();
+    reset(defaultValues);
+    setViolations([]);
+  };
+
+  const totalHours = useMemo(() => computeTotalHours(formValues), [formValues]);
+  const hasErrors = violations.some((violation) => violation.violationType === 'error');
+  const hasWarnings = violations.some((violation) => violation.violationType === 'warning');
+
+  const renderTimePicker = (
+    name: keyof ManualShiftFormValues,
+    label: string,
+    rounding: 'floor' | 'ceil'
+  ) => (
+    <Controller
+      name={name}
+      control={control}
+      render={({ field }) => (
+        <TimePicker
+          label={label}
+          value={field.value ? dayjs(`2024-01-01 ${field.value}`) : null}
+          onChange={(value: Dayjs | null) => field.onChange(value ? snapDayjsToInterval(value, rounding) : null)}
+          timeSteps={{ minutes: 15 }}
+          slotProps={{
+            textField: {
+              fullWidth: true,
+              error: Boolean(errors[name]),
+              helperText: errors[name]?.message
+            }
+          }}
+        />
+      )}
+    />
+  );
 
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs}>
@@ -136,91 +208,85 @@ const ManualShiftCreator: React.FC<Props> = ({ onShiftCreated }) => {
         <Typography variant="h6" gutterBottom>
           Create New Shift
         </Typography>
-        
+
         <Grid container spacing={3}>
           {/* Basic Information */}
           <Grid
             size={{
               xs: 12,
               md: 3
-            }}>
-            <FormControl fullWidth>
-              <InputLabel>Shift Type</InputLabel>
-              <Select
-                value={shift.scheduleType ?? 'weekday'}
-                label="Shift Type"
-                onChange={(e) =>
-                  setShift((prev: Partial<Shift>) => ({ ...prev, scheduleType: e.target.value as Shift['scheduleType'] }))
-                }
-              >
-                <MenuItem value="weekday">Weekday</MenuItem>
-                <MenuItem value="saturday">Saturday</MenuItem>
-                <MenuItem value="sunday">Sunday</MenuItem>
-              </Select>
-            </FormControl>
+            }}
+          >
+            <Controller
+              name="scheduleType"
+              control={control}
+              render={({ field }) => (
+                <FormControl fullWidth error={Boolean(errors.scheduleType)}>
+                  <InputLabel>Shift Type</InputLabel>
+                  <Select {...field} label="Shift Type">
+                    <MenuItem value="weekday">Weekday</MenuItem>
+                    <MenuItem value="saturday">Saturday</MenuItem>
+                    <MenuItem value="sunday">Sunday</MenuItem>
+                  </Select>
+                </FormControl>
+              )}
+            />
           </Grid>
-          
+
           <Grid
             size={{
               xs: 12,
               md: 3
-            }}>
+            }}
+          >
             <TextField
               fullWidth
               label="Shift Code"
-              value={shift.shiftCode}
-              onChange={(e) => setShift((prev: Partial<Shift>) => ({ ...prev, shiftCode: e.target.value }))}
               placeholder="Bus 01"
-              error={!shift.shiftCode}
-              helperText={!shift.shiftCode ? 'Required' : ''}
+              error={Boolean(errors.shiftCode)}
+              helperText={errors.shiftCode?.message}
+              {...register('shiftCode')}
             />
           </Grid>
-          
+
           <Grid
             size={{
               xs: 12,
               md: 3
-            }}>
-            <FormControl fullWidth>
-              <InputLabel>Zone</InputLabel>
-              <Select
-                value={shift.zone}
-                onChange={(e) => setShift((prev: Partial<Shift>) => ({ ...prev, zone: e.target.value as 'North' | 'South' | 'Floater' }))}
-                label="Zone"
-              >
-                <MenuItem value="North">North</MenuItem>
-                <MenuItem value="South">South</MenuItem>
-                <MenuItem value="Floater">Floater</MenuItem>
-              </Select>
-            </FormControl>
+            }}
+          >
+            <Controller
+              name="zone"
+              control={control}
+              render={({ field }) => (
+                <FormControl fullWidth error={Boolean(errors.zone)}>
+                  <InputLabel>Zone</InputLabel>
+                  <Select {...field} label="Zone">
+                    <MenuItem value="North">North</MenuItem>
+                    <MenuItem value="South">South</MenuItem>
+                    <MenuItem value="Floater">Floater</MenuItem>
+                  </Select>
+                </FormControl>
+              )}
+            />
           </Grid>
-          
+
           <Grid
             size={{
               xs: 12,
               md: 3
-            }}>
-            <TimePicker
-              label="Start Time"
-              value={dayjs(`2024-01-01 ${shift.startTime}`)}
-              onChange={(value: Dayjs | null) => handleTimeChange('startTime', value)}
-              timeSteps={{ minutes: 15 }}
-              slotProps={{ textField: { fullWidth: true } }}
-            />
+            }}
+          >
+            {renderTimePicker('startTime', 'Start Time', 'floor')}
           </Grid>
-          
+
           <Grid
             size={{
               xs: 12,
               md: 3
-            }}>
-            <TimePicker
-              label="End Time"
-              value={dayjs(`2024-01-01 ${shift.endTime}`)}
-              onChange={(value: Dayjs | null) => handleTimeChange('endTime', value)}
-              timeSteps={{ minutes: 15 }}
-              slotProps={{ textField: { fullWidth: true } }}
-            />
+            }}
+          >
+            {renderTimePicker('endTime', 'End Time', 'ceil')}
           </Grid>
 
           {/* Break Configuration */}
@@ -229,58 +295,61 @@ const ManualShiftCreator: React.FC<Props> = ({ onShiftCreated }) => {
               Break Configuration
             </Typography>
           </Grid>
-          
+
           <Grid
             size={{
               xs: 12,
               md: 3
-            }}>
-            <TextField
-              fullWidth
-              type="number"
-              label="Break Duration (minutes)"
-              value={shift.breakDuration}
-              onChange={(e) => setShift((prev: Partial<Shift>) => ({ ...prev, breakDuration: parseInt(e.target.value) }))}
-              InputProps={{ inputProps: { min: 0, max: 60 } }}
+            }}
+          >
+            <Controller
+              name="breakDuration"
+              control={control}
+              render={({ field }) => (
+                <TextField
+                  fullWidth
+                  type="number"
+                  label="Break Duration (minutes)"
+                  value={field.value ?? ''}
+                  onChange={(event) => field.onChange(event.target.value === '' ? null : Number(event.target.value))}
+                  InputProps={{ inputProps: { min: 0, max: 120 } }}
+                  error={Boolean(errors.breakDuration)}
+                  helperText={errors.breakDuration?.message}
+                />
+              )}
             />
           </Grid>
-          
+
           <Grid
             size={{
               xs: 12,
               md: 3
-            }}>
-            <TimePicker
-              label="Break Start"
-              value={shift.breakStart ? dayjs(`2024-01-01 ${shift.breakStart}`) : null}
-              onChange={(value: Dayjs | null) => handleTimeChange('breakStart', value)}
-              slotProps={{ textField: { fullWidth: true } }}
-            />
+            }}
+          >
+            {renderTimePicker('breakStart', 'Break Start', 'floor')}
           </Grid>
-          
+
           <Grid
             size={{
               xs: 12,
               md: 3
-            }}>
-            <TimePicker
-              label="Break End"
-              value={shift.breakEnd ? dayjs(`2024-01-01 ${shift.breakEnd}`) : null}
-              onChange={(value: Dayjs | null) => handleTimeChange('breakEnd', value)}
-              slotProps={{ textField: { fullWidth: true } }}
-            />
+            }}
+          >
+            {renderTimePicker('breakEnd', 'Break End', 'ceil')}
           </Grid>
-          
+
           <Grid
             size={{
               xs: 12,
               md: 3
-            }}>
+            }}
+          >
             <FormControlLabel
               control={
-                <Checkbox
-                  checked={shift.isSplitShift}
-                  onChange={(e) => setShift((prev: Partial<Shift>) => ({ ...prev, isSplitShift: e.target.checked }))}
+                <Controller
+                  name="isSplitShift"
+                  control={control}
+                  render={({ field }) => <Checkbox {...field} checked={field.value} color="primary" />}
                 />
               }
               label="Split Shift"
@@ -288,38 +357,30 @@ const ManualShiftCreator: React.FC<Props> = ({ onShiftCreated }) => {
           </Grid>
 
           {/* Meal Break (for shifts over 6 hours) */}
-          {calculateTotalHours() > 6 && (
+          {totalHours > 6 && (
             <>
               <Grid size={12}>
                 <Typography variant="subtitle1" gutterBottom>
                   Meal Break (Required for shifts over 6 hours)
                 </Typography>
               </Grid>
-              
+
               <Grid
                 size={{
                   xs: 12,
                   md: 4
-                }}>
-                <TimePicker
-                  label="Meal Break Start"
-                  value={shift.mealBreakStart ? dayjs(`2024-01-01 ${shift.mealBreakStart}`) : null}
-                  onChange={(value: Dayjs | null) => handleTimeChange('mealBreakStart', value)}
-                  slotProps={{ textField: { fullWidth: true } }}
-                />
+                }}
+              >
+                {renderTimePicker('mealBreakStart', 'Meal Break Start', 'floor')}
               </Grid>
-              
+
               <Grid
                 size={{
                   xs: 12,
                   md: 4
-                }}>
-                <TimePicker
-                  label="Meal Break End"
-                  value={shift.mealBreakEnd ? dayjs(`2024-01-01 ${shift.mealBreakEnd}`) : null}
-                  onChange={(value: Dayjs | null) => handleTimeChange('mealBreakEnd', value)}
-                  slotProps={{ textField: { fullWidth: true } }}
-                />
+                }}
+              >
+                {renderTimePicker('mealBreakEnd', 'Meal Break End', 'ceil')}
               </Grid>
             </>
           )}
@@ -330,13 +391,11 @@ const ManualShiftCreator: React.FC<Props> = ({ onShiftCreated }) => {
               <Typography variant="subtitle1" gutterBottom>
                 Union Compliance Check
               </Typography>
-              
+
               {violations.length === 0 && (
-                <Alert severity="success">
-                  All union rules satisfied
-                </Alert>
+                <Alert severity="success">All union rules satisfied</Alert>
               )}
-              
+
               {hasErrors && (
                 <Alert severity="error" sx={{ mb: 1 }}>
                   <Typography variant="subtitle2" gutterBottom>
@@ -344,16 +403,16 @@ const ManualShiftCreator: React.FC<Props> = ({ onShiftCreated }) => {
                   </Typography>
                   <Stack spacing={1}>
                     {violations
-                      .filter(v => v.violationType === 'error')
-                      .map((v, idx) => (
-                        <Typography key={idx} variant="body2">
-                          • {v.violationMessage}
+                      .filter((violation) => violation.violationType === 'error')
+                      .map((violation) => (
+                        <Typography key={`${violation.ruleId}-error`} variant="body2">
+                          • {violation.violationMessage}
                         </Typography>
                       ))}
                   </Stack>
                 </Alert>
               )}
-              
+
               {hasWarnings && (
                 <Alert severity="warning">
                   <Typography variant="subtitle2" gutterBottom>
@@ -361,10 +420,10 @@ const ManualShiftCreator: React.FC<Props> = ({ onShiftCreated }) => {
                   </Typography>
                   <Stack spacing={1}>
                     {violations
-                      .filter(v => v.violationType === 'warning')
-                      .map((v, idx) => (
-                        <Typography key={idx} variant="body2">
-                          • {v.violationMessage}
+                      .filter((violation) => violation.violationType === 'warning')
+                      .map((violation) => (
+                        <Typography key={`${violation.ruleId}-warning`} variant="body2">
+                          • {violation.violationMessage}
                         </Typography>
                       ))}
                   </Stack>
@@ -377,35 +436,19 @@ const ManualShiftCreator: React.FC<Props> = ({ onShiftCreated }) => {
           <Grid size={12}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 2 }}>
               <Box>
-                <Typography variant="h6">
-                  Total Hours: {calculateTotalHours()}
-                </Typography>
+                <Typography variant="h6">Total Hours: {totalHours.toFixed(2)}</Typography>
                 <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-                  <Chip 
-                    label={(shift.scheduleType ?? 'weekday').toUpperCase()} 
-                    color="primary" 
-                    size="small" 
-                  />
-                  <Chip 
-                    label={shift.zone} 
-                    color="secondary" 
-                    size="small" 
-                  />
-                  {shift.isSplitShift && (
-                    <Chip 
-                      label="Split Shift" 
-                      color="warning" 
-                      size="small" 
-                    />
-                  )}
+                  <Chip label={(formValues.scheduleType ?? 'weekday').toUpperCase()} color="primary" size="small" />
+                  <Chip label={formValues.zone} color="secondary" size="small" />
+                  {formValues.isSplitShift && <Chip label="Split Shift" color="warning" size="small" />}
                 </Stack>
               </Box>
-              
+
               <Button
                 variant="contained"
                 color={hasErrors ? 'warning' : 'primary'}
-                onClick={handleSubmit}
-                disabled={!shift.shiftCode || validating}
+                onClick={handleSubmit(onSubmit)}
+                disabled={!formValues.shiftCode || validating || isSubmitting}
                 size="large"
               >
                 {hasErrors ? 'Create with Warnings' : 'Create Shift'}

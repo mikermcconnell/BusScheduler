@@ -526,6 +526,9 @@ const TimelineSeriesChart: React.FC<TimelineSeriesChartProps> = ({
   negativeDifferenceColor,
   chartHeight
 }) => {
+  const requirementLookup = useMemo(() => {
+    return new Map(data.map((point) => [point.startTime, Math.round(point.requirement ?? 0)]));
+  }, [data]);
   const differenceValues = useMemo(
     () => (showDifference ? data.map((point) => point.difference ?? 0) : []),
     [data, showDifference]
@@ -572,14 +575,45 @@ const TimelineSeriesChart: React.FC<TimelineSeriesChartProps> = ({
         </Box>
       ) : (
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={data} margin={{ top: 8, bottom: 16, left: 8, right: 8 }}>
+          <ComposedChart data={data} margin={{ top: 24, bottom: 16, left: 8, right: 8 }}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis
+              xAxisId="time"
               dataKey="startTime"
               ticks={ticks}
               tick={{ fontSize: 10 }}
               interval={0}
               height={30}
+              label={{
+                value: 'Time of day',
+                position: 'insideBottom',
+                offset: -4,
+                fill: 'rgba(0,0,0,0.6)',
+                fontSize: 11
+              }}
+            />
+            <XAxis
+              xAxisId="master"
+              dataKey="startTime"
+              ticks={ticks}
+              tick={{ fontSize: 11, fontWeight: 600, fill: requirementColor }}
+              interval={0}
+              orientation="top"
+              axisLine={false}
+              tickLine={false}
+              height={24}
+              tickFormatter={(value: string) => {
+                const label = requirementLookup.get(value);
+                return label != null ? `${label}` : '';
+              }}
+              label={{
+                value: 'Master schedule (buses)',
+                position: 'top',
+                offset: -4,
+                fill: requirementColor,
+                fontSize: 11,
+                fontWeight: 600
+              }}
             />
             <YAxis yAxisId="coverage" allowDecimals={false} />
             {showDifferenceAxis && (
@@ -612,7 +646,13 @@ const TimelineSeriesChart: React.FC<TimelineSeriesChartProps> = ({
               )}
             />
             {showDifference && (
-              <Bar dataKey="difference" barSize={16} radius={[4, 4, 0, 0]} yAxisId="difference">
+              <Bar
+                xAxisId="time"
+                dataKey="difference"
+                barSize={16}
+                radius={[4, 4, 0, 0]}
+                yAxisId="difference"
+              >
                 {data.map(point => (
                   <Cell
                     key={`${title}-${point.key}-difference`}
@@ -626,6 +666,7 @@ const TimelineSeriesChart: React.FC<TimelineSeriesChartProps> = ({
               </Bar>
             )}
             <Line
+              xAxisId="time"
               yAxisId="coverage"
               type="monotone"
               dataKey="requirement"
@@ -635,6 +676,7 @@ const TimelineSeriesChart: React.FC<TimelineSeriesChartProps> = ({
               isAnimationActive={false}
             />
             <Line
+              xAxisId="time"
               yAxisId="coverage"
               type="monotone"
               dataKey="coverage"
@@ -645,6 +687,7 @@ const TimelineSeriesChart: React.FC<TimelineSeriesChartProps> = ({
             />
             {showBreaks && (
               <Line
+                xAxisId="time"
                 yAxisId="coverage"
                 type="monotone"
                 dataKey="breakCount"

@@ -11,22 +11,22 @@ import {
   setDoc,
   updateDoc
 } from 'firebase/firestore';
-import { db } from '../../config/firebase';
-import {
-  DayType,
-  TodShiftRun,
-  TodShiftRunPayload
-} from '../types/shift.types';
+import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
+import { db, storage } from '../../config/firebase';
+import { TodShiftRun, TodShiftRunPayload, TodShiftStoredFile } from '../types/shift.types';
 
 interface StoredTodShiftRun extends TodShiftRunPayload {
-  coverageTimeline?: Record<DayType, any>;
-  colorScale?: any;
   createdAt: any;
   updatedAt: any;
 }
 
+type SourceFileKind = 'city' | 'contractor';
+
 const COLLECTION = 'tod_shift_runs';
-const LOCAL_STORAGE_KEY = 'tod_shift_runs';
+const SOURCE_FILE_PREFIX: Record<SourceFileKind, string> = {
+  city: 'city-master',
+  contractor: 'contractor-mvt'
+};
 
 function sanitizeValue(value: any): any {
   if (value === undefined) {
@@ -59,152 +59,158 @@ function sanitizeForFirestore<T>(payload: T): T {
 }
 
 class TodShiftRepository {
-  private readonly firebaseEnabled = process.env.REACT_APP_ENABLE_FIREBASE === 'true';
+  private ensureFirestore(): void {
+    if (!db) {
+      throw new Error('Firestore is not configured for TOD shift persistence.');
+    }
+  }
 
-  async createRun(payload: TodShiftRunPayload): Promise<TodShiftRun> {
-    if (this.firebaseEnabled && db) {
-      const collectionRef = collection(db, COLLECTION);
-      const sanitizedPayload = sanitizeForFirestore(payload);
-      const docRef = await addDoc(collectionRef, {
+  private ensureStorage(): void {
+    if (!storage) {
+      throw new Error('Firebase Storage is not configured for TOD shift persistence.');
+    }
+  }
+
+  async allocateRunId(): Promise<string> {
+    this.ensureFirestore();
+    const collectionRef = collection(db, COLLECTION);
+    return doc(collectionRef).id;
+  }
+
+  async uploadSourceFile(params: {
+    runId: string;
+    blob: Blob;
+    fileName: string;
+    kind: SourceFileKind;
+  }): Promise<TodShiftStoredFile> {
+    this.ensureStorage();
+    const { runId, blob, fileName, kind } = params;
+    const timestamp = Date.now();
+    const extension = fileName.includes('.') ? fileName.split('.').pop() : 'csv';
+    const normalizedExt = extension ? `.${extension}` : '';
+    const storagePath = `${COLLECTION}/${runId}/${SOURCE_FILE_PREFIX[kind]}-${timestamp}${normalizedExt}`;
+    const storageRef = ref(storage, storagePath);
+    await uploadBytes(storageRef, blob, {
+      contentType: (blob as File).type || 'text/csv',
+      customMetadata: {
+        originalName: fileName,
+        fileKind: kind
+      }
+    });
+    const downloadURL = await getDownloadURL(storageRef);
+    return {
+      name: fileName,
+      storagePath,
+      uploadedAt: new Date().toISOString(),
+      size: blob.size,
+      contentType: (blob as File).type || 'text/csv',
+      downloadURL
+    };
+  }
+
+  async fetchSourceFile(file: TodShiftStoredFile): Promise<File> {
+    this.ensureStorage();
+    const fileRef = ref(storage, file.storagePath);
+    const url = await getDownloadURL(fileRef);
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Unable to download source file: ${file.name}`);
+    }
+    const blob = await response.blob();
+    return new File([blob], file.name, { type: blob.type || file.contentType || 'text/csv' });
+  }
+
+  async createRun(payload: TodShiftRunPayload, preferredId?: string): Promise<TodShiftRun> {
+    this.ensureFirestore();
+    const sanitizedPayload = sanitizeForFirestore(payload);
+    if (preferredId) {
+      const targetRef = doc(db, COLLECTION, preferredId);
+      await setDoc(targetRef, {
         ...sanitizedPayload,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
-
-      return {
-        id: docRef.id,
-        ...sanitizedPayload
-      };
+      return { id: preferredId, ...payload };
     }
 
-    const runs = this.getLocalRuns();
-    const id = `local_${Date.now()}`;
-    const sanitizedPayload = sanitizeForFirestore(payload);
-    const newRun: TodShiftRun = {
-      id,
-      ...sanitizedPayload
+    const collectionRef = collection(db, COLLECTION);
+    const docRef = await addDoc(collectionRef, {
+      ...sanitizedPayload,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+    return {
+      id: docRef.id,
+      ...payload
     };
-    runs.unshift(newRun);
-    this.saveLocalRuns(runs);
-    return newRun;
   }
 
-  async updateRun(id: string, updates: Partial<TodShiftRun>): Promise<void> {
-    if (this.firebaseEnabled && db) {
-      const docRef = doc(db, COLLECTION, id);
-      const sanitizedUpdates = sanitizeForFirestore(updates);
-      await updateDoc(docRef, {
-        ...sanitizedUpdates,
+  async overwriteRun(id: string, payload: Partial<TodShiftRunPayload>): Promise<void> {
+    this.ensureFirestore();
+    const docRef = doc(db, COLLECTION, id);
+    const sanitizedPayload = sanitizeForFirestore(payload);
+    await setDoc(
+      docRef,
+      {
+        ...sanitizedPayload,
         updatedAt: serverTimestamp()
-      });
-      return;
-    }
+      },
+      { merge: true }
+    );
+  }
 
-    const runs = this.getLocalRuns();
-    const index = runs.findIndex(run => run.id === id);
-    if (index >= 0) {
-      runs[index] = {
-        ...runs[index],
-        ...sanitizeForFirestore(updates)
-      };
-      this.saveLocalRuns(runs);
-    }
+  async updateRun(id: string, updates: Partial<TodShiftRunPayload>): Promise<void> {
+    this.ensureFirestore();
+    const docRef = doc(db, COLLECTION, id);
+    const sanitizedUpdates = sanitizeForFirestore(updates);
+    await updateDoc(docRef, {
+      ...sanitizedUpdates,
+      updatedAt: serverTimestamp()
+    });
+  }
+
+  async listRuns(limitCount = 25): Promise<TodShiftRun[]> {
+    this.ensureFirestore();
+    const collectionRef = collection(db, COLLECTION);
+    const q = query(collectionRef, orderBy('importedAt', 'desc'), limit(limitCount));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map((docSnapshot) => ({
+      id: docSnapshot.id,
+      ...this.stripFirestoreFields(docSnapshot.data() as StoredTodShiftRun)
+    }));
   }
 
   async getMostRecentRun(): Promise<TodShiftRun | null> {
-    if (this.firebaseEnabled && db) {
-      const collectionRef = collection(db, COLLECTION);
-      const q = query(collectionRef, orderBy('importedAt', 'desc'), limit(1));
-      const snapshot = await getDocs(q);
-      if (snapshot.empty) {
-        return null;
-      }
-
-      const docSnapshot = snapshot.docs[0];
-      const data = docSnapshot.data() as StoredTodShiftRun;
-      return {
-        id: docSnapshot.id,
-        ...this.stripFirestoreFields(data)
-      };
-    }
-
-    const runs = this.getLocalRuns();
+    const runs = await this.listRuns(1);
     return runs.length > 0 ? runs[0] : null;
   }
 
   async getRun(id: string): Promise<TodShiftRun | null> {
-    if (this.firebaseEnabled && db) {
-      const docRef = doc(db, COLLECTION, id);
-      const snapshot = await getDoc(docRef);
-      if (!snapshot.exists()) {
-        return null;
-      }
-      const data = snapshot.data() as StoredTodShiftRun;
-      return {
-        id: snapshot.id,
-        ...this.stripFirestoreFields(data)
-      };
+    this.ensureFirestore();
+    const docRef = doc(db, COLLECTION, id);
+    const snapshot = await getDoc(docRef);
+    if (!snapshot.exists()) {
+      return null;
     }
-
-    const runs = this.getLocalRuns();
-    return runs.find(run => run.id === id) ?? null;
+    return {
+      id: snapshot.id,
+      ...this.stripFirestoreFields(snapshot.data() as StoredTodShiftRun)
+    };
   }
 
-  private stripFirestoreFields(data: StoredTodShiftRun): TodShiftRunPayload & {
-    coverageTimeline?: Record<DayType, any>;
-    colorScale?: any;
-  } {
+  private stripFirestoreFields(data: StoredTodShiftRun): TodShiftRunPayload {
     const { createdAt: _createdAt, updatedAt: _updatedAt, ...rest } = data;
     const normalized = { ...rest } as any;
     if (normalized.lastExportedAt === null) {
       delete normalized.lastExportedAt;
     }
+    if (normalized.lastAutosavedAt === null) {
+      delete normalized.lastAutosavedAt;
+    }
+    if (normalized.lastOptimizationReport === null) {
+      delete normalized.lastOptimizationReport;
+    }
     return normalized;
-  }
-
-  private getLocalRuns(): TodShiftRun[] {
-    try {
-      const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
-      if (!raw) {
-        return [];
-      }
-      const parsed = JSON.parse(raw) as TodShiftRun[];
-      return parsed;
-    } catch (error) {
-      console.warn('Unable to parse local TOD shift runs. Resetting store.', error);
-      return [];
-    }
-  }
-
-  private saveLocalRuns(runs: TodShiftRun[]): void {
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(runs));
-  }
-
-  async overwriteRun(id: string, payload: TodShiftRunPayload): Promise<void> {
-    if (this.firebaseEnabled && db) {
-      const docRef = doc(db, COLLECTION, id);
-      const sanitizedPayload = sanitizeForFirestore(payload);
-      await setDoc(docRef, {
-        ...sanitizedPayload,
-        updatedAt: serverTimestamp()
-      }, { merge: true });
-      return;
-    }
-
-    const runs = this.getLocalRuns();
-    const index = runs.findIndex(run => run.id === id);
-    if (index >= 0) {
-      runs[index] = {
-        ...runs[index],
-        ...sanitizeForFirestore(payload)
-      };
-    } else {
-      runs.unshift({
-        id,
-        ...sanitizeForFirestore(payload)
-      });
-    }
-    this.saveLocalRuns(runs);
   }
 }
 

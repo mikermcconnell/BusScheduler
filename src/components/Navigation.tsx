@@ -16,6 +16,7 @@ import {
 import { Menu as MenuIcon, Schedule as ScheduleIcon } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { scheduleStorage } from '../services/scheduleStorage';
+import { useFeatureFlags } from '../contexts/FeatureFlagContext';
 
 const Navigation: React.FC = () => {
   const navigate = useNavigate();
@@ -23,6 +24,13 @@ const Navigation: React.FC = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [draftCount, setDraftCount] = React.useState(0);
+  const {
+    isNewScheduleEnabled,
+    isEditScheduleEnabled,
+    isBrowseSchedulesEnabled,
+    isManageRoutesEnabled,
+    isBlockConfigurationEnabled
+  } = useFeatureFlags();
 
   // No user ID needed without authentication
   React.useEffect(() => {
@@ -53,14 +61,27 @@ const Navigation: React.FC = () => {
   const navigationItems = [
     { path: '/', label: 'Dashboard', key: 'dashboard' },
     { path: '/drafts', label: 'Draft Schedules', key: 'drafts', badge: draftCount, priority: 'high' },
-    { path: '/new-schedule', label: 'New Schedule', key: 'new-schedule', priority: 'high' },
-    { path: '/edit-schedule', label: 'Edit Existing', key: 'edit-schedule', priority: 'high' },
-    { path: '/schedules', label: 'Browse Schedules', key: 'schedules', priority: 'medium' },
-    { path: '/block-configuration', label: 'Block Configuration', key: 'block-configuration', priority: 'medium' },
+    { path: '/edit-schedule', label: 'Fixed Transit', key: 'fixed-transit', priority: 'high' },
     { path: '/tod-shifts', label: 'TOD Shift Management', key: 'tod-shifts', priority: 'low', beta: true },
     { path: '/routes', label: 'Manage Routes', key: 'routes', priority: 'low' },
     { path: '/settings', label: 'Settings', key: 'settings', priority: 'low' },
   ];
+
+  const filteredNavigationItems = navigationItems.filter(item => {
+    switch (item.key) {
+      case 'fixed-transit':
+        return (
+          isNewScheduleEnabled ||
+          isEditScheduleEnabled ||
+          isBrowseSchedulesEnabled ||
+          isBlockConfigurationEnabled
+        );
+      case 'routes':
+        return isManageRoutesEnabled;
+      default:
+        return true;
+    }
+  });
 
   const handleMenuClick = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget);
@@ -119,7 +140,7 @@ const Navigation: React.FC = () => {
                 horizontal: 'right',
               }}
             >
-              {navigationItems.map((item) => {
+              {filteredNavigationItems.map((item) => {
                 const showBadge = item.key === 'drafts' && item.badge && item.badge > 0;
                 
                 return (
@@ -161,7 +182,7 @@ const Navigation: React.FC = () => {
         ) : (
           <>
             <Box sx={{ flexGrow: 1, display: 'flex', gap: 1 }}>
-              {navigationItems.map((item) => {
+              {filteredNavigationItems.map((item) => {
                 const showBadge = item.key === 'drafts' && item.badge && item.badge > 0;
                 const isPriority = item.priority === 'high';
                 

@@ -63,6 +63,7 @@ const DEFAULT_BREAK_THRESHOLD_MINUTES = 7.5 * 60;
 const DEFAULT_BREAK_LATEST_START_MINUTES = 4.75 * 60;
 const DEFAULT_MIN_SHIFT_MINUTES = 5 * 60;
 const DEFAULT_MAX_SHIFT_MINUTES = 9.75 * 60;
+const PREFERRED_SHIFT_MINUTES = 7 * 60;
 
 function extractShiftLimitMinutes(
   rules: UnionRule[],
@@ -601,6 +602,14 @@ export async function generateAutoShifts(
     INTERVAL_MINUTES,
     extractShiftLimitMinutes(unionRules, 'max', DEFAULT_MAX_SHIFT_MINUTES)
   );
+  const preferredShiftMinutes = Math.min(
+    Math.max(minShiftMinutes, PREFERRED_SHIFT_MINUTES),
+    Math.max(minShiftMinutes, maxShiftMinutes)
+  );
+  const preferSevenHourShifts =
+    preferredShiftMinutes >= minShiftMinutes &&
+    preferredShiftMinutes <= maxShiftMinutes &&
+    PREFERRED_SHIFT_MINUTES >= minShiftMinutes;
 
   if (capAtBreakThreshold && Number.isFinite(breakThresholdMinutes)) {
     const cap = Math.max(minShiftMinutes, breakThresholdMinutes - INTERVAL_MINUTES);
@@ -686,6 +695,7 @@ export async function generateAutoShifts(
             let nextEnd = Math.min(intervalEndMinutes, maxAllowedEnd);
             let reachedLimit = nextEnd >= maxAllowedEnd;
             let forceSplit = false;
+            let preferSplit = false;
 
             if (reachedLimit) {
               const remainingDemandMinutes = calculateRemainingDemandMinutes(
@@ -713,8 +723,24 @@ export async function generateAutoShifts(
             currentActive.lastIntervalEnd = nextEnd;
             currentActive.intervals += 1;
 
+            if (!reachedLimit && !forceSplit && preferSevenHourShifts) {
+              const durationMinutes = currentActive.lastIntervalEnd - currentActive.startMinutes;
+              if (durationMinutes >= preferredShiftMinutes) {
+                const remainingDemandMinutes = calculateRemainingDemandMinutes(
+                  intervals,
+                  currentActive.zone,
+                  rank,
+                  intervalIndex,
+                  currentActive.lastIntervalEnd
+                );
+                if (remainingDemandMinutes >= minShiftMinutes) {
+                  preferSplit = true;
+                }
+              }
+            }
+
             const intervalCovered = nextEnd >= intervalEndMinutes;
-            if (reachedLimit || forceSplit) {
+            if (reachedLimit || forceSplit || preferSplit) {
               await finalizeActiveShift(currentActive, finalizationContext);
 
               const replacementStart = currentActive.lastIntervalEnd;

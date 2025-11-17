@@ -15,16 +15,22 @@ import {
   TextField,
   MenuItem,
   Stack,
-  Switch,
   IconButton,
-  Tooltip
+  Tooltip,
+  Switch,
+  FormControl,
+  InputLabel,
+  Select
 } from '@mui/material';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import SaveIcon from '@mui/icons-material/Save';
 import { useDispatch, useSelector } from 'react-redux';
+import { Controller, useFieldArray, useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { RootState, AppDispatch } from '../store/store';
 import { loadUnionRules, persistUnionRules } from './store/shiftManagementSlice';
 import { UnionRule } from './types/shift.types';
+import { unionRulesFormSchema, UnionRulesFormValues } from './utils/shiftFormSchemas';
 
 const CATEGORY_OPTIONS: Array<{ value: UnionRule['category']; label: string }> = [
   { value: 'shift_length', label: 'Shift Length' },
@@ -42,10 +48,21 @@ const RULE_TYPE_OPTIONS = [
   { value: 'preferred', label: 'Preferred' }
 ];
 
+const createEmptyRule = (): UnionRule => ({
+  id: Date.now(),
+  ruleName: 'New Rule',
+  ruleType: 'preferred',
+  category: 'shift_length',
+  minValue: undefined,
+  maxValue: undefined,
+  unit: 'hours',
+  isActive: true,
+  description: 'Describe the intent of this rule.'
+});
+
 const UnionRulesConfiguration: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
   const { unionRules, loading, error } = useSelector((state: RootState) => state.shiftManagement);
-  const [draftRules, setDraftRules] = useState<UnionRule[]>([]);
   const [showSavedBanner, setShowSavedBanner] = useState(false);
 
   useEffect(() => {
@@ -54,18 +71,42 @@ const UnionRulesConfiguration: React.FC = () => {
     }
   }, [dispatch, unionRules.length]);
 
-  useEffect(() => {
-    setDraftRules(unionRules);
-  }, [unionRules]);
+  const {
+    control,
+    handleSubmit,
+    reset,
+    register,
+    formState: { isDirty, isSubmitting, errors }
+  } = useForm<UnionRulesFormValues>({
+    resolver: zodResolver(unionRulesFormSchema),
+    defaultValues: { rules: unionRules }
+  });
 
-  const hasChanges = useMemo(() => {
-    if (draftRules.length !== unionRules.length) {
-      return true;
+  useEffect(() => {
+    reset({ rules: unionRules });
+  }, [reset, unionRules]);
+
+  const { fields, append, remove } = useFieldArray({
+    control,
+    name: 'rules'
+  });
+
+  const handleAddRule = () => append(createEmptyRule());
+  const handleRemoveRule = (index: number) => remove(index);
+
+  const onSubmit = async (values: UnionRulesFormValues) => {
+    setShowSavedBanner(false);
+    try {
+      await dispatch(persistUnionRules(values.rules)).unwrap();
+      setShowSavedBanner(true);
+      reset(values, { keepDirty: false });
+    } catch (err) {
+      console.error(err);
     }
-    return draftRules.some((rule, index) => JSON.stringify(rule) !== JSON.stringify(unionRules[index]));
-  }, [draftRules, unionRules]);
+  };
 
   const initialLoading = loading.unionRules && unionRules.length === 0;
+  const hasRules = useMemo(() => fields.length > 0, [fields.length]);
 
   if (initialLoading) {
     return (
@@ -74,41 +115,6 @@ const UnionRulesConfiguration: React.FC = () => {
       </Paper>
     );
   }
-
-  const handleRuleChange = <K extends keyof UnionRule>(id: UnionRule['id'], field: K, value: UnionRule[K]) => {
-    setDraftRules((prev) =>
-      prev.map((rule) => (rule.id === id ? { ...rule, [field]: value } : rule))
-    );
-  };
-
-  const handleAddRule = () => {
-    const newRule: UnionRule = {
-      id: Date.now(),
-      ruleName: 'New Rule',
-      ruleType: 'preferred',
-      category: 'shift_length',
-      minValue: undefined,
-      maxValue: undefined,
-      unit: 'hours',
-      isActive: true,
-      description: 'Describe the intent of this rule.'
-    };
-    setDraftRules((prev) => [...prev, newRule]);
-  };
-
-  const handleRemoveRule = (id?: UnionRule['id']) => {
-    setDraftRules((prev) => prev.filter((rule) => rule.id !== id));
-  };
-
-  const handleSave = async () => {
-    setShowSavedBanner(false);
-    try {
-      await dispatch(persistUnionRules(draftRules)).unwrap();
-      setShowSavedBanner(true);
-    } catch (err) {
-      console.error(err);
-    }
-  };
 
   return (
     <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
@@ -127,10 +133,10 @@ const UnionRulesConfiguration: React.FC = () => {
             variant="contained"
             size="small"
             startIcon={<SaveIcon />}
-            disabled={!hasChanges || loading.unionRulesPersistence}
-            onClick={handleSave}
+            disabled={!isDirty || loading.unionRulesPersistence || !hasRules}
+            onClick={handleSubmit(onSubmit)}
           >
-            {loading.unionRulesPersistence ? 'Saving…' : 'Save'}
+            {loading.unionRulesPersistence || isSubmitting ? 'Saving…' : 'Save'}
           </Button>
         </Stack>
       </Box>
@@ -162,112 +168,127 @@ const UnionRulesConfiguration: React.FC = () => {
             </TableRow>
           </TableHead>
           <TableBody>
-            {draftRules.map((rule: UnionRule) => (
-              <TableRow key={rule.id}>
+            {fields.map((field, index) => (
+              <TableRow key={field.id ?? index}>
                 <TableCell sx={{ minWidth: 180 }}>
                   <TextField
                     size="small"
                     fullWidth
-                    value={rule.ruleName}
-                    onChange={(event) => handleRuleChange(rule.id, 'ruleName', event.target.value)}
+                    defaultValue={field.ruleName}
+                    {...register(`rules.${index}.ruleName` as const)}
+                    error={Boolean(errors.rules?.[index]?.ruleName)}
+                    helperText={errors.rules?.[index]?.ruleName?.message}
                   />
                 </TableCell>
                 <TableCell sx={{ minWidth: 140 }}>
-                  <TextField
-                    size="small"
-                    select
-                    fullWidth
-                    value={rule.category}
-                    onChange={(event) => handleRuleChange(rule.id, 'category', event.target.value as UnionRule['category'])}
-                  >
-                    {CATEGORY_OPTIONS.map((option) => (
-                      <MenuItem key={option.value} value={option.value}>
-                        {option.label}
-                      </MenuItem>
-                    ))}
-                  </TextField>
+                  <Controller
+                    name={`rules.${index}.category` as const}
+                    control={control}
+                    defaultValue={field.category}
+                    render={({ field: controllerField }) => (
+                      <FormControl fullWidth size="small" error={Boolean(errors.rules?.[index]?.category)}>
+                        <InputLabel>Category</InputLabel>
+                        <Select {...controllerField} label="Category">
+                          {CATEGORY_OPTIONS.map((option) => (
+                            <MenuItem key={option.value} value={option.value}>
+                              {option.label}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    )}
+                  />
                 </TableCell>
                 <TableCell sx={{ minWidth: 140 }}>
-                  <TextField
-                    size="small"
-                    select
-                    fullWidth
-                    value={rule.ruleType}
-                    onChange={(event) => handleRuleChange(rule.id, 'ruleType', event.target.value as UnionRule['ruleType'])}
-                  >
-                    {RULE_TYPE_OPTIONS.map((option) => (
-                      <MenuItem key={option.value} value={option.value}>
-                        {option.label}
-                      </MenuItem>
-                    ))}
-                  </TextField>
+                  <Controller
+                    name={`rules.${index}.ruleType` as const}
+                    control={control}
+                    defaultValue={field.ruleType}
+                    render={({ field: controllerField }) => (
+                      <FormControl fullWidth size="small" error={Boolean(errors.rules?.[index]?.ruleType)}>
+                        <InputLabel>Type</InputLabel>
+                        <Select {...controllerField} label="Type">
+                          {RULE_TYPE_OPTIONS.map((option) => (
+                            <MenuItem key={option.value} value={option.value}>
+                              {option.label}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    )}
+                  />
                 </TableCell>
-                <TableCell sx={{ minWidth: 130, width: 150 }}>
+                <TableCell sx={{ minWidth: 120 }}>
                   <TextField
                     size="small"
                     type="number"
-                    inputProps={{ min: 0, step: 0.25 }}
-                    value={rule.minValue ?? ''}
                     fullWidth
-                    InputProps={{ sx: { fontVariantNumeric: 'tabular-nums' } }}
-                    onChange={(event) =>
-                      handleRuleChange(
-                        rule.id,
-                        'minValue',
-                        event.target.value === '' ? undefined : Number(event.target.value)
-                      )
-                    }
+                    defaultValue={field.minValue ?? ''}
+                    {...register(`rules.${index}.minValue` as const, {
+                      setValueAs: (value) => (value === '' || value === null ? undefined : Number(value))
+                    })}
+                    error={Boolean(errors.rules?.[index]?.minValue)}
+                    helperText={errors.rules?.[index]?.minValue?.message}
                   />
                 </TableCell>
-                <TableCell sx={{ minWidth: 130, width: 150 }}>
+                <TableCell sx={{ minWidth: 120 }}>
                   <TextField
                     size="small"
                     type="number"
-                    inputProps={{ min: 0, step: 0.25 }}
-                    value={rule.maxValue ?? ''}
                     fullWidth
-                    InputProps={{ sx: { fontVariantNumeric: 'tabular-nums' } }}
-                    onChange={(event) =>
-                      handleRuleChange(
-                        rule.id,
-                        'maxValue',
-                        event.target.value === '' ? undefined : Number(event.target.value)
-                      )
-                    }
+                    defaultValue={field.maxValue ?? ''}
+                    {...register(`rules.${index}.maxValue` as const, {
+                      setValueAs: (value) => (value === '' || value === null ? undefined : Number(value))
+                    })}
+                    error={Boolean(errors.rules?.[index]?.maxValue)}
+                    helperText={errors.rules?.[index]?.maxValue?.message}
+                  />
+                </TableCell>
+                <TableCell sx={{ minWidth: 120 }}>
+                  <Controller
+                    name={`rules.${index}.unit` as const}
+                    control={control}
+                    defaultValue={field.unit ?? 'hours'}
+                    render={({ field: controllerField }) => (
+                      <FormControl fullWidth size="small">
+                        <InputLabel>Unit</InputLabel>
+                        <Select {...controllerField} label="Unit">
+                          {UNIT_OPTIONS.map((option) => (
+                            <MenuItem key={option.value} value={option.value}>
+                              {option.label}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    )}
                   />
                 </TableCell>
                 <TableCell>
-                  <TextField
-                    size="small"
-                    select
-                    value={rule.unit ?? 'hours'}
-                    onChange={(event) => handleRuleChange(rule.id, 'unit', event.target.value as UnionRule['unit'])}
-                  >
-                    {UNIT_OPTIONS.map((option) => (
-                      <MenuItem key={option.value} value={option.value}>
-                        {option.label}
-                      </MenuItem>
-                    ))}
-                  </TextField>
+                  <Controller
+                    name={`rules.${index}.isActive` as const}
+                    control={control}
+                    defaultValue={field.isActive}
+                    render={({ field: controllerField }) => (
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <Switch {...controllerField} checked={controllerField.value} />
+                        <Chip
+                          label={controllerField.value ? 'Active' : 'Disabled'}
+                          size="small"
+                          color={controllerField.value ? 'success' : 'default'}
+                        />
+                      </Stack>
+                    )}
+                  />
                 </TableCell>
                 <TableCell>
-                  <Stack direction="row" spacing={1} alignItems="center">
-                    <Chip
-                      label={rule.isActive ? 'Active' : 'Inactive'}
-                      size="small"
-                      color={rule.isActive ? 'success' : 'default'}
-                    />
-                    <Switch
-                      checked={rule.isActive}
-                      onChange={(event) => handleRuleChange(rule.id, 'isActive', event.target.checked)}
-                      size="small"
-                    />
-                  </Stack>
-                </TableCell>
-                <TableCell align="right">
                   <Tooltip title="Remove rule">
                     <span>
-                      <IconButton size="small" onClick={() => handleRemoveRule(rule.id)}>
+                      <IconButton
+                        size="small"
+                        color="error"
+                        onClick={() => handleRemoveRule(index)}
+                        disabled={loading.unionRulesPersistence}
+                      >
                         <DeleteOutlineIcon fontSize="small" />
                       </IconButton>
                     </span>

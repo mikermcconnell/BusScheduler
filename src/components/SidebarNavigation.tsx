@@ -20,27 +20,20 @@ import {
 } from '@mui/material';
 import {
   Dashboard as DashboardIcon,
-  CloudUpload as UploadIcon,
-  Drafts as DraftsIcon,
-  ViewList as ViewIcon,
-  Build as ConfigIcon,
   Schedule as ShiftsIcon,
-  Route as RoutesIcon,
   Settings as SettingsIcon,
-  Edit as EditIcon,
   ExpandLess,
   ExpandMore,
   Search as SearchIcon,
   History as HistoryIcon,
   Star as StarIcon,
-  KeyboardArrowRight as WorkflowIcon,
   Menu as MenuIcon,
-  ChevronLeft as ChevronLeftIcon,
-  LibraryBooks as LibraryIcon
+  ChevronLeft as ChevronLeftIcon
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { scheduleStorage } from '../services/scheduleStorage';
 import ContextualActions from './ContextualActions';
+import { useFeatureFlags } from '../contexts/FeatureFlagContext';
 
 const DRAWER_WIDTH = 280;
 const COLLAPSED_WIDTH = 200; // Increased to show icons + labels
@@ -53,6 +46,7 @@ interface NavigationItem {
   description?: string;
   badge?: string;
   children?: NavigationItem[];
+  disabled?: boolean;
 }
 
 interface RecentItem {
@@ -74,6 +68,14 @@ const SidebarNavigation: React.FC<SidebarNavigationProps> = ({ open, onToggle, c
   const location = useLocation();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const {
+    isNewScheduleEnabled,
+    isEditScheduleEnabled,
+    isBrowseSchedulesEnabled,
+    isBlockConfigurationEnabled
+  } = useFeatureFlags();
+  const hasFixedTransitAccess =
+    isNewScheduleEnabled || isEditScheduleEnabled || isBrowseSchedulesEnabled || isBlockConfigurationEnabled;
   
   const [expandedGroups, setExpandedGroups] = useState<string[]>(['scheduling']);
   const [searchQuery, setSearchQuery] = useState('');
@@ -97,7 +99,7 @@ const SidebarNavigation: React.FC<SidebarNavigationProps> = ({ open, onToggle, c
   }, [recentItems]);
 
 
-  const navigationGroups: { [key: string]: NavigationItem[] } = {
+  const navigationGroupsDefinition: { [key: string]: NavigationItem[] } = {
     primary: [
       {
         key: 'dashboard',
@@ -107,50 +109,15 @@ const SidebarNavigation: React.FC<SidebarNavigationProps> = ({ open, onToggle, c
         description: 'Overview and quick actions'
       },
       {
-        key: 'draft-library',
-        label: 'Draft Library',
-        path: '/draft-library',
-        icon: <LibraryIcon />,
-        description: 'Manage all draft working schedules'
-      },
-      {
-        key: 'new-schedule',
-        label: 'New Schedule',
-        path: '/new-schedule',
-        icon: <UploadIcon />,
-        description: 'Create a brand-new schedule via the full workflow'
-      },
-      {
-        key: 'edit-schedule',
-        label: 'Edit Existing Schedule',
+        key: 'fixed-transit',
+        label: 'Fixed Transit',
         path: '/edit-schedule',
-        icon: <EditIcon />,
-        description: 'Import a published schedule for quick adjustments'
-      },
-      {
-        key: 'schedules',
-        label: 'Browse Schedules',
-        path: '/schedules',
-        icon: <ViewIcon />,
-        description: 'View published schedules'
+        icon: <ShiftsIcon />,
+        description: 'Under construction',
+        disabled: true
       }
     ],
     advanced: [
-      {
-        key: 'block-configuration',
-        label: 'Block Configuration',
-        path: '/block-configuration',
-        icon: <ConfigIcon />,
-        description: 'Configure bus blocks and timing'
-      },
-      {
-        key: 'connection-optimization',
-        label: 'Connection Optimization',
-        path: '/connection-optimization',
-        icon: <WorkflowIcon />,
-        description: 'Optimize connections with GO trains and schools',
-        badge: 'Advanced'
-      },
       {
         key: 'tod-shifts',
         label: 'TOD Shift Management',
@@ -158,13 +125,6 @@ const SidebarNavigation: React.FC<SidebarNavigationProps> = ({ open, onToggle, c
         icon: <ShiftsIcon />,
         description: 'Manage operator shift schedules',
         badge: 'Beta'
-      },
-      {
-        key: 'routes',
-        label: 'Manage Routes',
-        path: '/routes',
-        icon: <RoutesIcon />,
-        description: 'Configure route settings'
       }
     ],
     settings: [
@@ -218,8 +178,7 @@ const SidebarNavigation: React.FC<SidebarNavigationProps> = ({ open, onToggle, c
   };
 
   const getItemType = (key: string): RecentItem['type'] => {
-    if (['draft-library', 'upload'].includes(key)) return 'draft';
-    if (['block-configuration', 'routes'].includes(key)) return 'config';
+    if (key === 'tod-shifts') return 'config';
     return 'schedule';
   };
 
@@ -232,6 +191,19 @@ const SidebarNavigation: React.FC<SidebarNavigationProps> = ({ open, onToggle, c
       settings: 'System'
     };
     return labels[groupKey as keyof typeof labels] || groupKey;
+  };
+
+  const shouldShowNavItem = (key: string): boolean => {
+    if (key === 'fixed-transit') {
+      return hasFixedTransitAccess;
+    }
+    return true;
+  };
+
+  const navigationGroups = {
+    primary: navigationGroupsDefinition.primary.filter(item => shouldShowNavItem(item.key)),
+    advanced: navigationGroupsDefinition.advanced.filter(item => shouldShowNavItem(item.key)),
+    settings: navigationGroupsDefinition.settings.filter(item => shouldShowNavItem(item.key))
   };
 
   const getGroupIcon = (groupKey: string) => {
@@ -403,10 +375,22 @@ const SidebarNavigation: React.FC<SidebarNavigationProps> = ({ open, onToggle, c
                           sx={{
                             borderRadius: 1,
                             minHeight: 44,
-                            backgroundColor: isActive(item.path) ? 'primary.main' : 'transparent',
-                            color: isActive(item.path) ? 'white' : 'text.primary',
+                            backgroundColor: isActive(item.path)
+                              ? 'primary.main'
+                              : item.disabled
+                                ? 'action.disabledBackground'
+                                : 'transparent',
+                            color: isActive(item.path)
+                              ? 'white'
+                              : item.disabled
+                                ? 'text.disabled'
+                                : 'text.primary',
                             '&:hover': {
-                              backgroundColor: isActive(item.path) ? 'primary.dark' : 'action.hover'
+                              backgroundColor: isActive(item.path)
+                                ? 'primary.dark'
+                                : item.disabled
+                                  ? 'action.disabledBackground'
+                                  : 'action.hover'
                             },
                             '&.Mui-selected': {
                               backgroundColor: 'primary.main',
@@ -420,13 +404,17 @@ const SidebarNavigation: React.FC<SidebarNavigationProps> = ({ open, onToggle, c
                         >
                           <ListItemIcon sx={{ 
                             minWidth: collapsed ? 32 : 40,
-                            color: isActive(item.path) ? 'white' : 'action.active'
+                            color: isActive(item.path)
+                              ? 'white'
+                              : item.disabled
+                                ? 'text.disabled'
+                                : 'action.active'
                           }}>
                             {item.icon}
                           </ListItemIcon>
                           <ListItemText
                             primary={item.label}
-                            secondary={!collapsed ? item.description : undefined}
+                            secondary={!collapsed || item.key === 'fixed-transit' ? item.description : undefined}
                             primaryTypographyProps={{
                               fontWeight: isActive(item.path) ? 'medium' : 'normal',
                               fontSize: collapsed ? '0.75rem' : '0.875rem',
@@ -434,7 +422,11 @@ const SidebarNavigation: React.FC<SidebarNavigationProps> = ({ open, onToggle, c
                             }}
                             secondaryTypographyProps={{
                               fontSize: '0.75rem',
-                              color: isActive(item.path) ? 'rgba(255,255,255,0.7)' : 'text.secondary'
+                              color: isActive(item.path)
+                                ? 'rgba(255,255,255,0.7)'
+                                : item.disabled
+                                  ? 'text.disabled'
+                                  : 'text.secondary'
                             }}
                           />
                           {!collapsed && item.badge && (
