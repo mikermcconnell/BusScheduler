@@ -9,6 +9,12 @@ import { getFunctions, connectFunctionsEmulator } from 'firebase/functions';
 import { getAnalytics } from 'firebase/analytics';
 import { getAuth, connectAuthEmulator } from 'firebase/auth';
 import { getStorage, connectStorageEmulator } from 'firebase/storage';
+
+const normalizeEnv = (value: string | undefined, fallback: string): string => {
+  if (!value) return fallback;
+  const cleaned = value.trim().replace(/^['"]+|['"]+$/g, '');
+  return cleaned || fallback;
+};
 // Firebase configuration
 // Check if we have real Firebase config, otherwise use a flag to disable Firebase
 const hasRealFirebaseConfig = process.env.REACT_APP_FIREBASE_API_KEY &&
@@ -16,13 +22,13 @@ const hasRealFirebaseConfig = process.env.REACT_APP_FIREBASE_API_KEY &&
   process.env.REACT_APP_FIREBASE_API_KEY !== "AIzaSyFakeKeyForLocalStorageOnly";
 
 const firebaseConfig = {
-  apiKey: process.env.REACT_APP_FIREBASE_API_KEY || "AIzaSyFakeKeyForLocalStorageOnly",
-  authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN || "scheduler2-local.firebaseapp.com",
-  projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID || "scheduler2-local",
-  storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET || "scheduler2-local.firebasestorage.app",
-  messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID || "123456789",
-  appId: process.env.REACT_APP_FIREBASE_APP_ID || "1:123456789:web:abcdef123456",
-  measurementId: process.env.REACT_APP_FIREBASE_MEASUREMENT_ID || "G-ABCDEFGHIJ"
+  apiKey: normalizeEnv(process.env.REACT_APP_FIREBASE_API_KEY, "AIzaSyFakeKeyForLocalStorageOnly"),
+  authDomain: normalizeEnv(process.env.REACT_APP_FIREBASE_AUTH_DOMAIN, "scheduler2-local.firebaseapp.com"),
+  projectId: normalizeEnv(process.env.REACT_APP_FIREBASE_PROJECT_ID, "scheduler2-local"),
+  storageBucket: normalizeEnv(process.env.REACT_APP_FIREBASE_STORAGE_BUCKET, "scheduler2-local.firebasestorage.app"),
+  messagingSenderId: normalizeEnv(process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID, "123456789"),
+  appId: normalizeEnv(process.env.REACT_APP_FIREBASE_APP_ID, "1:123456789:web:abcdef123456"),
+  measurementId: normalizeEnv(process.env.REACT_APP_FIREBASE_MEASUREMENT_ID, "G-ABCDEFGHIJ")
 };
 
 // Initialize Firebase
