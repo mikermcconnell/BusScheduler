@@ -11,6 +11,7 @@ import { errorHandler, notFound } from './middleware/errorHandler';
 import authRoutes from './routes/authRoutes';
 import scheduleRoutes from './routes/scheduleRoutes';
 import routeRoutes from './routes/routeRoutes';
+import securityRoutes from './routes/securityRoutes';
 
 // Load environment variables
 dotenv.config();
@@ -81,6 +82,7 @@ app.get('/health', (req, res) => {
 app.use(`/api/${API_VERSION}/auth`, authRoutes);
 app.use(`/api/${API_VERSION}/schedules`, scheduleRoutes);
 app.use(`/api/${API_VERSION}/routes`, routeRoutes);
+app.use('/api/security', securityRoutes);
 
 // 404 handler
 app.use(notFound);
