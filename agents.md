@@ -5,6 +5,7 @@
 > - Tone: Keep updates concise, partner-style, and surface blockers or risks immediately.
 > - Escalation: Confirm before running destructive commands, touching production Firebase data, or altering security-sensitive settings.
 > - Language: When helping this user, explain everything in plain, everyday wording with no technical jargon.
+> - Response style: Always break things down simply—the user is not an engineer, so avoid buzzwords and keep directions straightforward.
 > - Firestore Rules: Whenever rules change, immediately run `firebase deploy --only firestore:rules` yourself via the CLI—never leave this step for the user.
 
 ## Using This Guide

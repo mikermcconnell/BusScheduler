@@ -49,3 +49,4 @@ firebase-debug.log
 firebase-debug.*.log
 backend/credentials/
 .vercel
+.env*.local

@@ -17,5 +17,9 @@ service firebase.storage {
     match /drafts/{userId}/{allPaths=**} {
       allow read, write: if isOwner(userId);
     }
+
+    match /tod_shift_runs/{runId}/{allPaths=**} {
+      allow read, write: if isAuthenticated();
+    }
   }
 }

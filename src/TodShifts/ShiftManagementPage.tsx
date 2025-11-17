@@ -331,12 +331,6 @@ const ShiftManagementPage: React.FC = () => {
               </Button>
             </Stack>
             <Box textAlign="right" mt={1}>
-              <Chip
-                size="small"
-                color={draftDirty ? 'warning' : 'success'}
-                label={draftDirty ? 'Unsaved changes' : 'All changes saved'}
-                sx={{ mr: 1, mb: 0.5 }}
-              />
               <Typography variant="caption" display="block">
                 {lastSavedLabel}
               </Typography>
